@@ -12,6 +12,12 @@ public final class CollaborationJoinQueue: @unchecked Sendable {
         pending.append(labID)
     }
 
+    public func isQueued(_ labID: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return pending.contains(labID)
+    }
+
     public func consumeNext() -> String? {
         lock.lock()
         defer { lock.unlock() }

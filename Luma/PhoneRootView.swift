@@ -93,11 +93,7 @@ struct PhoneRootView: View {
     }
 
     private func handleIncomingURL(_ url: URL) {
-        if url.scheme == "luma" {
-            LumaAppDelegate.handle(url: url)
-            return
-        }
-        if let labID = BackendConfig.labID(fromInviteLink: url) {
+        if let labID = BackendConfig.labID(fromLink: url) {
             joinLab(labID: labID)
             return
         }
@@ -107,8 +103,8 @@ struct PhoneRootView: View {
 
     @MainActor
     private func joinLab(labID: String) {
+        guard EngineRegistry.shared.engine(inLab: labID) == nil, !CollaborationJoinQueue.shared.isQueued(labID) else { return }
         CollaborationJoinQueue.shared.enqueue(labID: labID)
-        guard dbURL == nil else { return }
         let url = Self.untitledURL(named: "Shared Lab")
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         dbURL = url

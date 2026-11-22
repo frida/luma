@@ -39,6 +39,10 @@ public final class EngineRegistry {
         return engine
     }
 
+    public func engine(inLab labID: String) -> Engine? {
+        engines.values.first { $0.associatedLabID == labID }
+    }
+
     public func startIfNeeded(for workingProjectURL: URL) async {
         let key = workingProjectURL.standardizedFileURL
         if let existing = startTasks[key] {

@@ -135,7 +135,7 @@ private struct ProjectContentView: View {
                 #if os(macOS)
                     engine.attachLocalNotifier()
                 #endif
-                if engine.collaboration.isCollaborative {
+                if engine.associatedLabID != nil {
                     engine.setSidePanel(.collaboration)
                 }
                 if engine.selectedSidebarItem == nil {

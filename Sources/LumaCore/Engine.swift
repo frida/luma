@@ -87,6 +87,7 @@ public final class Engine {
     @ObservationIgnored private var memoryReaders: [UUID: CachingMemoryReader] = [:]
 
     public let collaboration: CollaborationSession
+    private var requestedLabID: String?
     public let gitHubAuth: GitHubAuth
     @ObservationIgnored public private(set) lazy var storefront = Storefront(
         engine: self,
@@ -327,7 +328,14 @@ public final class Engine {
         ]])
     }
 
+    public var associatedLabID: String? {
+        requestedLabID ?? (try? store.fetchCollaborationState())?.labID
+    }
+
     public func startCollaboration(joiningLab labID: String? = nil) {
+        if let labID {
+            requestedLabID = labID
+        }
         let existing = labID ?? (try? store.fetchCollaborationState())?.labID
         Task { @MainActor in
             guard let token = await gitHubAuth.requestToken() else { return }

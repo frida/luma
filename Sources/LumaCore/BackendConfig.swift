@@ -7,11 +7,24 @@ public enum BackendConfig {
     public static let storeCatalogURL = URL(string: localOverride("LUMA_STORE_CATALOG_URL") ?? "https://luma.frida.re/api/store/")!
     public static let privacyPolicyURL = URL(string: "https://luma.frida.re/privacy")!
 
+    public static func labID(fromLink url: URL) -> String? {
+        labID(fromInviteLink: url) ?? labID(fromJoinURL: url)
+    }
+
     public static func labID(fromInviteLink url: URL) -> String? {
         guard url.absoluteString.hasPrefix(inviteLinkBase) else { return nil }
         let code = url.absoluteString.dropFirst(inviteLinkBase.count)
             .prefix { $0 != "/" && $0 != "?" && $0 != "#" }
         return code.isEmpty ? nil : String(code)
+    }
+
+    private static func labID(fromJoinURL url: URL) -> String? {
+        guard url.scheme == "luma", url.host == "join",
+            let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+            let labID = components.queryItems?.first(where: { $0.name == "lab" })?.value,
+            !labID.isEmpty
+        else { return nil }
+        return labID
     }
 
     public static let certificate: String? = {

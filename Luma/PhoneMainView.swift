@@ -162,10 +162,11 @@ private struct PhoneContentView: View {
             }
         }
         .environment(picker)
+        .gitHubSignInSheet(auth: engine.gitHubAuth, precedence: .ambient)
         .task {
             await EngineRegistry.shared.startIfNeeded(for: projectURL)
             engine.attachInstrumentUIs()
-            if engine.collaboration.isCollaborative {
+            if engine.associatedLabID != nil {
                 engine.setSidePanel(.collaboration)
             }
             eventsBaseline = engine.eventLog.totalReceived
@@ -179,9 +180,6 @@ private struct PhoneContentView: View {
             Task { @MainActor in
                 await EngineRegistry.shared.release(workingProjectURL: url)
             }
-        }
-        .onOpenURL { url in
-            LumaAppDelegate.handle(url: url)
         }
     }
 

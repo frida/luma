@@ -34,6 +34,7 @@ func sharedGitHubAuth() -> GitHubAuth { sharedWelcomeModel.gitHubAuth }
             .defaultSize(width: 560, height: 720)
             .windowResizability(.contentSize)
             .windowStyle(.hiddenTitleBar)
+            .handlesExternalEvents(matching: [])
 
             DocumentGroup(newDocument: LumaProject()) { configuration in
                 MainWindowView(
@@ -152,31 +153,14 @@ func sharedGitHubAuth() -> GitHubAuth { sharedWelcomeModel.gitHubAuth }
         }
 
         private func handle(url: URL) {
-            if let labID = BackendConfig.labID(fromInviteLink: url) {
-                CollaborationJoinQueue.shared.enqueue(labID: labID)
+            guard let labID = BackendConfig.labID(fromLink: url) else { return }
+            guard EngineRegistry.shared.engine(inLab: labID) == nil, !CollaborationJoinQueue.shared.isQueued(labID) else {
+                NSApp.activate()
                 return
             }
-
-            guard url.scheme == "luma", url.host == "join",
-                let labID = labID(from: url)
-            else {
-                return
-            }
-
             CollaborationJoinQueue.shared.enqueue(labID: labID)
-        }
-
-        private func labID(from url: URL) -> String? {
-            guard
-                let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-                let labItem = components.queryItems?.first(where: { $0.name == "lab" }),
-                let labID = labItem.value,
-                !labID.isEmpty
-            else {
-                return nil
-            }
-
-            return labID
+            NSDocumentController.shared.newDocument(nil)
+            NSApp.windows.first { $0.identifier?.rawValue == WelcomeWindow.id }?.close()
         }
     }
 
@@ -230,29 +214,6 @@ func sharedGitHubAuth() -> GitHubAuth { sharedWelcomeModel.gitHubAuth }
             Task { @MainActor in
                 APNsRegistration.shared.setError(error.localizedDescription)
             }
-        }
-
-        static func handle(url: URL) {
-            if let labID = BackendConfig.labID(fromInviteLink: url) {
-                CollaborationJoinQueue.shared.enqueue(labID: labID)
-                return
-            }
-            guard url.scheme == "luma", url.host == "join",
-                let labID = labID(from: url)
-            else { return }
-            CollaborationJoinQueue.shared.enqueue(labID: labID)
-        }
-
-        private static func labID(from url: URL) -> String? {
-            guard
-                let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-                let labItem = components.queryItems?.first(where: { $0.name == "lab" }),
-                let labID = labItem.value,
-                !labID.isEmpty
-            else {
-                return nil
-            }
-            return labID
         }
     }
 

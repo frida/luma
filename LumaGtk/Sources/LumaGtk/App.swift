@@ -394,25 +394,17 @@ final class LumaApplication {
     }
 
     fileprivate func handleCollaborationURL(_ urlString: String) {
-        guard let url = URL(string: urlString), let labID = labID(fromURL: url) else { return }
-        if let existing = openDocuments.values.first {
-            existing.engine.startCollaboration(joiningLab: labID)
+        guard let url = URL(string: urlString), let labID = BackendConfig.labID(fromLink: url) else { return }
+        if let existing = openDocuments.values.first(where: { $0.engine.associatedLabID == labID }) {
+            existing.window.present()
+            return
+        }
+        guard !CollaborationJoinQueue.shared.isQueued(labID) else {
+            app.activeWindow?.present()
             return
         }
         CollaborationJoinQueue.shared.enqueue(labID: labID)
         openNewUntitledWindow()
-    }
-
-    private func labID(fromURL url: URL) -> String? {
-        if let labID = BackendConfig.labID(fromInviteLink: url) {
-            return labID
-        }
-        guard url.scheme == "luma", url.host == "join",
-            let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-            let labID = components.queryItems?.first(where: { $0.name == "lab" })?.value,
-            !labID.isEmpty
-        else { return nil }
-        return labID
     }
 
     fileprivate func handleSaveAsPath(window: MainWindow, _ path: String) {
