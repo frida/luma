@@ -137,6 +137,7 @@ struct AddInstrumentSheet: View {
 
     private func canAdd(_ item: StoreItem) -> Bool {
         guard storeItemBeingAdded == nil, !isAlreadyAdded(item), incompatibilityReason(for: item.compatibility) == nil else { return false }
+        if case .requiresLuma = storefront.installState(of: item) { return false }
         if case .sponsorshipNeeded = storefront.entitlementToAdd(item) { return false }
         return true
     }

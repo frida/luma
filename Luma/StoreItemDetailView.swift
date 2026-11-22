@@ -97,6 +97,8 @@ struct StoreItemDetailView: View {
         switch storefront.installState(of: item) {
         case .notInstalled:
             EmptyView()
+        case .requiresLuma(let version):
+            Text("Requires Luma \(version.description) or newer.")
         case .installed:
             Text("Installed.")
             uninstallButton
@@ -203,7 +205,7 @@ extension Storefront.InstallState {
         switch self {
         case .notInstalled, .updateAvailable:
             return true
-        case .installed:
+        case .requiresLuma, .installed:
             return false
         }
     }
@@ -212,6 +214,8 @@ extension Storefront.InstallState {
         switch self {
         case .notInstalled:
             return nil
+        case .requiresLuma(let version):
+            return "Requires Luma \(version.description)"
         case .installed:
             return "Installed"
         case .updateAvailable:

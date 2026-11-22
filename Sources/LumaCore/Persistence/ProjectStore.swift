@@ -1617,6 +1617,7 @@ public final class ProjectStore: Sendable {
             t.column("name", .text).notNull()
             t.column("icon", .text).notNull()
             t.column("compatibility_json", .text).notNull().defaults(to: "{}")
+            t.column("min_app_version", .text)
             t.column("entrypoint", .text).notNull()
             t.column("dependencies_json", .text).notNull().defaults(to: "{}")
             t.column("features_json", .text).notNull().defaults(to: "[]")

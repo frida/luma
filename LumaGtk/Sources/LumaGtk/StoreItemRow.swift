@@ -93,6 +93,11 @@ final class StoreItemRow {
         switch installState {
         case .notInstalled:
             installStateLabel.visible = false
+        case .requiresLuma(let version):
+            installStateLabel.label = "Requires Luma \(version)"
+            installStateLabel.remove(cssClass: "accent")
+            installStateLabel.add(cssClass: "dim-label")
+            installStateLabel.visible = true
         case .installed:
             installStateLabel.label = "Installed"
             installStateLabel.remove(cssClass: "accent")

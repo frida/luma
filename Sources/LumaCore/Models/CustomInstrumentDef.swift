@@ -8,6 +8,7 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
     public var name: String
     public var icon: InstrumentIcon
     public var compatibility: InstrumentCompatibility
+    public var minAppVersion: StoreVersion?
     public var entrypoint: String
     public var dependencies: [String: String]
     public var features: [Feature]
@@ -42,6 +43,7 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
         name: String,
         icon: InstrumentIcon = .symbolic(InstrumentIconCatalog.default.id),
         compatibility: InstrumentCompatibility = .universal,
+        minAppVersion: StoreVersion? = nil,
         entrypoint: String,
         dependencies: [String: String] = [:],
         features: [Feature] = [],
@@ -53,6 +55,7 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
         self.name = name
         self.icon = icon
         self.compatibility = compatibility
+        self.minAppVersion = minAppVersion
         self.entrypoint = entrypoint
         self.dependencies = dependencies
         self.features = features
@@ -67,6 +70,7 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
         icon = InstrumentIcon.decodedJSONString(row["icon"])
         let compatibilityJSON: String = row["compatibility_json"]
         compatibility = try JSONDecoder().decode(InstrumentCompatibility.self, from: Data(compatibilityJSON.utf8))
+        minAppVersion = (row["min_app_version"] as String?).flatMap(StoreVersion.init)
         entrypoint = row["entrypoint"]
         let dependenciesJSON: String = row["dependencies_json"]
         dependencies = try JSONDecoder().decode([String: String].self, from: Data(dependenciesJSON.utf8))
@@ -83,6 +87,7 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
         container["name"] = name
         container["icon"] = icon.encodedJSONString()
         container["compatibility_json"] = compatibilityJSONString
+        container["min_app_version"] = minAppVersion?.description
         container["entrypoint"] = entrypoint
         container["dependencies_json"] = dependenciesJSONString
         container["features_json"] = featuresJSONString
@@ -106,6 +111,9 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
         if let obj = compatibilityJSONObject {
             out["compatibility"] = obj
         }
+        if let minAppVersion {
+            out["engines"] = ["luma": minAppVersion.engineRange]
+        }
         return out
     }
 
@@ -117,6 +125,7 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
             let dependencies = obj["dependencies"] as? [String: String]
         else { return nil }
         let compatibility = parseCompatibility(obj["compatibility"])
+        let minAppVersion = ((obj["engines"] as? [String: Any])?["luma"] as? String).flatMap(StoreVersion.least(inEngineRange:))
         let features = parseFeatures(obj["features"])
         let widgets = parseWidgets(obj["widgets"])
         let isoFmt = ISO8601DateFormatter()
@@ -127,6 +136,7 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
             name: name,
             icon: icon,
             compatibility: compatibility,
+            minAppVersion: minAppVersion,
             entrypoint: entrypoint,
             dependencies: dependencies,
             features: features,

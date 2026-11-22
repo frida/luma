@@ -94,9 +94,10 @@ Luma's version comes from `Scripts/luma-version.sh` and nowhere else:
 a tagged commit is its tag, and anything after it is a `-dev.N` build
 of the release `VERSION` names, or of the next patch once that release
 is tagged. Bump `VERSION` when work toward the next minor or major
-starts, so that development builds already count as it. `LUMA_VERSION`
-overrides it, which is how CI hands every job the one its `version` job
-worked out. The `LumaVersionWriter` tool puts it in LumaCore as
+starts, so that development builds already count as it: a store item
+that asks for that Luma is offered to them. `LUMA_VERSION` overrides
+it, which is how CI hands every job the one its `version` job worked
+out. The `LumaVersionWriter` tool puts it in LumaCore as
 `LumaVersion.string` -- `Scripts/generate-sources.sh`, the LumaGtk
 Makefile and `LumaBundlePlugin` all run it -- and `make` passes it to
 Xcode as `MARKETING_VERSION`. The tool is Swift rather than a script
@@ -192,8 +193,9 @@ is gitignored — it is produced at build time.
 - **`InstrumentFolder` / `InstrumentFolderLibrary`** — a custom
   instrument as a folder on disk: its sources beside a `package.json`
   whose `main` is the entrypoint, whose `dependencies` are the packages
-  it imports, and whose `luma` object carries name, icon,
-  compatibility, features and widgets. Instruments in one repository
+  it imports, whose `engines.luma` (`>=MAJOR.MINOR.PATCH`, the one form
+  taken) is the oldest Luma it runs in, and whose `luma` object carries
+  name, icon, compatibility, features and widgets. Instruments in one repository
   share code by naming a `luma.root` above their folders: what the
   sources import by relative path from under that root comes along, and
   the instrument's paths are then relative to it. Linking one brings it into the
@@ -329,7 +331,14 @@ is gitignored — it is produced at build time.
   `luma.store` (summary, category, access) in its `package.json`, and its
   `README.md` as the description; every version carries release notes.
   `loadCategories()` gives the publish form the categories without loading a
-  page.
+  page. Every catalog request states `app_version`, as the hello does for
+  the connection, so the store shows each item at the newest version
+  this Luma runs and sends updates only for those; an item whose
+  `min_app_version` this Luma does not meet is `.requiresLuma` and is not
+  offered for adding. A view widget or `.st` files need Luma 3.0.0, so an
+  instrument with either is published only once its `engines.luma` says
+  so, and an edit made in Luma that adds a view widget or a `.st` file
+  raises it.
 
 - **Instrument views (`Sources/LumaCore/InstrumentViews/`)** — a custom
   instrument's `.st` files are Tonel classes it ships, and a widget of

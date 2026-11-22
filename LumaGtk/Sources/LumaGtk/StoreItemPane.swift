@@ -153,6 +153,8 @@ final class StoreItemPane {
         switch installState {
         case .notInstalled, .installed:
             return nil
+        case .requiresLuma(let version):
+            return "Requires Luma \(version) or newer."
         case .updateAvailable(let installed, let latest):
             return "Version \(installed) is installed. Adding it updates it to \(latest)."
         }
@@ -162,7 +164,7 @@ final class StoreItemPane {
         let sponsorLabel = storefront.sponsorButtonLabel(for: item)
         sponsorButton.label = sponsorLabel ?? ""
         sponsorButton.visible = sponsorLabel != nil
-        uninstallButton.visible = installState != .notInstalled
+        uninstallButton.visible = installState.holdsInstallation
         uninstallButton.sensitive = activity == .idle
         progressRow.visible = activity == .installing
         actions.visible = sponsorButton.visible || uninstallButton.visible || progressRow.visible
@@ -240,8 +242,17 @@ extension Storefront.InstallState {
         switch self {
         case .notInstalled, .updateAvailable:
             return true
-        case .installed:
+        case .requiresLuma, .installed:
             return false
+        }
+    }
+
+    var holdsInstallation: Bool {
+        switch self {
+        case .notInstalled, .requiresLuma:
+            return false
+        case .installed, .updateAvailable:
+            return true
         }
     }
 }

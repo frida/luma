@@ -12,6 +12,7 @@ public struct StoreItem: Identifiable, Hashable, Sendable {
     public let compatibility: InstrumentCompatibility
     public let access: StoreAccess
     public let version: StoreVersion
+    public let minAppVersion: StoreVersion?
     public let publishedAt: Date
 
     var path: String {
@@ -49,6 +50,7 @@ public struct StoreItem: Identifiable, Hashable, Sendable {
             compatibility: CustomInstrumentDef.parseCompatibility(obj["compatibility"]),
             access: access,
             version: version,
+            minAppVersion: (obj["min_app_version"] as? String).flatMap(StoreVersion.init),
             publishedAt: publishedAt
         )
     }
@@ -161,6 +163,7 @@ public struct StoreItemDetail: Sendable {
 
 public struct StoreItemVersion: Hashable, Sendable {
     public let version: StoreVersion
+    public let minAppVersion: StoreVersion?
     public let notes: String
     public let publishedAt: Date
 
@@ -169,7 +172,12 @@ public struct StoreItemVersion: Hashable, Sendable {
             let notes = obj["notes"] as? String,
             let publishedAt = StoreTimestamp.date(from: obj["published_at"])
         else { return nil }
-        return StoreItemVersion(version: version, notes: notes, publishedAt: publishedAt)
+        return StoreItemVersion(
+            version: version,
+            minAppVersion: (obj["min_app_version"] as? String).flatMap(StoreVersion.init),
+            notes: notes,
+            publishedAt: publishedAt
+        )
     }
 }
 

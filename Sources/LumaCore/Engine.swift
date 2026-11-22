@@ -5013,6 +5013,7 @@ public final class Engine {
     public func updateCustomInstrument(_ def: CustomInstrumentDef) {
         var updated = def
         updated.normalize()
+        updated.requireLumaForViews(in: (try? store.fetchCustomInstrumentFiles(defID: def.id)) ?? [])
         updated.updatedAt = Date()
         try? store.save(updated)
         registerDescriptor(customInstruments.descriptor(for: updated))
@@ -5039,7 +5040,7 @@ public final class Engine {
         try noteHostCodeEdit(ofCustomInstrument: defID, by: author) {
             try store.save(file)
         }
-        try store.save(touchUpdatedAt(defID: defID))
+        try store.save(requiringLumaForViews(touchUpdatedAt(defID: defID)))
         broadcastCustomInstrumentUpsert(defID: defID)
         scheduleCustomInstrumentReload(defID: defID)
         return validatedPath
@@ -5078,7 +5079,7 @@ public final class Engine {
         try noteHostCodeEdit(ofCustomInstrument: defID, by: author) {
             try store.renameCustomInstrumentFile(defID: defID, from: fromPath, to: toPath)
         }
-        var def = try touchUpdatedAt(defID: defID)
+        var def = try requiringLumaForViews(touchUpdatedAt(defID: defID))
         if renamesEntrypoint {
             def.entrypoint = toPath
         }
@@ -5108,6 +5109,12 @@ public final class Engine {
         try edit()
         let next = HostCode(files: try store.fetchCustomInstrumentFiles(defID: defID))
         instrumentViews.noteEdit(ofCustomInstrument: defID, from: previous, to: next, by: author)
+    }
+
+    private func requiringLumaForViews(_ def: CustomInstrumentDef) throws -> CustomInstrumentDef {
+        var required = def
+        required.requireLumaForViews(in: try store.fetchCustomInstrumentFiles(defID: def.id))
+        return required
     }
 
     private func scheduleCustomInstrumentReload(defID: UUID) {

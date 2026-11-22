@@ -101,7 +101,7 @@ final class InstalledStoreItems {
 
     private func latest(of installation: StoreInstallation) -> Storefront.LinkedInstallation.Latest {
         guard let item = items.first(where: { $0.id == installation.itemID }) else { return .unknown }
-        return item.version > installation.version ? .newer(item) : .installed(item)
+        return item.version > installation.version && LumaVersion.meets(item.minAppVersion) ? .newer(item) : .installed(item)
     }
 
     private func snapshot(of folderURL: URL) throws -> InstrumentFolderLink.Snapshot {

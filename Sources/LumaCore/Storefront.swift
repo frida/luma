@@ -26,6 +26,7 @@ public final class Storefront {
 
     public enum InstallState: Equatable, Sendable {
         case notInstalled
+        case requiresLuma(StoreVersion)
         case installed(StoreVersion)
         case updateAvailable(installed: StoreVersion, latest: StoreVersion)
     }
@@ -204,8 +205,11 @@ public final class Storefront {
     }
 
     public func installState(of item: StoreItem) -> InstallState {
-        guard let installedVersion = installed.installations[item.id]?.version else { return .notInstalled }
-        guard installedVersion < item.version else { return .installed(installedVersion) }
+        let unmetRequirement = item.minAppVersion.flatMap { LumaVersion.meets($0) ? nil : $0 }
+        guard let installedVersion = installed.installations[item.id]?.version else {
+            return unmetRequirement.map(InstallState.requiresLuma) ?? .notInstalled
+        }
+        guard installedVersion < item.version, unmetRequirement == nil else { return .installed(installedVersion) }
         return .updateAvailable(installed: installedVersion, latest: item.version)
     }
 
@@ -284,6 +288,9 @@ public final class Storefront {
         guard StoreItem.isValidName(slug) else { throw StorefrontError.invalidPackageName(slug) }
         let now = Date()
         let bundle = try Engine.validatedCustomInstrumentBundle(folder.customInstrument(id: defID, createdAt: now, updatedAt: now))
+        if let requirement = bundle.undeclaredLumaRequirement {
+            throw StorefrontError.lumaRequirementMissing(requirement)
+        }
         var payload: JSONObject = [
             "kind": StoreItemKind.instrument.rawValue,
             "version": version.description,
@@ -594,6 +601,7 @@ public enum StorefrontError: Swift.Error, LocalizedError, Equatable {
     case notLinkedToFolder
     case notPublisher
     case invalidPackageName(String)
+    case lumaRequirementMissing(StoreVersion)
     case rejected(Rejection, message: String)
     case server(message: String)
     case malformedReply
@@ -601,6 +609,7 @@ public enum StorefrontError: Swift.Error, LocalizedError, Equatable {
     public enum Rejection: String, Sendable {
         case notFound = "not_found"
         case sponsorshipRequired = "sponsorship_required"
+        case appUpdateRequired = "app_update_required"
         case forbidden
         case versionNotNewer = "version_not_newer"
         case invalidItem = "invalid_item"
@@ -634,6 +643,9 @@ public enum StorefrontError: Swift.Error, LocalizedError, Equatable {
             return "This account may not publish to the store."
         case .invalidPackageName(let name):
             return "'\(name)' cannot name an item in the store: use lowercase letters, digits and dashes, starting with a letter or digit."
+        case .lumaRequirementMissing(let version):
+            return "An instrument with a view widget or Smalltalk files runs only in Luma \(version) or newer, so its package.json has to "
+                + "say so: \"engines\": { \"luma\": \"\(version.engineRange)\" }."
         case .rejected(_, let message), .server(let message):
             return message
         case .malformedReply:

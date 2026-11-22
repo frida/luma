@@ -21,6 +21,7 @@ public struct InstrumentFolder: Sendable {
     public let name: String
     public let icon: InstrumentIcon
     public let compatibility: InstrumentCompatibility
+    public let minAppVersion: StoreVersion?
 
     private let manifest: Manifest
 
@@ -54,6 +55,7 @@ public struct InstrumentFolder: Sendable {
         name = manifest.displayName ?? manifest.name
         icon = try Self.loadIcon(manifest.luma?.icon, in: folderURL)
         compatibility = manifest.luma?.compatibility ?? .universal
+        minAppVersion = try manifest.engines?["luma"].map(Self.lumaRequirement)
         guard (folderURL.standardizedFileURL.path + "/").hasPrefix(rootURL.path + "/") else {
             throw LumaCoreError.invalidArgument("The root in \(Self.manifestFileName) has to be a folder above it.")
         }
@@ -76,6 +78,7 @@ public struct InstrumentFolder: Sendable {
             name: name,
             icon: icon,
             compatibility: compatibility,
+            minAppVersion: minAppVersion,
             entrypoint: prefix + manifest.main,
             dependencies: manifest.dependencies ?? [:],
             features: manifest.luma?.features ?? [],
@@ -188,6 +191,9 @@ public struct InstrumentFolder: Sendable {
         package["displayName"] = def.name == package["name"] as? String ? nil : def.name
         package["main"] = path(to: def.entrypoint, fromFolderUnder: prefix)
         package["dependencies"] = def.dependencies.isEmpty ? nil : def.dependencies
+        var engines = (package["engines"] as? [String: Any]) ?? [:]
+        engines["luma"] = def.minAppVersion?.engineRange
+        package["engines"] = engines.isEmpty ? nil : engines
         package["luma"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(section))
         files.append(File(path: manifestFileName, content: try manifestData(for: package)))
 
@@ -210,6 +216,13 @@ public struct InstrumentFolder: Sendable {
 
     private static func manifestData(for package: [String: Any]) throws -> Data {
         try JSONSerialization.data(withJSONObject: package, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+    }
+
+    private static func lumaRequirement(_ range: String) throws -> StoreVersion {
+        guard let version = StoreVersion.least(inEngineRange: range) else {
+            throw LumaCoreError.invalidArgument("engines.luma in \(manifestFileName) has to be >=MAJOR.MINOR.PATCH, not '\(range)'.")
+        }
+        return version
     }
 
     private static func loadIcon(_ icon: Manifest.Icon?, in folderURL: URL) throws -> InstrumentIcon {
@@ -321,6 +334,7 @@ public struct InstrumentFolder: Sendable {
         let version: String?
         let main: String
         let dependencies: [String: String]?
+        let engines: [String: String]?
         let luma: Section?
 
         struct Section: Codable, Sendable {

@@ -14,7 +14,7 @@ struct StoreCatalog: Sendable {
         offset: Int,
         limit: Int
     ) async throws -> StoreCatalogPage {
-        var parameters: [(name: String, value: String)] = [("offset", String(offset)), ("limit", String(limit))]
+        var parameters: [(name: String, value: String)] = [Self.appVersion, ("offset", String(offset)), ("limit", String(limit))]
         if !query.isEmpty {
             parameters.append(("query", query))
         }
@@ -39,7 +39,7 @@ struct StoreCatalog: Sendable {
 
     func items(withIDs ids: [StoreItem.ID]) async throws -> [StoreItem] {
         let idList = ids.map(Self.percentEncoded).joined(separator: ",")
-        let reply = try await fetchJSON(itemsURL.withQuery("ids=\(idList)"))
+        let reply = try await fetchJSON(itemsURL.withQuery("ids=\(idList)&" + Self.encodedQuery([Self.appVersion])))
         guard let entries = reply["items"] as? [JSONObject] else { throw StorefrontError.malformedReply }
         return entries.compactMap(StoreItem.fromWireJSON)
     }
@@ -59,14 +59,16 @@ struct StoreCatalog: Sendable {
     }
 
     func categories() async throws -> [StoreCategory] {
-        guard let entries = try await fetchJSON(baseURL.appendingPathComponent("categories"))["categories"] as? [JSONObject] else {
+        let categoriesURL = baseURL.appendingPathComponent("categories").withQuery(Self.encodedQuery([Self.appVersion]))
+        guard let entries = try await fetchJSON(categoriesURL)["categories"] as? [JSONObject] else {
             throw StorefrontError.malformedReply
         }
         return entries.compactMap(StoreCategory.fromWireJSON)
     }
 
     func detail(of item: StoreItem) async throws -> StoreItemDetail {
-        guard let detail = StoreItemDetail.fromWireJSON(try await fetchJSON(url(of: item))) else { throw StorefrontError.malformedReply }
+        let detailURL = url(of: item).withQuery(Self.encodedQuery([Self.appVersion]))
+        guard let detail = StoreItemDetail.fromWireJSON(try await fetchJSON(detailURL)) else { throw StorefrontError.malformedReply }
         return detail
     }
 
@@ -74,6 +76,8 @@ struct StoreCatalog: Sendable {
         let iconURL = url(of: item).appendingPathComponent("icon")
         return try await fetch(iconURL.withQuery(Self.encodedQuery([("v", item.version.description)])), cached: .asServed)
     }
+
+    private static let appVersion = (name: "app_version", value: LumaVersion.string)
 
     private var itemsURL: URL {
         baseURL.appendingPathComponent("items")

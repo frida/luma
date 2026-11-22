@@ -529,7 +529,9 @@ final class AddInstrumentDialog {
 
     private func canAdd(_ item: StoreItem) -> Bool {
         guard storeActivity == .idle, incompatibilityReason(for: item.compatibility) == nil else { return false }
-        guard storefront.installState(of: item).requiresInstall else { return true }
+        let installState = storefront.installState(of: item)
+        if case .requiresLuma = installState { return false }
+        guard installState.requiresInstall else { return true }
         if case .sponsorshipNeeded = storefront.entitlement(for: item) {
             return false
         }
