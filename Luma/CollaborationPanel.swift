@@ -94,13 +94,7 @@ struct CollaborationPanel: View {
                         }
                     }
                 } label: {
-                    AsyncImage(url: avatarSizeURL(user, size: 20)) { image in
-                        image.resizable().scaledToFill()
-                    } placeholder: {
-                        Image(systemName: "person.crop.circle")
-                    }
-                    .frame(width: 20, height: 20)
-                    .clipShape(Circle())
+                    MenuAvatar(url: avatarSizeURL(user, size: 40), pointSize: 20)
                 }
                 .menuStyle(.borderlessButton)
             }
