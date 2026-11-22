@@ -119,7 +119,8 @@ enum RenderTests {
     /// examples actually do, through the bindings, the bridge and the
     /// canvas view.
     private static func fromTheImage(writingTo directory: String) -> Int32 {
-        let probes = [("pharo-lettering", letteringSnippet)] + projectionProbes
+        let probes = [("pharo-lettering", letteringSnippet)] + projectionProbes + meshProbes
+            + [("pharo-arrays", arraysSnippet)]
         let scenes = scenesFromTheImage(evaluating: probes.map(\.1))
         var failures: Int32 = 0
         for ((name, _), scene) in zip(probes, scenes) {
@@ -305,6 +306,110 @@ enum RenderTests {
             canvas
             """
     }
+
+    private static let meshProbes = [
+        ("pharo-mesh-shaded", meshSnippet(drawing: "vertices: positions indices: indices primitive: #triangles")),
+        ("pharo-mesh-wire", meshSnippet(drawing: "vertices: positions indices: indices primitive: #lines")),
+        ("pharo-mesh-strip", meshSnippet(drawing: "vertices: positions indices: indices primitive: #lineStrip")),
+        ("pharo-mesh-points", meshSnippet(drawing: "vertices: positions primitive: #points", pointSize: 4)),
+    ]
+
+    private static func meshSnippet(drawing: String, pointSize: Int? = nil) -> String {
+        let sizing = pointSize.map { "gl_PointSize = \($0).0 * u_scale;" } ?? ""
+        return """
+            | canvas segments sides count triangles bytes at held positions indices ring |
+            canvas := LumaCanvas new.
+            segments := 24.
+            sides := 12.
+            count := segments * sides.
+            triangles := count * 2.
+            bytes := ByteArray new: count * 24 + (triangles * 12).
+            at := 0.
+            0 to: segments - 1 do: [ :i | | u |
+                u := i / segments * 2 * Float pi.
+                0 to: sides - 1 do: [ :j | | v |
+                    v := j / sides * 2 * Float pi.
+                    { (1 + (0.35 * v cos)) * u cos. 0.35 * v sin. (1 + (0.35 * v cos)) * u sin.
+                      i / segments. j / sides. 0.6 } do: [ :each |
+                        bytes float32AtOffset: at put: each asFloat.
+                        at := at + 4 ] ] ].
+            0 to: segments - 1 do: [ :i |
+                0 to: sides - 1 do: [ :j | | a b c d |
+                    a := i * sides + j.
+                    b := (i + 1 \\\\ segments) * sides + j.
+                    c := (i + 1 \\\\ segments) * sides + (j + 1 \\\\ sides).
+                    d := i * sides + (j + 1 \\\\ sides).
+                    { a. b. c. a. c. d } do: [ :each |
+                        bytes uint32AtOffset: at put: each.
+                        at := at + 4 ] ] ].
+            held := LumaBytes holding: bytes.
+            positions := held from: 0 size: count * 24.
+            indices := held from: count * 24 size: triangles * 12.
+            ring := canvas addDrawable.
+            ring
+                attribute: 'position' components: 3;
+                attribute: 'tint' components: 3;
+                varying: 'shade' components: 3;
+                vertexSource: 'void main() {
+                    float c = cos(0.7);
+                    float s = sin(0.7);
+                    vec3 p = vec3(position.x, position.y * c - position.z * s, position.y * s + position.z * c);
+                    shade = tint;
+                    gl_Position = vec4(p.x * 0.45 * u_resolution.y / u_resolution.x, p.y * 0.45, 0.5 + p.z * 0.2, 1.0);
+                    \(sizing)
+                }'
+                fragmentSource: 'void main() { frag_color = vec4(shade, 1.0); }';
+                commit;
+                \(drawing).
+            canvas
+            """
+    }
+
+    private static let arraysSnippet = """
+        | canvas zigzag strip dots sampled pictured form |
+        canvas := LumaCanvas new.
+        zigzag := canvas addDrawable.
+        zigzag
+            attribute: 'p' components: 2;
+            vertexSource: 'void main() { gl_Position = vec4(p, 0.5, 1.0); }'
+            fragmentSource: 'void main() { frag_color = vec4(0.9, 0.3, 0.2, 1.0); }';
+            mesh: #(-0.95 -0.8 -0.75 0.8  -0.75 0.8 -0.55 -0.8  -0.55 -0.8 -0.35 0.8) primitive: #lines.
+        strip := canvas addDrawable.
+        strip
+            attribute: 'p' components: 2;
+            uniform: 'tint' value: #(0.2 0.6 0.95);
+            vertexSource: 'void main() { gl_Position = u_mvp * vec4(p, 0.0, 1.0); }'
+            fragmentSource: 'void main() { frag_color = vec4(tint, 1.0); }';
+            transform: #(1 0 0 0  0 0.5 0 0  0 0 1 0  0 0.2 0.5 1);
+            mesh: #(-0.3 -0.6 -0.2 0.6 -0.1 -0.6 0.0 0.6 0.1 -0.6) primitive: #lineStrip.
+        dots := canvas addDrawable.
+        dots
+            attribute: 'p' components: 2;
+            vertexSource: 'void main() { gl_Position = vec4(p, 0.5, 1.0); gl_PointSize = 6.0 * u_scale; }'
+            fragmentSource: 'void main() { frag_color = vec4(0.95, 0.85, 0.2, 1.0); }';
+            mesh: #(0.25 0.5 0.3 0.0 0.35 -0.5) primitive: #points.
+        sampled := canvas addDrawable.
+        sampled
+            attribute: 'p' components: 2;
+            buffer: 'heights' values: #(0.2 0.9 0.5 0.7);
+            vertexSource: 'void main() { gl_Position = vec4(p, 0.5, 1.0); }'
+            fragmentSource: 'void main() {
+                frag_color = vec4(0.3, heightsAt(int(gl_FragCoord.x) / 40 - (int(gl_FragCoord.x) / 160) * 4), 0.4, 1.0);
+            }';
+            mesh: #(0.45 -0.9 0.65 -0.9 0.45 0.9  0.65 -0.9 0.65 0.9 0.45 0.9) primitive: #triangles.
+        form := Form extent: 4 @ 4 depth: 32.
+        form fillColor: Color green.
+        form fill: (0 @ 0 extent: 2 @ 2) fillColor: Color magenta.
+        pictured := canvas addDrawable.
+        pictured
+            attribute: 'p' components: 2;
+            varying: 'uv' components: 2;
+            image: 'swatch' form: form;
+            vertexSource: 'void main() { uv = p * 0.5 + 0.5; gl_Position = vec4(p * vec2(0.12, 0.8) + vec2(0.85, 0.0), 0.5, 1.0); }'
+            fragmentSource: 'void main() { frag_color = vec4(texture(swatch, uv).rgb, 1.0); }';
+            mesh: #(-1 -1 1 -1 -1 1  1 -1 1 1 -1 1) primitive: #triangles.
+        canvas
+        """
 
     /// A scene of the kind the image builds: lettering over the atlas the
     /// host rasterized, which is what the examples lean on.
