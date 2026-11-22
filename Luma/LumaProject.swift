@@ -41,7 +41,13 @@ struct LumaProject: FileDocument {
         defer { try? FileManager.default.removeItem(at: staging) }
 
         try ProjectSnapshot.snapshot(from: workingProjectURL, to: staging)
-        return try FileWrapper(url: staging, options: .immediate)
+        let snapshot = try FileWrapper(url: staging, options: .immediate)
+        if let saved = configuration.existingFile?.fileWrappers?["traces"]?.fileWrappers,
+           let traces = snapshot.fileWrappers?["traces"]
+        {
+            Self.keep(saved, in: traces)
+        }
+        return snapshot
     }
 
     private func copyFileWrapper(_ wrapper: FileWrapper, to destination: URL) throws {
@@ -63,5 +69,22 @@ struct LumaProject: FileDocument {
         let dir = LumaAppPaths.shared.workingDirectory
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("Working-\(UUID().uuidString).luma")
+    }
+
+    private static func keep(_ saved: [String: FileWrapper], in traces: FileWrapper) {
+        for (name, fresh) in traces.fileWrappers ?? [:] {
+            guard let kept = saved[name], isUnchanged(fresh, since: kept) else { continue }
+            traces.removeFileWrapper(fresh)
+            traces.addFileWrapper(kept)
+        }
+    }
+
+    private static func isUnchanged(_ fresh: FileWrapper, since kept: FileWrapper) -> Bool {
+        guard let written = fresh.fileAttributes[FileAttributeKey.modificationDate.rawValue] as? Date,
+              let saved = kept.fileAttributes[FileAttributeKey.modificationDate.rawValue] as? Date,
+              let size = fresh.fileAttributes[FileAttributeKey.size.rawValue] as? Int,
+              let savedSize = kept.fileAttributes[FileAttributeKey.size.rawValue] as? Int
+        else { return false }
+        return written <= saved && size == savedSize
     }
 }
