@@ -14,18 +14,14 @@ public final class CustomInstrumentLibrary {
     public init() {}
 
     public func start(store: ProjectStore) {
-        defs = Self.normalizeAndPersistIfChanged(
-            (try? store.fetchCustomInstrumentDefs()) ?? [],
-            store: store
-        )
+        defs = (try? store.fetchCustomInstrumentDefs()) ?? []
         filesByDef = Dictionary(
             grouping: (try? store.fetchAllCustomInstrumentFiles()) ?? [],
             by: \.defID
         )
-        defsObservation = store.observeCustomInstrumentDefs { [weak self, store] defs in
-            let healed = Self.normalizeAndPersistIfChanged(defs, store: store)
+        defsObservation = store.observeCustomInstrumentDefs { [weak self] defs in
             Task { @MainActor in
-                self?.applyDefsChange(healed)
+                self?.applyDefsChange(defs)
             }
         }
         filesObservation = store.observeCustomInstrumentFiles { [weak self] grouped in
@@ -80,20 +76,6 @@ public final class CustomInstrumentLibrary {
 
     private func initialFeatureStates(for def: CustomInstrumentDef) -> [String: FeatureState] {
         Self.initialFeatureStates(for: def)
-    }
-
-    nonisolated private static func normalizeAndPersistIfChanged(
-        _ defs: [CustomInstrumentDef],
-        store: ProjectStore
-    ) -> [CustomInstrumentDef] {
-        defs.map { def in
-            var copy = def
-            copy.normalize()
-            if copy != def {
-                try? store.save(copy)
-            }
-            return copy
-        }
     }
 
     private func applyDefsChange(_ defs: [CustomInstrumentDef]) {
