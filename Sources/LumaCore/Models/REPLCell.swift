@@ -48,19 +48,6 @@ public struct REPLCell: Codable, Identifiable, Sendable, FetchableRecord, Persis
         self.isSessionBoundary = isSessionBoundary
     }
 
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(UUID.self, forKey: .id)
-        sessionID = try container.decode(UUID.self, forKey: .sessionID)
-        author = try container.decodeIfPresent(Author.self, forKey: .author)
-        code = try container.decode(String.self, forKey: .code)
-        language = try container.decode(REPLLanguage.self, forKey: .language)
-        result = try container.decode(Result.self, forKey: .result)
-        placements = try container.decodeIfPresent([PatternPlacement].self, forKey: .placements) ?? []
-        timestamp = try container.decode(Date.self, forKey: .timestamp)
-        isSessionBoundary = try container.decode(Bool.self, forKey: .isSessionBoundary)
-    }
-
     public enum Result: Codable, Equatable, Sendable {
         case text(String)
         case styled(StyledText)

@@ -1876,9 +1876,9 @@ public final class CollaborationSession {
             where s.count == 7 && s[0] == "labs" && s[2] == "sessions" && s[4] == "repl" && s[5] == "cells":
             guard let sessionID = UUID(uuidString: s[3]),
                 let cellID = UUID(uuidString: s[6]),
-                let code = payload["code"] as? String
+                let code = payload["code"] as? String,
+                let language = (payload["language"] as? String).flatMap(REPLLanguage.init(rawValue:))
             else { return }
-            let language = (payload["language"] as? String).flatMap(REPLLanguage.init(rawValue:)) ?? .javascript
             onSessionReplEvalRequested?(sessionID, code, language, cellID)
 
         case ("+enable", let s)

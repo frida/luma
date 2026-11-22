@@ -91,17 +91,6 @@ public struct TracerConfig: Codable, Equatable, Sendable {
         self.threadTraces = threadTraces
     }
 
-    enum CodingKeys: String, CodingKey {
-        case hooks
-        case threadTraces
-    }
-
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        hooks = try container.decode([Hook].self, forKey: .hooks)
-        threadTraces = try container.decodeIfPresent([ThreadTrace].self, forKey: .threadTraces) ?? []
-    }
-
     public func hooksByMostRecentlyEdited() -> [Hook] {
         return hooks.enumerated()
             .map { (originalIndex: $0.offset, hook: $0.element) }

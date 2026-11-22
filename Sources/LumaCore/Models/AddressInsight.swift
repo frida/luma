@@ -48,20 +48,6 @@ public struct AddressInsight: Codable, Identifiable, Sendable, FetchableRecord, 
         self.parentInsightID = parentInsightID
     }
 
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(UUID.self, forKey: .id)
-        sessionID = try container.decode(UUID.self, forKey: .sessionID)
-        createdAt = try container.decode(Date.self, forKey: .createdAt)
-        userTitle = try container.decodeIfPresent(String.self, forKey: .userTitle)
-        kind = try container.decode(Kind.self, forKey: .kind)
-        anchor = try container.decode(AddressAnchor.self, forKey: .anchor)
-        byteCount = try container.decode(Int.self, forKey: .byteCount)
-        placements = try container.decodeIfPresent([PatternPlacement].self, forKey: .placements) ?? []
-        lastResolvedAddress = try container.decodeIfPresent(UInt64.self, forKey: .lastResolvedAddress)
-        parentInsightID = try container.decodeIfPresent(UUID.self, forKey: .parentInsightID)
-    }
-
     public enum Kind: Int, Codable, Sendable, DatabaseValueConvertible {
         case memory
         case disassembly
