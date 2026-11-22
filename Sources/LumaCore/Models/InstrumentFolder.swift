@@ -46,10 +46,13 @@ public struct InstrumentFolder: Sendable {
     }
 
     public init(folderURL: URL) throws {
-        let manifest = try JSONDecoder().decode(
-            Manifest.self,
-            from: Data(contentsOf: folderURL.appendingPathComponent(Self.manifestFileName))
-        )
+        let manifestURL = folderURL.appendingPathComponent(Self.manifestFileName)
+        let manifest: Manifest
+        do {
+            manifest = try JSONDecoder().decode(Manifest.self, from: Data(contentsOf: manifestURL))
+        } catch let error as DecodingError {
+            throw LumaCoreError.invalidArgument("\(manifestURL.path): \(Self.problem(in: error))")
+        }
         self.folderURL = folderURL
         self.manifest = manifest
         name = manifest.displayName ?? manifest.name
@@ -216,6 +219,23 @@ public struct InstrumentFolder: Sendable {
 
     private static func manifestData(for package: [String: Any]) throws -> Data {
         try JSONSerialization.data(withJSONObject: package, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+    }
+
+    private static func problem(in error: DecodingError) -> String {
+        switch error {
+        case .keyNotFound(let key, let context):
+            return "\(keyPath(context.codingPath + [key])) is missing"
+        case .valueNotFound(_, let context), .typeMismatch(_, let context), .dataCorrupted(let context):
+            return context.codingPath.isEmpty ? context.debugDescription : "\(keyPath(context.codingPath)): \(context.debugDescription)"
+        @unknown default:
+            return error.localizedDescription
+        }
+    }
+
+    private static func keyPath(_ path: [CodingKey]) -> String {
+        path.reduce("") { written, key in
+            key.intValue.map { "\(written)[\($0)]" } ?? (written.isEmpty ? key.stringValue : "\(written).\(key.stringValue)")
+        }
     }
 
     private static func lumaRequirement(_ range: String) throws -> StoreVersion {

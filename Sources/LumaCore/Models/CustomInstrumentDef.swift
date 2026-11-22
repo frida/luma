@@ -36,6 +36,16 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
             self.optional = optional
             self.enabledByDefault = enabledByDefault
         }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.init(
+                id: try c.decode(String.self, forKey: .id),
+                name: try c.decode(String.self, forKey: .name),
+                schema: try c.decodeIfPresent(FeatureSchema.self, forKey: .schema) ?? .boolean(default: true),
+                optional: try c.decodeIfPresent(Bool.self, forKey: .optional) ?? true,
+                enabledByDefault: try c.decodeIfPresent(Bool.self, forKey: .enabledByDefault) ?? true)
+        }
     }
 
     public init(

@@ -105,6 +105,18 @@ public enum ArrayItemSchema: Sendable, Equatable {
     }
 }
 
+extension ObjectField {
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            id: try c.decode(String.self, forKey: .id),
+            name: try c.decode(String.self, forKey: .name),
+            schema: try c.decode(FeatureSchema.self, forKey: .schema),
+            optional: try c.decodeIfPresent(Bool.self, forKey: .optional) ?? false,
+            enabledByDefault: try c.decodeIfPresent(Bool.self, forKey: .enabledByDefault) ?? true)
+    }
+}
+
 extension FeatureSchema: Codable {
     private enum CodingKeys: String, CodingKey {
         case kind

@@ -275,3 +275,77 @@ extension InstrumentWidget.Kind: Codable {
         }
     }
 }
+
+extension InstrumentWidget {
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            id: try c.decode(String.self, forKey: .id),
+            name: try c.decode(String.self, forKey: .name),
+            kind: try c.decode(Kind.self, forKey: .kind),
+            persistence: try c.decodeIfPresent(Persistence.self, forKey: .persistence) ?? .none)
+    }
+}
+
+extension InstrumentWidget.HistogramConfig {
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(maxBuckets: try c.decodeIfPresent(Int.self, forKey: .maxBuckets) ?? Self.defaultMaxBuckets)
+    }
+}
+
+extension InstrumentWidget.GraphConfig {
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            series: try c.decode([InstrumentWidget.Series].self, forKey: .series),
+            maxPoints: try c.decodeIfPresent(Int.self, forKey: .maxPoints) ?? Self.defaultMaxPoints)
+    }
+}
+
+extension InstrumentWidget.ListConfig {
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            actions: try c.decodeIfPresent([InstrumentWidget.Action].self, forKey: .actions) ?? [],
+            maxItems: try c.decodeIfPresent(Int.self, forKey: .maxItems) ?? Self.defaultMaxItems)
+    }
+}
+
+extension InstrumentWidget.TableConfig {
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            columns: try c.decode([InstrumentWidget.Column].self, forKey: .columns),
+            actions: try c.decodeIfPresent([InstrumentWidget.Action].self, forKey: .actions) ?? [],
+            maxRows: try c.decodeIfPresent(Int.self, forKey: .maxRows) ?? Self.defaultMaxRows)
+    }
+}
+
+extension InstrumentWidget.Column {
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            id: try c.decode(String.self, forKey: .id),
+            name: try c.decode(String.self, forKey: .name),
+            alignment: try c.decodeIfPresent(Alignment.self, forKey: .alignment) ?? .leading)
+    }
+}
+
+extension InstrumentWidget.HexConfig {
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(maxBytes: try c.decodeIfPresent(Int.self, forKey: .maxBytes) ?? Self.defaultMaxBytes)
+    }
+}
+
+extension InstrumentWidget.ConsoleConfig {
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            prompt: try c.decodeIfPresent(String.self, forKey: .prompt),
+            placeholder: try c.decodeIfPresent(String.self, forKey: .placeholder),
+            runButtonLabel: try c.decodeIfPresent(String.self, forKey: .runButtonLabel),
+            maxEntries: try c.decodeIfPresent(Int.self, forKey: .maxEntries) ?? Self.defaultMaxEntries)
+    }
+}
