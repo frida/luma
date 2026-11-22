@@ -224,7 +224,7 @@ final class EventStreamPane {
         headerSeparator.visible = false
         widget.append(child: headerSeparator)
 
-        let strip = ShaderEffect(fragmentSource: ShaderEffects.eventField)
+        let strip = ShaderEffect(fragmentSource: ShaderEffects.eventField, pacing: .slowerWhenSettled)
         activityStrip = strip
         strip.widget.hexpand = true
         strip.widget.setSizeRequest(width: -1, height: 3)

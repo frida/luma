@@ -1,6 +1,7 @@
 import CGtk
 @preconcurrency import CLuma
 import Foundation
+import Gdk
 import GLib
 import Gtk
 import LumaCore
@@ -40,6 +41,7 @@ final class ShaderEffect {
 
     enum Pacing {
         case everyFrame
+        case slowerWhenSettled
         case onChange
     }
 
@@ -48,13 +50,28 @@ final class ShaderEffect {
         case ticking
     }
 
+    private enum Sight {
+        case inSight
+        case outOfSight
+    }
+
+    private static let frameInterval: gint64 = 1_000_000 / 60
+    private static let settledFrameInterval: gint64 = 1_000_000 / 30
+    private static let frameSlack: gint64 = 2_000
+    private static let settledLevel: Float = 0.01
+
+    private let pacing: Pacing
     private var isMoving: () -> Bool = { false }
     private var frameClock = FrameClock.idle
+    private var sight = Sight.inSight
+    private var paintedAt: gint64 = 0
+    private var toplevel: (surface: UnsafeMutableRawPointer, handler: gulong)?
 
     /// Pass no source to make a widget that draws a scene rather than a
     /// screen-filling effect.
     init(fragmentSource: String? = nil, pacing: Pacing = .everyFrame) {
         self.fragmentSource = fragmentSource
+        self.pacing = pacing
 
         widget = GLArea()
         // Geometry with any depth to it needs this, and a screen-filling
@@ -73,7 +90,7 @@ final class ShaderEffect {
             MainActor.assumeIsolated { self?.render() ?? false }
         }
         switch pacing {
-        case .everyFrame:
+        case .everyFrame, .slowerWhenSettled:
             isMoving = { true }
             startTicking()
         case .onChange:
@@ -244,6 +261,7 @@ final class ShaderEffect {
 
         startedAt = g_get_monotonic_time()
         renderedAt = startedAt
+        watchToplevel()
 
         // A widget made for a scene has no screen-filling source to link.
         guard let fragmentSource else { return }
@@ -252,6 +270,10 @@ final class ShaderEffect {
     }
 
     private func unrealize() {
+        if let toplevel {
+            g_signal_handler_disconnect(toplevel.surface, toplevel.handler)
+            self.toplevel = nil
+        }
         widget.makeCurrent()
         screen = nil
         for drawable in drawables {
@@ -377,22 +399,75 @@ final class ShaderEffect {
     }
 
     private func startTicking() {
-        guard frameClock == .idle else { return }
+        guard frameClock == .idle, sight == .inSight else { return }
         frameClock = .ticking
         gtk_widget_add_tick_callback(
             widget.widget_ptr!,
-            { _, _, target in
+            { _, clock, target in
                 let target = Unmanaged<TickTarget>.fromOpaque(target!).takeUnretainedValue()
-                return MainActor.assumeIsolated { target.effect?.tick() ?? false } ? gboolean(1) : gboolean(0)
+                let frameTime = gdk_frame_clock_get_frame_time(clock)
+                return MainActor.assumeIsolated { target.effect?.tick(at: frameTime) ?? false } ? gboolean(1) : gboolean(0)
             },
             Unmanaged.passRetained(TickTarget(effect: self)).toOpaque(),
             { target in Unmanaged<TickTarget>.fromOpaque(target!).release() })
     }
 
-    private func tick() -> Bool {
-        widget.queueRender()
-        frameClock = isMoving() ? .ticking : .idle
+    private func tick(at frameTime: gint64) -> Bool {
+        if frameTime - paintedAt >= currentFrameInterval - Self.frameSlack {
+            paintedAt = frameTime
+            widget.queueRender()
+        }
+        frameClock = sight == .inSight && isMoving() ? .ticking : .idle
         return frameClock == .ticking
+    }
+
+    private var currentFrameInterval: gint64 {
+        switch pacing {
+        case .slowerWhenSettled where isSettled:
+            Self.settledFrameInterval
+        case .everyFrame, .slowerWhenSettled, .onChange:
+            Self.frameInterval
+        }
+    }
+
+    private var isSettled: Bool {
+        let now = g_get_monotonic_time()
+        let settledActivity = activity * expf(-Float(now - renderedAt) / 1_000_000 / Self.activityHalfLife)
+        let pulse = pulsedAt == 0 ? 0 : expf(-Float(now - pulsedAt) / 1_000_000 / Self.pulseHalfLife)
+        return settledActivity < Self.settledLevel && pulse < Self.settledLevel
+    }
+
+    private func watchToplevel() {
+        let surface = UnsafeMutableRawPointer(gtk_native_get_surface(gtk_widget_get_native(widget.widget_ptr))!)
+        let handler = g_signal_connect_data(
+            surface,
+            "notify::state",
+            unsafeBitCast(Self.toplevelStateChanged, to: GCallback.self),
+            Unmanaged.passUnretained(self).toOpaque(),
+            nil,
+            GConnectFlags(rawValue: 0))
+        toplevel = (surface, handler)
+        followToplevel()
+    }
+
+    private static let toplevelStateChanged:
+        @convention(c) (
+            UnsafeMutableRawPointer,
+            UnsafeMutableRawPointer?,
+            UnsafeMutableRawPointer?
+        ) -> Void = { _, _, owner in
+            let address = UInt(bitPattern: owner)
+            MainActor.assumeIsolated {
+                Unmanaged<ShaderEffect>.fromOpaque(UnsafeRawPointer(bitPattern: address)!).takeUnretainedValue().followToplevel()
+            }
+        }
+
+    private func followToplevel() {
+        let state = Gdk.ToplevelState(gdk_toplevel_get_state(toplevel!.surface.assumingMemoryBound(to: GdkToplevel.self)))
+        sight = state.isDisjoint(with: [.minimized, .suspended]) ? .inSight : .outOfSight
+        if sight == .inSight && isMoving() {
+            startTicking()
+        }
     }
 
     private func drawable(_ handle: Int32) -> Drawable? {
