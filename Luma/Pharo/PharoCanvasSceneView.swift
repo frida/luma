@@ -46,9 +46,10 @@ struct PharoCanvasSceneView: PlatformViewRepresentable {
 }
 
 /// Reports what the pointer and keyboard are doing, for whoever drives the
-/// scene to read. Nothing is delivered into the image: a snippet asks.
+/// scene to read.
 final class CanvasSceneInputView: MTKView {
     private let scene: Int
+    private var pressed: Int32 = 0
 
     #if canImport(AppKit)
         private var tracking: NSTrackingArea?
@@ -58,7 +59,15 @@ final class CanvasSceneInputView: MTKView {
         self.scene = scene
         super.init(frame: .zero, device: nil)
         #if canImport(UIKit)
-            isMultipleTouchEnabled = false
+            isMultipleTouchEnabled = true
+            let pinch = UIPinchGestureRecognizer(target: self, action: #selector(pinched))
+            let scroll = UIPanGestureRecognizer(target: self, action: #selector(scrolled))
+            scroll.minimumNumberOfTouches = 2
+            scroll.maximumNumberOfTouches = 2
+            for recognizer in [pinch, scroll] {
+                recognizer.delegate = self
+                addGestureRecognizer(recognizer)
+            }
         #endif
     }
 
@@ -90,40 +99,61 @@ final class CanvasSceneInputView: MTKView {
 
         override func mouseMoved(with event: NSEvent) {
             reportPointer(at: location(of: event))
+            deliver(.move, at: location(of: event))
         }
 
         override func mouseDragged(with event: NSEvent) {
             reportPointer(at: location(of: event))
+            deliver(.move, at: location(of: event))
+        }
+
+        override func rightMouseDragged(with event: NSEvent) {
+            deliver(.move, at: location(of: event))
         }
 
         override func mouseExited(with event: NSEvent) {
             report { $0.isPointerInside = false }
+            deliver(.leave, at: location(of: event))
         }
 
         override func mouseDown(with event: NSEvent) {
             window?.makeFirstResponder(self)
             reportPointer(at: location(of: event))
             report { $0.buttons |= 1 << 0 }
+            press(1 << 0, at: location(of: event))
         }
 
         override func mouseUp(with event: NSEvent) {
             report { $0.buttons &= ~(1 << 0) }
+            release(1 << 0, at: location(of: event))
         }
 
         override func rightMouseDown(with event: NSEvent) {
             report { $0.buttons |= 1 << 1 }
+            press(1 << 1, at: location(of: event))
         }
 
         override func rightMouseUp(with event: NSEvent) {
             report { $0.buttons &= ~(1 << 1) }
+            release(1 << 1, at: location(of: event))
+        }
+
+        override func scrollWheel(with event: NSEvent) {
+            deliver(.scroll, at: location(of: event), dx: Float(event.scrollingDeltaX), dy: Float(event.scrollingDeltaY))
+        }
+
+        override func magnify(with event: NSEvent) {
+            deliver(.zoom, at: location(of: event), factor: Float(1 + event.magnification))
         }
 
         override func keyDown(with event: NSEvent) {
             report { $0.keysDown.insert(Self.code(for: event)) }
+            deliver(.keyDown, at: .zero, key: Self.code(for: event))
         }
 
         override func keyUp(with event: NSEvent) {
             report { $0.keysDown.remove(Self.code(for: event)) }
+            deliver(.keyUp, at: .zero, key: Self.code(for: event))
         }
 
         private func location(of event: NSEvent) -> CGPoint {
@@ -159,16 +189,25 @@ final class CanvasSceneInputView: MTKView {
             becomeFirstResponder()
             reportTouch(touches)
             report { $0.buttons |= 1 << 0 }
+            if pressed == 0, let touch = touches.first {
+                press(1 << 0, at: touch.location(in: self))
+            }
         }
 
         override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
             reportTouch(touches)
+            if let touch = touches.first {
+                deliver(.move, at: touch.location(in: self))
+            }
         }
 
         override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
             report {
                 $0.buttons &= ~(1 << 0)
                 $0.isPointerInside = false
+            }
+            if pressed != 0, let touch = touches.first {
+                release(1 << 0, at: touch.location(in: self))
             }
         }
 
@@ -180,12 +219,25 @@ final class CanvasSceneInputView: MTKView {
             let codes = presses.compactMap(Self.code)
             guard !codes.isEmpty else { return super.pressesBegan(presses, with: event) }
             report { input in codes.forEach { input.keysDown.insert($0) } }
+            codes.forEach { deliver(.keyDown, at: .zero, key: $0) }
         }
 
         override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
             let codes = presses.compactMap(Self.code)
             guard !codes.isEmpty else { return super.pressesEnded(presses, with: event) }
             report { input in codes.forEach { input.keysDown.remove($0) } }
+            codes.forEach { deliver(.keyUp, at: .zero, key: $0) }
+        }
+
+        @objc private func pinched(_ pinch: UIPinchGestureRecognizer) {
+            deliver(.zoom, at: pinch.location(in: self), factor: Float(pinch.scale))
+            pinch.scale = 1
+        }
+
+        @objc private func scrolled(_ scroll: UIPanGestureRecognizer) {
+            let moved = scroll.translation(in: self)
+            deliver(.scroll, at: scroll.location(in: self), dx: Float(moved.x), dy: Float(moved.y))
+            scroll.setTranslation(.zero, in: self)
         }
 
         private func reportTouch(_ touches: Set<UITouch>) {
@@ -227,10 +279,54 @@ final class CanvasSceneInputView: MTKView {
         }
     }
 
+    private func press(_ button: Int32, at point: CGPoint) {
+        pressed |= button
+        deliver(.down, at: point)
+    }
+
+    private func release(_ button: Int32, at point: CGPoint) {
+        pressed &= ~button
+        deliver(.up, at: point)
+    }
+
     private func report(_ change: (inout CanvasInput) -> Void) {
         CanvasRegistry.shared.reportInput(scene, change)
     }
+
+    private func deliver(
+        _ kind: CanvasInputEvent.Kind,
+        at point: CGPoint,
+        dx: Float = 0,
+        dy: Float = 0,
+        factor: Float = 1,
+        key: Int32 = 0
+    ) {
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        let event = CanvasInputEvent(
+            kind,
+            x: Float(point.x / bounds.width * 2 - 1),
+            y: Float(1 - point.y / bounds.height * 2),
+            buttons: pressed,
+            dx: dx,
+            dy: dy,
+            factor: factor,
+            key: key,
+            width: Float(bounds.width),
+            height: Float(bounds.height))
+        CanvasInputListeners.deliver(event, to: scene)
+    }
 }
+
+#if canImport(UIKit)
+    extension CanvasSceneInputView: UIGestureRecognizerDelegate {
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
+        ) -> Bool {
+            other.view === self
+        }
+    }
+#endif
 
 @MainActor
 final class CanvasSceneRenderer: NSObject, MTKViewDelegate {

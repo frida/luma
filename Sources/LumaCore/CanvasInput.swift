@@ -1,8 +1,7 @@
 import Foundation
 
 /// What the pointer and keyboard are doing over a scene, as the frontends
-/// report it. Read rather than delivered: whoever drives the scene asks when
-/// it suits them, so neither renderer has to reach into the image.
+/// report it.
 public struct CanvasInput: Sendable, Equatable {
     /// Where the pointer sits in clip space: -1 to 1, y upwards, so it lands
     /// in the same coordinates the vertices were given in.
@@ -36,5 +35,77 @@ public enum CanvasKey: Int32, Sendable {
     public static func code(for character: Character) -> Int32 {
         guard let scalar = character.lowercased().unicodeScalars.first else { return 0 }
         return Int32(scalar.value)
+    }
+}
+
+public struct CanvasInputEvent: Sendable, Equatable {
+    public enum Kind: String, Sendable {
+        case down
+        case move
+        case up
+        case scroll
+        case zoom
+        case keyDown
+        case keyUp
+        case leave
+    }
+
+    public var kind: Kind
+    public var x: Float
+    public var y: Float
+    public var buttons: Int32
+    public var dx: Float
+    public var dy: Float
+    public var factor: Float
+    public var key: Int32
+    public var width: Float
+    public var height: Float
+
+    public init(
+        _ kind: Kind,
+        x: Float = 0,
+        y: Float = 0,
+        buttons: Int32 = 0,
+        dx: Float = 0,
+        dy: Float = 0,
+        factor: Float = 1,
+        key: Int32 = 0,
+        width: Float = 0,
+        height: Float = 0
+    ) {
+        self.kind = kind
+        self.x = x
+        self.y = y
+        self.buttons = buttons
+        self.dx = dx
+        self.dy = dy
+        self.factor = factor
+        self.key = key
+        self.width = width
+        self.height = height
+    }
+
+    public var pharoJSON: [String: Any] {
+        [
+            "kind": kind.rawValue, "x": x, "y": y, "buttons": buttons, "dx": dx, "dy": dy, "factor": factor, "key": key,
+            "width": width, "height": height,
+        ]
+    }
+}
+
+@MainActor
+public enum CanvasInputListeners {
+    private static var handlers: [Int: (CanvasInputEvent) -> Void] = [:]
+
+    public static func deliver(_ event: CanvasInputEvent, to scene: Int) {
+        handlers[scene]?(event)
+    }
+
+    static func listen(to scene: Int, with handler: @escaping (CanvasInputEvent) -> Void) {
+        handlers[scene] = handler
+    }
+
+    static func stopListening(to scene: Int) {
+        handlers[scene] = nil
     }
 }

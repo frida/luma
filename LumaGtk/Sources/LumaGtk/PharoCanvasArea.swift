@@ -13,6 +13,9 @@ final class PharoCanvasArea {
     private let scene: Int
     let area: ShaderEffect
     private var themeToken: gulong = 0
+    private var pressed: Int32 = 0
+    private var pointer: (x: Double, y: Double) = (0, 0)
+    private var zoomed = 1.0
     private var built: [Int: Built] = [:]
 
     private struct Built {
@@ -113,19 +116,33 @@ final class PharoCanvasArea {
         }
     }
 
-    /// Reports what the pointer and keyboard are doing, for whoever drives the
-    /// scene to read. Nothing is delivered into the image: a snippet asks.
+    private func applyAppearance() {
+        let dark = ThemeWatcher.currentAppearance() == .dark
+        area.setScheme(dark ? 0 : 1)
+        if dark {
+            area.setClearColor(red: 0.075, green: 0.050, blue: 0.065)
+        } else {
+            area.setClearColor(red: 0.994, green: 0.991, blue: 0.986)
+        }
+        area.widget.queueRender()
+    }
+
     private func watchInput() {
         area.widget.canFocus = true
         area.widget.focusable = true
 
         let motion = EventControllerMotion()
         motion.onMotion { [weak self] _, x, y in
-            MainActor.assumeIsolated { self?.reportPointer(x: x, y: y, isInside: true) }
+            MainActor.assumeIsolated {
+                self?.reportPointer(x: x, y: y, isInside: true)
+                self?.deliver(.move, x: x, y: y)
+            }
         }
         motion.onLeave { [weak self] _ in
             MainActor.assumeIsolated {
-                self?.report { $0.isPointerInside = false }
+                guard let self else { return }
+                self.report { $0.isPointerInside = false }
+                self.deliver(.leave, x: self.pointer.x, y: self.pointer.y)
             }
         }
         area.widget.add(controller: motion)
@@ -137,26 +154,63 @@ final class PharoCanvasArea {
                 guard let self else { return }
                 _ = self.area.widget.grabFocus()
                 self.reportPointer(x: x, y: y, isInside: true)
-                self.report { $0.buttons |= Self.mask(for: UInt32(gesture.currentButton)) }
+                let button = Self.mask(for: UInt32(gesture.currentButton))
+                self.report { $0.buttons |= button }
+                self.pressed |= button
+                self.deliver(.down, x: x, y: y)
             }
         }
-        click.onReleased { [weak self] gesture, _, _, _ in
+        click.onReleased { [weak self] gesture, _, x, y in
             MainActor.assumeIsolated {
-                self?.report { $0.buttons &= ~Self.mask(for: UInt32(gesture.currentButton)) }
+                guard let self else { return }
+                let button = Self.mask(for: UInt32(gesture.currentButton))
+                self.report { $0.buttons &= ~button }
+                self.pressed &= ~button
+                self.deliver(.up, x: x, y: y)
             }
         }
         area.widget.add(controller: click)
 
+        let scroll = EventControllerScroll(flags: .bothAxes)
+        scroll.onScroll { [weak self] controller, dx, dy in
+            MainActor.assumeIsolated {
+                guard let self else { return false }
+                let step = controller.unit == .wheel ? 30.0 : 1.0
+                self.deliver(.scroll, x: self.pointer.x, y: self.pointer.y, dx: Float(-dx * step), dy: Float(-dy * step))
+                return true
+            }
+        }
+        area.widget.add(controller: scroll)
+
+        let pinch = GestureZoom()
+        pinch.onScaleChanged { [weak self] _, scale in
+            MainActor.assumeIsolated {
+                guard let self, scale > 0 else { return }
+                self.deliver(.zoom, x: self.pointer.x, y: self.pointer.y, factor: Float(scale / self.zoomed))
+                self.zoomed = scale
+            }
+        }
+        pinch.onEnd { [weak self] _, _ in
+            MainActor.assumeIsolated { self?.zoomed = 1 }
+        }
+        area.widget.add(controller: pinch)
+
         let keys = EventControllerKey()
         keys.onKeyPressed { [weak self] _, keyval, _, _ in
             MainActor.assumeIsolated {
-                self?.report { $0.keysDown.insert(Self.code(for: UInt32(keyval))) }
+                guard let self else { return }
+                let key = Self.code(for: UInt32(keyval))
+                self.report { $0.keysDown.insert(key) }
+                self.deliver(.keyDown, x: self.pointer.x, y: self.pointer.y, key: key)
             }
             return false
         }
         keys.onKeyReleased { [weak self] _, keyval, _, _ in
             MainActor.assumeIsolated {
-                self?.report { $0.keysDown.remove(Self.code(for: UInt32(keyval))) }
+                guard let self else { return }
+                let key = Self.code(for: UInt32(keyval))
+                self.report { $0.keysDown.remove(key) }
+                self.deliver(.keyUp, x: self.pointer.x, y: self.pointer.y, key: key)
             }
         }
         area.widget.add(controller: keys)
@@ -176,8 +230,31 @@ final class PharoCanvasArea {
         }
     }
 
-    private func reportScale() {
-        CanvasRegistry.shared.reportScale(scene, Float(area.widget.scaleFactor))
+    private func deliver(
+        _ kind: CanvasInputEvent.Kind,
+        x: Double,
+        y: Double,
+        dx: Float = 0,
+        dy: Float = 0,
+        factor: Float = 1,
+        key: Int32 = 0
+    ) {
+        let width = Double(area.widget.width)
+        let height = Double(area.widget.height)
+        guard width > 0, height > 0 else { return }
+        pointer = (x, y)
+        let event = CanvasInputEvent(
+            kind,
+            x: Float(x / width * 2 - 1),
+            y: Float(1 - y / height * 2),
+            buttons: pressed,
+            dx: dx,
+            dy: dy,
+            factor: factor,
+            key: key,
+            width: Float(width),
+            height: Float(height))
+        CanvasInputListeners.deliver(event, to: scene)
     }
 
     private func report(_ change: (inout CanvasInput) -> Void) {
@@ -209,14 +286,8 @@ final class PharoCanvasArea {
         }
     }
 
-    private func applyAppearance() {
-        let dark = ThemeWatcher.currentAppearance() == .dark
-        area.setScheme(dark ? 0 : 1)
-        if dark {
-            area.setClearColor(red: 0.075, green: 0.050, blue: 0.065)
-        } else {
-            area.setClearColor(red: 0.994, green: 0.991, blue: 0.986)
-        }
+    private func reportScale() {
+        CanvasRegistry.shared.reportScale(scene, Float(area.widget.scaleFactor))
     }
 }
 
