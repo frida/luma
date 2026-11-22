@@ -253,6 +253,9 @@ final class ShaderEffect {
             epoxy_glClear(GLbitfield(GL_COLOR_BUFFER_BIT))
         } else {
             epoxy_glEnable(GLenum(GL_DEPTH_TEST))
+            if epoxy_is_desktop_gl() {
+                epoxy_glEnable(GLenum(GL_PROGRAM_POINT_SIZE))
+            }
             // Premultiplied: what a drawable leaves transparent shows what it
             // was drawn over, rather than coming out black.
             epoxy_glEnable(GLenum(GL_BLEND))
