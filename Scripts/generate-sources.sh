@@ -15,9 +15,10 @@ fi
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 agent_out="$root/Sources/LumaCore/Generated/LumaAgent.swift"
+version_out="$root/Sources/LumaCore/Generated/LumaVersion.swift"
 pharo_image="$root/Sources/LumaCore/Resources/pharo-image/SwiftyPharo.image"
 
-if $require_existing && { [ ! -f "$agent_out" ] || [ ! -f "$pharo_image" ]; }; then
+if $require_existing && { [ ! -f "$agent_out" ] || [ ! -f "$version_out" ] || [ ! -f "$pharo_image" ]; }; then
     echo "error: generated sources are missing; run Scripts/generate-sources.sh and build again" >&2
     exit 1
 fi
@@ -28,6 +29,8 @@ local_package_flags=""
 for override in ${LUMA_LOCAL_PACKAGES:-}; do
     local_package_flags="$local_package_flags --local-package ${override%%=*} ${override#*=}"
 done
+
+swift run --package-path "$root" LumaVersionWriter "$root" "$version_out"
 
 swift run --package-path "$root" LumaBundleCompiler \
     --config       "$root/Agent/bundle.json" \

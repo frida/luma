@@ -120,23 +120,7 @@ let package = Package(
                 // The GL widget is Swift, so CLuma's headers reach epoxy.
                 .unsafeFlags(pkgConfigFlags(["epoxy"]).flatMap { ["-Xcc", $0] }),
             ] + adwaitaFeatureDefines(),
-            linkerSettings: lumaGtkLinkerSettings,
-            plugins: [
-                .plugin(name: "EmbedLumaVersion"),
-            ]
-        ),
-        .executableTarget(
-            name: "LumaVersionWriter",
-            path: "Sources/LumaVersionWriter",
-            swiftSettings: [
-                .swiftLanguageMode(.v6),
-            ]
-        ),
-        .plugin(
-            name: "EmbedLumaVersion",
-            capability: .buildTool(),
-            dependencies: ["LumaVersionWriter"],
-            path: "Plugins/EmbedLumaVersion"
+            linkerSettings: lumaGtkLinkerSettings
         ),
     ]
 )

@@ -35,6 +35,7 @@ let lumaBundlePluginTargets: [Target] = usesXcodePackageResolution ? [] : [
         capability: .buildTool(),
         dependencies: [
             .target(name: "LumaBundleCompiler"),
+            .target(name: "LumaVersionWriter"),
         ],
         path: "Plugins/LumaBundlePlugin"
     ),
@@ -199,6 +200,13 @@ let lumaTargets: [Target] = [
             .swiftLanguageMode(.v5),
         ]
     ),
+    .executableTarget(
+        name: "LumaVersionWriter",
+        path: "Sources/LumaVersionWriter",
+        swiftSettings: [
+            .swiftLanguageMode(.v6),
+        ]
+    ),
 
     .target(
         name: "CZstd",
@@ -289,6 +297,7 @@ let package = Package(
     products: [
         .library(name: "LumaCore", targets: ["LumaCore"]),
         .executable(name: "LumaBundleCompiler", targets: ["LumaBundleCompiler"]),
+        .executable(name: "LumaVersionWriter", targets: ["LumaVersionWriter"]),
         .executable(name: "LumaShaderCompiler", targets: ["LumaShaderCompiler"]),
         .executable(name: "LumaExampleCheck", targets: ["LumaExampleCheck"]),
         .executable(name: "LumaEditorCheck", targets: ["LumaEditorCheck"]),

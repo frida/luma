@@ -90,6 +90,20 @@ the way the image does, so work on the VM is picked up without
 pushing. That first build is long; `PLATFORM=linux tools/build-vm.sh`
 in SwiftyPharo is the same thing by hand.
 
+Luma's version comes from `Scripts/luma-version.sh` and nowhere else:
+a tagged commit is its tag, and anything after it is a `-dev.N` build
+of the release `VERSION` names, or of the next patch once that release
+is tagged. Bump `VERSION` when work toward the next minor or major
+starts, so that development builds already count as it. `LUMA_VERSION`
+overrides it, which is how CI hands every job the one its `version` job
+worked out. The `LumaVersionWriter` tool puts it in LumaCore as
+`LumaVersion.string` -- `Scripts/generate-sources.sh`, the LumaGtk
+Makefile and `LumaBundlePlugin` all run it -- and `make` passes it to
+Xcode as `MARKETING_VERSION`. The tool is Swift rather than a script
+because the plugin runs it on Windows too, where there is no shell to
+run the script with: there the plugin hands it `LUMA_VERSION`, and
+without one the build stops rather than guess.
+
 There are no tests or linting commands. Code formatting follows
 `.swift-format` (4-space indent, 140-char line length).
 

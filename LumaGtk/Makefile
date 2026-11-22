@@ -1,4 +1,4 @@
-.PHONY: build run clean bundle screenshots install uninstall render-tests soak
+.PHONY: build run clean bundle version screenshots install uninstall render-tests soak
 
 # Machine-local overrides, such as FRIDA_SWIFT_ROOT pointing at a
 # checkout of the bindings while a fix is being verified.
@@ -50,7 +50,9 @@ AGENT_SOURCES := \
 SHADER_BUNDLE := $(PROJECT_ROOT)/Sources/LumaCore/Generated/ShaderEffects.swift
 SHADER_SOURCES := $(wildcard $(PROJECT_ROOT)/Shaders/*.frag.glsl)
 
-bundle: $(AGENT_BUNDLE) $(TYPINGS_BUNDLE) $(SHADER_BUNDLE)
+VERSION_SOURCE := $(PROJECT_ROOT)/Sources/LumaCore/Generated/LumaVersion.swift
+
+bundle: $(AGENT_BUNDLE) $(TYPINGS_BUNDLE) $(SHADER_BUNDLE) version
 
 $(AGENT_BUNDLE): $(AGENT_SOURCES) $(PROJECT_ROOT)/Agent/bundle.json
 	$(IN_BUILD_ENVIRONMENT) swift run --package-path $(PROJECT_ROOT) LumaBundleCompiler \
@@ -64,6 +66,9 @@ $(SHADER_BUNDLE): $(SHADER_SOURCES) $(PROJECT_ROOT)/Sources/LumaShaderCompiler/m
 	$(IN_BUILD_ENVIRONMENT) swift run --package-path $(PROJECT_ROOT) LumaShaderCompiler \
 	    --shader-dir "$(PROJECT_ROOT)/Shaders" \
 	    --swift-out  "$@"
+
+version:
+	$(IN_BUILD_ENVIRONMENT) swift run --package-path $(PROJECT_ROOT) LumaVersionWriter $(PROJECT_ROOT) "$(VERSION_SOURCE)"
 
 soak: build
 	LUMA_SOAK=$(LUMA_SOAK) LUMA_SOAK_SECONDS=$(or $(SECONDS),180) \

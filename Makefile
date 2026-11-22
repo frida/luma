@@ -21,6 +21,8 @@ endif
 
 IN_BUILD_ENVIRONMENT := Scripts/in-build-environment.sh
 
+LUMA_VERSION := $(shell Scripts/luma-version.sh)
+
 SYSTEM_FRIDA_ENTITLEMENTS := $(BUILD_DIR)/Luma-macOS-system-frida.entitlements
 ifneq ($(USE_SYSTEM_FRIDA),)
 ENTITLEMENTS_OVERRIDE := CODE_SIGN_ENTITLEMENTS=$(SYSTEM_FRIDA_ENTITLEMENTS)
@@ -60,6 +62,7 @@ $(APP): $(SOURCES) $(SHADER_SOURCES) Luma.xcodeproj Package.swift
 		-configuration Release \
 		-derivedDataPath "$(DERIVED_DIR)" \
 		CONFIGURATION_BUILD_DIR="$(BUILD_DIR)" \
+		MARKETING_VERSION=$(LUMA_VERSION) \
 		$(ENTITLEMENTS_OVERRIDE) \
 		build
 	@touch $@

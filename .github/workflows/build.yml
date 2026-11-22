@@ -41,38 +41,7 @@ jobs:
         run: grep -E '^[A-Z0-9_]+=' .github/dependency-refs.env >> $GITHUB_OUTPUT
       - id: compute
         run: |
-          DESCRIPTION=$(git describe --tags --always --long --match='[0-9]*.[0-9]*.[0-9]*')
-          if [[ "$DESCRIPTION" != *-*-g* ]]; then
-            VERSION="0.0.0"
-          else
-            TAG="${DESCRIPTION%-*-g*}"
-            REST="${DESCRIPTION#${TAG}-}"
-            DISTANCE="${REST%-g*}"
-            if [[ "$TAG" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(-(.+))?$ ]]; then
-              MAJOR="${BASH_REMATCH[1]}"
-              MINOR="${BASH_REMATCH[2]}"
-              MICRO="${BASH_REMATCH[3]}"
-              SUFFIX="${BASH_REMATCH[5]}"
-              if [ -z "$SUFFIX" ]; then
-                if [ "$DISTANCE" -eq 0 ]; then
-                  VERSION="$MAJOR.$MINOR.$MICRO"
-                else
-                  VERSION="$MAJOR.$MINOR.$((MICRO + 1))-dev.$((DISTANCE - 1))"
-                fi
-              else
-                BASE="$MAJOR.$MINOR.$MICRO-$SUFFIX"
-                if [ "$DISTANCE" -eq 0 ]; then
-                  VERSION="$BASE"
-                else
-                  VERSION="$BASE-dev.$((DISTANCE - 1))"
-                fi
-              fi
-            else
-              echo "Unexpected tag format: $TAG" >&2
-              exit 1
-            fi
-          fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version=$(Scripts/luma-version.sh)" >> $GITHUB_OUTPUT
           echo "build=${{ github.run_number }}" >> $GITHUB_OUTPUT
 
   checks:

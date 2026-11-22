@@ -5,10 +5,12 @@ import PackagePlugin
 struct LumaBundlePlugin: BuildToolPlugin {
     func createBuildCommands(context: PluginContext, target: Target) throws -> [Command] {
         let compiler = try context.tool(named: "LumaBundleCompiler")
+        let versionWriter = try context.tool(named: "LumaVersionWriter")
         let packageRoot = context.package.directoryURL
         let workDirectory = context.pluginWorkDirectoryURL
         let swiftOutput = workDirectory.appending(path: "LumaAgent.swift")
         let typingsOutput = workDirectory.appending(path: "LumaTypings.swift")
+        let versionOutput = workDirectory.appending(path: "LumaVersion.swift")
         let stagingDirectory = workDirectory.appending(path: "AgentStaging", directoryHint: .isDirectory)
 
         let inputFiles = [
@@ -51,6 +53,34 @@ struct LumaBundlePlugin: BuildToolPlugin {
                 inputFiles: inputFiles,
                 outputFiles: [swiftOutput, typingsOutput]
             ),
+            .buildCommand(
+                displayName: "Embedding Luma version",
+                executable: versionWriter.url,
+                arguments: [packageRoot.path, versionOutput.path] + Self.statedVersion,
+                inputFiles: Self.versionInputs(in: packageRoot),
+                outputFiles: [versionOutput]
+            ),
         ]
     }
+
+    private static var statedVersion: [String] {
+        ProcessInfo.processInfo.environment["LUMA_VERSION"].map { [$0] } ?? []
+    }
+
+    private static func versionInputs(in packageRoot: URL) -> [URL] {
+        let candidates = ["VERSION", "Scripts/luma-version.sh"].map { packageRoot.appending(path: $0) }
+            + [gitDirectory(of: packageRoot).appending(path: "logs/HEAD")]
+        return candidates.filter { FileManager.default.fileExists(atPath: $0.path) }
+    }
+
+    private static func gitDirectory(of packageRoot: URL) -> URL {
+        let dotGit = packageRoot.appending(path: ".git")
+        guard let pointer = try? String(contentsOf: dotGit, encoding: .utf8), pointer.hasPrefix(gitDirectoryPointer) else {
+            return dotGit
+        }
+        let path = pointer.dropFirst(gitDirectoryPointer.count).trimmingCharacters(in: .whitespacesAndNewlines)
+        return URL(fileURLWithPath: path, relativeTo: packageRoot).standardizedFileURL
+    }
+
+    private static let gitDirectoryPointer = "gitdir: "
 }
