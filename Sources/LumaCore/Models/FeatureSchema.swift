@@ -174,10 +174,8 @@ extension FeatureSchema: Codable {
         case .object:
             self = .object(fields: try c.decode([ObjectField].self, forKey: .fields))
         case .array:
-            self = .array(
-                item: try c.decode(ArrayItemSchema.self, forKey: .item),
-                default: try c.decode([FeatureValue].self, forKey: .default)
-            )
+            let item = try c.decode(ArrayItemSchema.self, forKey: .item)
+            self = .array(item: item, default: try Self.decodeArrayDefault(from: c, of: item))
         }
     }
 
@@ -187,6 +185,23 @@ extension FeatureSchema: Codable {
             throw DecodingError.dataCorruptedError(forKey: .default, in: c, debugDescription: "'\(d)' is none of the choices")
         }
         return d
+    }
+
+    private static func decodeArrayDefault(from c: KeyedDecodingContainer<CodingKeys>, of item: ArrayItemSchema) throws -> [FeatureValue] {
+        var elements = try c.nestedUnkeyedContainer(forKey: .default)
+        var values: [FeatureValue] = []
+        while !elements.isAtEnd {
+            let element = try elements.superDecoder()
+            let value = try FeatureValue(from: element)
+            guard value.matches(schema: item) else {
+                throw DecodingError.dataCorrupted(.init(codingPath: element.codingPath, debugDescription: "does not match the item schema"))
+            }
+            if case .combo(let choices) = item, case .string(let id) = value, !choices.contains(where: { $0.id == id }) {
+                throw DecodingError.dataCorrupted(.init(codingPath: element.codingPath, debugDescription: "'\(id)' is none of the choices"))
+            }
+            values.append(value)
+        }
+        return values
     }
 
     public func encode(to encoder: Encoder) throws {
