@@ -635,7 +635,7 @@ public final class ProcessNode: Identifiable {
         } else {
             return nil
         }
-        let baseAddress: UInt64 = ((dict["hex"] as? [String: Any])?["base_address"] as? NSNumber)?.uint64Value ?? 0
+        let baseAddress = decodeAddress((dict["hex"] as? [String: Any])?["base_address"]) ?? 0
         return WidgetUpdate(
             instanceID: context.instanceID,
             widget: context.widget,
@@ -757,6 +757,19 @@ public final class ProcessNode: Identifiable {
         if let i = raw as? Int { return Double(i) }
         if let n = raw as? NSNumber { return n.doubleValue }
         return nil
+    }
+
+    private func decodeAddress(_ raw: Any?) -> UInt64? {
+        switch raw {
+        case let number as NSNumber:
+            return number.uint64Value
+        case let text as String where text.hasPrefix("0x"):
+            return UInt64(text.dropFirst(2), radix: 16)
+        case let text as String:
+            return UInt64(text)
+        default:
+            return nil
+        }
     }
 
     private func markInitialModulesReadyIfNeeded() {
