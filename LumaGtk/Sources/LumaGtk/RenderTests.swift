@@ -31,7 +31,7 @@ enum RenderTests {
     /// holding as it goes, so a leak shows as a line that keeps climbing.
     static func soak(_ snippetPath: String, seconds: Int) -> Int32 {
         guard let snippet = try? String(contentsOfFile: snippetPath, encoding: .utf8),
-              let scene = sceneFromTheImage(evaluating: snippet)
+              let scene = scenesFromTheImage(evaluating: [snippet]).first ?? nil
         else {
             say("soak: the image did not answer a scene")
             return 1
@@ -119,18 +119,26 @@ enum RenderTests {
     /// examples actually do, through the bindings, the bridge and the
     /// canvas view.
     private static func fromTheImage(writingTo directory: String) -> Int32 {
-        guard let scene = sceneFromTheImage() else {
-            say("pharo-lettering: NO SCENE, the image did not answer one")
-            return 1
+        let probes = [("pharo-lettering", letteringSnippet)] + projectionProbes
+        let scenes = scenesFromTheImage(evaluating: probes.map(\.1))
+        var failures: Int32 = 0
+        for ((name, _), scene) in zip(probes, scenes) {
+            guard let scene else {
+                say("\(name): NO SCENE, the image did not answer one")
+                failures += 1
+                continue
+            }
+            let canvas = PharoCanvasArea(scene: scene)
+            let coverage = draw(
+                canvas.area, showing: canvas.widget, width: 480, height: 160,
+                to: "\(directory)/\(name).png")
+            if coverage <= 0 {
+                failures += 1
+            }
+            let marked = String(format: "%.2f%%", coverage * 100)
+            say("\(name): \(coverage > 0 ? "drew" : "DREW NOTHING"), \(marked) marked")
         }
-
-        let canvas = PharoCanvasArea(scene: scene)
-        let coverage = draw(
-            canvas.area, showing: canvas.widget, width: 480, height: 160,
-            to: "\(directory)/pharo-lettering.png")
-        let marked = String(format: "%.2f%%", coverage * 100)
-        say("pharo-lettering: \(coverage > 0 ? "drew" : "DREW NOTHING"), \(marked) marked")
-        return coverage > 0 ? 0 : 1
+        return failures
     }
 
     private static func patternVisualizations(writingTo directory: String) -> Int32 {
@@ -237,12 +245,11 @@ enum RenderTests {
         iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAbElEQVR42hXNQRUAUQhCUaMYhShGeVGIQhSizB+XXA7ODDtouIHBQ4YOM8suWm5h8ZKl+0CskDiBsIioHhx76LiDw0eO3oN/4FVf+J8h0PduzBqZ8x/bxNQPwgaFy192SGgelC0q13/CJaXlA8Z7WAFXOTbyAAAAAElFTkSuQmCC
         """
 
-    /// Asks the image for a lettered scene and answers which one, letting the
-    /// loop run while it boots -- it answers on the same thread the drawing
-    /// happens on.
-    private static func sceneFromTheImage(evaluating snippet: String = letteringSnippet) -> Int? {
+    /// Asks the image, letting the loop run while it boots -- it answers on
+    /// the same thread the drawing happens on.
+    private static func scenesFromTheImage(evaluating snippets: [String]) -> [Int?] {
         final class Answer {
-            var scene: Int?
+            var scenes: [Int?] = []
             var settled = false
         }
 
@@ -252,8 +259,10 @@ enum RenderTests {
             PharoRuntime.bootBundledImage()
             try? await PharoRuntime.shared.runningState()
             try? await PharoLumaBindings.install(into: PharoRuntime.shared)
-            let handle = try? await PharoRuntime.shared.evaluate(snippet)
-            answer.scene = handle.flatMap { Int($0.printString.filter(\.isNumber)) }
+            for snippet in snippets {
+                let handle = try? await PharoRuntime.shared.evaluate(snippet)
+                answer.scenes.append(handle.flatMap { Int($0.printString.filter(\.isNumber)) })
+            }
         }
 
         // Booting an image takes a while, and none of it happens unless the
@@ -261,7 +270,7 @@ enum RenderTests {
         for _ in 0..<60 where !answer.settled {
             settle(for: 500)
         }
-        return answer.scene
+        return answer.scenes
     }
 
     private static let letteringSnippet = """
@@ -271,6 +280,31 @@ enum RenderTests {
         sign pad: #(20 18) tint: #(0.2 0.95 0.75); show: 'GTK'.
         canvas
         """
+
+    private static let projectionProbes = [
+        ("pharo-perspective-near", projectionSnippet("perspective: 60 aspect: 3 near: 0.1 far: 100", half: 0.04, z: -0.15)),
+        ("pharo-perspective-far", projectionSnippet("perspective: 60 aspect: 3 near: 0.1 far: 100", half: 20, z: -90)),
+        ("pharo-orthographic-positive-z", projectionSnippet("orthographicWidth: 6 height: 2", half: 0.5, z: 0.9)),
+        ("pharo-orthographic-negative-z", projectionSnippet("orthographicWidth: 6 height: 2", half: 0.5, z: -0.9)),
+    ]
+
+    private static func projectionSnippet(_ projection: String, half: Double, z: Double) -> String {
+        let corners = [(-1, -1), (1, -1), (1, 1), (-1, -1), (1, 1), (-1, 1)]
+            .map { "\(Double($0.0) * half) \(Double($0.1) * half) \(z)" }
+            .joined(separator: "  ")
+        return """
+            | canvas square |
+            canvas := LumaCanvas new.
+            square := canvas addDrawable.
+            square
+                attribute: 'p' components: 3;
+                vertexSource: 'void main() { gl_Position = u_mvp * vec4(p, 1.0); }'
+                fragmentSource: 'void main() { frag_color = vec4(0.9, 0.35, 0.1, 1.0); }';
+                \(projection);
+                mesh: #(\(corners)) primitive: #triangles.
+            canvas
+            """
+    }
 
     /// A scene of the kind the image builds: lettering over the atlas the
     /// host rasterized, which is what the examples lean on.

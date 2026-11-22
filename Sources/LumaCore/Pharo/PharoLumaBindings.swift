@@ -712,8 +712,8 @@ public enum PharoLumaBindings {
             ^ self transform: {
                 2.0 / aWidth. 0. 0. 0.
                 0. 2.0 / aHeight. 0. 0.
-                0. 0. -1.0. 0.
-                0. 0. 0. 1.0 }'.
+                0. 0. -0.5. 0.
+                0. 0. 0.5. 1.0 }'.
         drawable compile: 'perspective: aFieldOfView aspect: anAspect near: aNear far: aFar
             | focal range |
             focal := 1.0 / (aFieldOfView / 2.0) degreesToRadians tan.
@@ -721,8 +721,8 @@ public enum PharoLumaBindings {
             ^ self transform: {
                 focal / anAspect. 0. 0. 0.
                 0. focal. 0. 0.
-                0. 0. (aFar + aNear) / range. -1.0.
-                0. 0. 2.0 * aFar * aNear / range. 0 }'.
+                0. 0. aFar / range. -1.0.
+                0. 0. aFar * aNear / range. 0 }'.
         drawable compile: 'hide
             ^ LumaHost invoke: ''luma_drawable_set_visible''
                 parameters: { TFBasicType sint. TFBasicType sint. TFBasicType sint }

@@ -13,11 +13,11 @@ make check-editor    # Ask the compiler's language server what it completes
 make clean           # Remove build artifacts
 ```
 
-`make -C LumaGtk render-tests` draws the shader effects and a lettered
-scene offscreen, writes a PNG of each, and fails on a case that drew
-nothing -- what has gone wrong in this drawing has been blank frames
-and mirrored glyphs, which a compiler cannot see and a PNG shows at a
-glance.
+`make -C LumaGtk render-tests` draws the shader effects, a lettered
+scene and the projection helpers near and far offscreen, writes a PNG
+of each, and fails on a case that drew nothing -- what has gone wrong
+in this drawing has been blank frames and mirrored glyphs, which a
+compiler cannot see and a PNG shows at a glance.
 
 `LUMA_SOAK=<snippet> make -C LumaGtk soak` plays a snippet in a canvas
 and reports what the process is holding as it goes -- the game leaks
@@ -506,7 +506,9 @@ make the lettering soft.
 
 Keep `gl_Position.z` within 0..1. OpenGL's clip space runs -1..1 and
 Metal's runs 0..1, so a negative depth draws on GTK and is clipped
-away on macOS -- which no compiler will catch either.
+away on macOS -- which no compiler will catch either. `LumaDrawable`'s
+`perspective:aspect:near:far:` and `orthographicWidth:height:` map
+depth onto 0..1 for that reason, with +z toward the viewer.
 
 A Metal view that draws by itself is an `OnScreenMTKView` and stops
 while its window is not visible. A covered, hidden, minimized or
