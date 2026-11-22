@@ -1596,7 +1596,7 @@ public final class ProjectStore: Sendable {
         }
 
         try db.create(table: "project_collaboration_state") { t in
-            t.primaryKey("id", .blob).notNull()
+            t.primaryKey("id", .integer, onConflict: .replace).check { $0 == 1 }
             t.column("lab_id", .text)
         }
 
@@ -1650,7 +1650,7 @@ public final class ProjectStore: Sendable {
         }
 
         try db.create(table: "project_ui_state") { t in
-            t.primaryKey("id", .blob).notNull()
+            t.primaryKey("id", .integer, onConflict: .replace).check { $0 == 1 }
             t.column("selected_item_json", .text)
             t.column("collapsed_sections", .text).notNull().defaults(to: "[]")
             t.column("expanded_pattern_sources", .text).notNull().defaults(to: "[]")
@@ -1663,7 +1663,7 @@ public final class ProjectStore: Sendable {
         }
 
         try db.create(table: "target_picker_state") { t in
-            t.primaryKey("id", .blob).notNull()
+            t.primaryKey("id", .integer, onConflict: .replace).check { $0 == 1 }
             t.column("last_selected_device_id", .text)
             t.column("last_mode_raw", .text)
             t.column("last_spawn_submode_raw", .text)

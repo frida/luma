@@ -1,10 +1,10 @@
 import Foundation
 import GRDB
 
-public struct TargetPickerState: Codable, Identifiable, Sendable, FetchableRecord, PersistableRecord {
+public struct TargetPickerState: Codable, Sendable, FetchableRecord, PersistableRecord {
     public static let databaseTableName = "target_picker_state"
 
-    public var id: UUID
+    private var id = 1
     public var lastSelectedDeviceID: String?
     public var lastModeRaw: String?
     public var lastSpawnSubmodeRaw: String?
@@ -23,7 +23,6 @@ public struct TargetPickerState: Codable, Identifiable, Sendable, FetchableRecor
     }
 
     public init(
-        id: UUID = UUID(),
         lastSelectedDeviceID: String? = nil,
         lastModeRaw: String? = nil,
         lastSpawnSubmodeRaw: String? = nil,
@@ -31,7 +30,6 @@ public struct TargetPickerState: Codable, Identifiable, Sendable, FetchableRecor
         lastSpawnProgramPath: String? = nil,
         lastSelectedProcessName: String? = nil
     ) {
-        self.id = id
         self.lastSelectedDeviceID = lastSelectedDeviceID
         self.lastModeRaw = lastModeRaw
         self.lastSpawnSubmodeRaw = lastSpawnSubmodeRaw

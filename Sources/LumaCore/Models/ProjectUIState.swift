@@ -1,10 +1,10 @@
 import Foundation
 import GRDB
 
-public struct ProjectUIState: Codable, Equatable, Identifiable, Sendable, FetchableRecord, PersistableRecord {
+public struct ProjectUIState: Codable, Equatable, Sendable, FetchableRecord, PersistableRecord {
     public static let databaseTableName = "project_ui_state"
 
-    public var id: UUID
+    private var id = 1
     public var selectedItemJSON: String?
     public var collapsedSections: Set<SidebarSection>
     public var expandedPatternSources: Set<String>
@@ -29,7 +29,6 @@ public struct ProjectUIState: Codable, Equatable, Identifiable, Sendable, Fetcha
     }
 
     public init(
-        id: UUID = UUID(),
         selectedItemJSON: String? = nil,
         collapsedSections: Set<SidebarSection> = [],
         expandedPatternSources: Set<String> = [],
@@ -40,7 +39,6 @@ public struct ProjectUIState: Codable, Equatable, Identifiable, Sendable, Fetcha
         pharoPageWidth: Double? = nil,
         pharoPageMaximized: Bool = false
     ) {
-        self.id = id
         self.selectedItemJSON = selectedItemJSON
         self.collapsedSections = collapsedSections
         self.expandedPatternSources = expandedPatternSources

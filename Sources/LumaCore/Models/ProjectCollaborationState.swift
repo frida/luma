@@ -1,10 +1,10 @@
 import Foundation
 import GRDB
 
-public struct ProjectCollaborationState: Codable, Identifiable, Sendable, FetchableRecord, PersistableRecord {
+public struct ProjectCollaborationState: Codable, Sendable, FetchableRecord, PersistableRecord {
     public static let databaseTableName = "project_collaboration_state"
 
-    public var id: UUID
+    private var id = 1
     public var labID: String?
 
     enum CodingKeys: String, CodingKey {
@@ -12,8 +12,7 @@ public struct ProjectCollaborationState: Codable, Identifiable, Sendable, Fetcha
         case labID = "lab_id"
     }
 
-    public init(id: UUID = UUID(), labID: String? = nil) {
-        self.id = id
+    public init(labID: String? = nil) {
         self.labID = labID
     }
 }
