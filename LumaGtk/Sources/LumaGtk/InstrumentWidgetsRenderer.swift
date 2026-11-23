@@ -106,8 +106,8 @@ private final class WidgetCanvas {
     private var counterView: CounterView?
     private var histogramView: HistogramView?
     private var graphView: GraphView?
-    private var listView: ListView?
-    private var tableView: TableView?
+    private var listView: WidgetRowList<ListItemPresenter>?
+    private var tableView: WidgetRowList<TableRowPresenter>?
     private var hexView: HexWidgetView?
     private var consoleWidget: ConsoleWidget?
     private var viewWidget: InstrumentViewWidget?
@@ -164,11 +164,16 @@ private final class WidgetCanvas {
             graphView = view
             column.append(child: view.widget)
         case .list(let cfg):
-            let view = ListView(actions: cfg.actions, initialItems: snapshot.listItems, onAction: onAction)
+            let view = WidgetRowList(kind: definition.kind, initial: snapshot, rows: \.listItems, header: nil, emptyText: "No items.") {
+                ListItemPresenter(actions: cfg.actions, onAction: onAction)
+            }
             listView = view
             column.append(child: view.widget)
         case .table(let cfg):
-            let view = TableView(columns: cfg.columns, actions: cfg.actions, initialRows: snapshot.tableRows, onAction: onAction)
+            let header = TableRowPresenter.makeHeader(columns: cfg.columns)
+            let view = WidgetRowList(kind: definition.kind, initial: snapshot, rows: \.tableRows, header: header, emptyText: "No rows.") {
+                TableRowPresenter(columns: cfg.columns, actions: cfg.actions, onAction: onAction)
+            }
             tableView = view
             column.append(child: view.widget)
         case .hex:
@@ -207,14 +212,10 @@ private final class WidgetCanvas {
             histogramView?.increment(label: label, by: by)
         case .graphPoint(let point):
             graphView?.append(point: point)
-        case .listUpsert(let item):
-            listView?.upsert(item: item)
-        case .listRemove(let id):
-            listView?.remove(itemID: id)
-        case .tableUpsert(let row):
-            tableView?.upsert(row: row)
-        case .tableRemove(let id):
-            tableView?.remove(rowID: id)
+        case .listUpsert, .listRemove:
+            listView?.apply(update.kind)
+        case .tableUpsert, .tableRemove:
+            tableView?.apply(update.kind)
         case .hexSet(let state):
             hexView?.set(state: state)
         case .consoleAppend(let entry):
@@ -225,16 +226,16 @@ private final class WidgetCanvas {
             counterView?.clear()
             histogramView?.clear()
             graphView?.clear()
-            listView?.clear()
-            tableView?.clear()
+            listView?.apply(update.kind)
+            tableView?.apply(update.kind)
             hexView?.clear()
             consoleWidget?.clear()
         case .snapshot(let snapshot):
             counterView?.replace(value: snapshot.counter)
             histogramView?.replace(buckets: snapshot.histogram)
             graphView?.replace(series: snapshot.graphSeries)
-            listView?.replace(items: snapshot.listItems)
-            tableView?.replace(rows: snapshot.tableRows)
+            listView?.apply(update.kind)
+            tableView?.apply(update.kind)
             hexView?.replace(state: snapshot.hex)
             consoleWidget?.replace(entries: snapshot.consoleEntries)
         }
@@ -560,142 +561,216 @@ private final class GraphView {
 }
 
 @MainActor
-private final class ListView {
-    let widget: Box
-    private let listBox: Gtk.ListBox
-    private let actions: [InstrumentWidget.Action]
-    private let onAction: (_ action: String, _ item: String?) -> Void
-    private let emptyLabel: Label
-    private var rowsByItemID: [String: ListBoxRow] = [:]
-    private var orderedItemIDs: [String] = []
+private protocol WidgetRowPresenter: AnyObject {
+    associatedtype Row: Identifiable & Equatable
 
-    init(actions: [InstrumentWidget.Action], initialItems: [WidgetListItem], onAction: @escaping (_ action: String, _ item: String?) -> Void) {
-        self.actions = actions
-        self.onAction = onAction
+    var widget: Box { get }
+
+    func show(_ row: Row)
+}
+
+@MainActor
+private final class WidgetRowList<Presenter: WidgetRowPresenter> {
+    let widget: Box
+    private let kind: InstrumentWidget.Kind
+    private let rowsOfState: (WidgetState) -> [Presenter.Row]
+    private let makePresenter: () -> Presenter
+    private let model: StringList
+    private let scroller: ScrolledWindow
+    private let emptyLabel: Label
+    private var state: WidgetState
+    private var shownRows: [Presenter.Row] = []
+    private var presenters: [UnsafeMutableRawPointer: Presenter] = [:]
+    private var refresh = Refresh.idle
+
+    private enum Refresh {
+        case idle
+        case scheduled
+    }
+
+    private static var maxHeight: Int { 340 }
+
+    init(
+        kind: InstrumentWidget.Kind,
+        initial: WidgetState,
+        rows rowsOfState: @escaping (WidgetState) -> [Presenter.Row],
+        header: Widget?,
+        emptyText: String,
+        makePresenter: @escaping () -> Presenter
+    ) {
+        self.kind = kind
+        self.rowsOfState = rowsOfState
+        self.makePresenter = makePresenter
+        state = initial
 
         widget = Box(orientation: .vertical, spacing: 0)
-        listBox = Gtk.ListBox()
-        listBox.selectionMode = .none
-        listBox.hexpand = true
-        listBox.add(cssClass: "boxed-list")
+        widget.add(cssClass: "boxed-list")
+        if let header {
+            widget.append(child: header)
+        }
 
-        emptyLabel = Label(str: "No items.")
+        model = StringList(strings: nil)
+        let selection = NoSelection(model: model)
+        let factory = SignalListItemFactory()
+        let list = Gtk.ListView(model: selection, factory: factory)
+        _ = g_object_ref(model.ptr)
+        _ = g_object_ref(selection.ptr)
+
+        scroller = ScrolledWindow()
+        scroller.setPolicy(hscrollbarPolicy: .never, vscrollbarPolicy: .automatic)
+        scroller.propagateNaturalHeight = true
+        scroller.maxContentHeight = Self.maxHeight
+        scroller.set(child: list)
+        widget.append(child: scroller)
+
+        emptyLabel = Label(str: emptyText)
         emptyLabel.add(cssClass: "dim-label")
         emptyLabel.halign = .start
-
+        emptyLabel.marginStart = 8
+        emptyLabel.marginEnd = 8
+        emptyLabel.marginTop = 6
+        emptyLabel.marginBottom = 6
         widget.append(child: emptyLabel)
-        widget.append(child: listBox)
-        listBox.visible = false
 
-        for item in initialItems {
-            upsert(item: item)
+        configure(factory)
+        refreshRows()
+    }
+
+    func apply(_ update: WidgetUpdate.Kind) {
+        state.apply(update)
+        state.cap(to: kind)
+        guard refresh == .idle else { return }
+        refresh = .scheduled
+        Task { @MainActor [weak self] in
+            self?.refreshRows()
         }
     }
 
-    func upsert(item: WidgetListItem) {
-        if let existing = rowsByItemID[item.id] {
-            existing.set(child: makeRowContent(item: item))
-        } else {
-            let row = ListBoxRow()
-            row.set(child: makeRowContent(item: item))
-            rowsByItemID[item.id] = row
-            orderedItemIDs.append(item.id)
-            listBox.append(child: row)
+    private func configure(_ factory: SignalListItemFactory) {
+        factory.onSetup { [weak self] _, object in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let presenter = self.makePresenter()
+                self.presenters[presenter.widget.ptr] = presenter
+                ListItemRef(raw: object.ptr).set(child: presenter.widget)
+            }
         }
-        refreshVisibility()
-    }
-
-    func remove(itemID: String) {
-        guard let row = rowsByItemID.removeValue(forKey: itemID) else { return }
-        orderedItemIDs.removeAll { $0 == itemID }
-        listBox.remove(child: row)
-        refreshVisibility()
-    }
-
-    func clear() {
-        for id in orderedItemIDs {
-            if let row = rowsByItemID[id] { listBox.remove(child: row) }
+        factory.onBind { [weak self] _, object in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let item = ListItemRef(raw: object.ptr)
+                guard let child = item.child, let presenter = self.presenters[child.ptr] else { return }
+                presenter.show(self.shownRows[item.position])
+            }
         }
-        rowsByItemID.removeAll()
-        orderedItemIDs.removeAll()
-        refreshVisibility()
-    }
-
-    func replace(items: [WidgetListItem]) {
-        clear()
-        for item in items {
-            upsert(item: item)
+        factory.onTeardown { [weak self] _, object in
+            MainActor.assumeIsolated {
+                guard let self, let child = ListItemRef(raw: object.ptr).child else { return }
+                self.presenters.removeValue(forKey: child.ptr)
+            }
         }
     }
 
-    private func refreshVisibility() {
-        let isEmpty = orderedItemIDs.isEmpty
-        listBox.visible = !isEmpty
-        emptyLabel.visible = isEmpty
+    private func refreshRows() {
+        refresh = .idle
+        let rows = rowsOfState(state)
+
+        let dropped = leadingRowsDropped(before: rows)
+        if dropped > 0 {
+            shownRows.removeFirst(dropped)
+            splice(at: 0, removing: dropped, adding: 0)
+        }
+
+        let kept = zip(shownRows, rows).prefix { $0.0 == $0.1 }.count
+        let keptAtEnd = zip(shownRows[kept...].reversed(), rows[kept...].reversed()).prefix { $0.0 == $0.1 }.count
+        let removed = shownRows.count - kept - keptAtEnd
+        shownRows = rows
+        splice(at: kept, removing: removed, adding: rows.count - kept - keptAtEnd)
+
+        scroller.visible = !rows.isEmpty
+        emptyLabel.visible = rows.isEmpty
     }
 
-    private func makeRowContent(item: WidgetListItem) -> Box {
-        let row = Box(orientation: .horizontal, spacing: 8)
-        row.marginStart = 8
-        row.marginEnd = 8
-        row.marginTop = 6
-        row.marginBottom = 6
+    private func leadingRowsDropped(before rows: [Presenter.Row]) -> Int {
+        guard let first = rows.first, shownRows.first?.id != first.id else { return 0 }
+        return shownRows.firstIndex { $0.id == first.id } ?? 0
+    }
+
+    private func splice(at position: Int, removing removals: Int, adding additions: Int) {
+        guard removals > 0 || additions > 0 else { return }
+        "".withCString { blank in
+            let blanks = [UnsafePointer<CChar>?](repeating: blank, count: additions) + [nil]
+            blanks.withUnsafeBufferPointer {
+                model.splice(position: position, nRemovals: removals, additions: $0.baseAddress)
+            }
+        }
+    }
+}
+
+@MainActor
+private final class ListItemPresenter: WidgetRowPresenter {
+    let widget: Box
+    private let title: Label
+    private let subtitle: Label
+    private let accessory: Label
+    private var itemID = ""
+
+    init(actions: [InstrumentWidget.Action], onAction: @escaping (_ action: String, _ item: String?) -> Void) {
+        widget = Box(orientation: .horizontal, spacing: 8)
+        widget.marginStart = 8
+        widget.marginEnd = 8
+        widget.marginTop = 6
+        widget.marginBottom = 6
 
         let column = Box(orientation: .vertical, spacing: 0)
         column.hexpand = true
-        let title = Label(str: item.title)
+        title = Label(str: "")
         title.halign = .start
         column.append(child: title)
-        if let subtitle = item.subtitle {
-            let sub = Label(str: subtitle)
-            sub.add(cssClass: "caption")
-            sub.add(cssClass: "dim-label")
-            sub.halign = .start
-            column.append(child: sub)
-        }
-        row.append(child: column)
+        subtitle = Label(str: "")
+        subtitle.add(cssClass: "caption")
+        subtitle.add(cssClass: "dim-label")
+        subtitle.halign = .start
+        column.append(child: subtitle)
+        widget.append(child: column)
 
-        if let accessory = item.accessory {
-            let acc = Label(str: accessory)
-            acc.add(cssClass: "caption")
-            acc.add(cssClass: "dim-label")
-            row.append(child: acc)
-        }
+        accessory = Label(str: "")
+        accessory.add(cssClass: "caption")
+        accessory.add(cssClass: "dim-label")
+        widget.append(child: accessory)
 
-        let itemID = item.id
         for action in actions {
             let button = Button(label: action.name)
             button.add(cssClass: "flat")
             let actionID = action.id
             button.onClicked { [weak self] _ in
-                MainActor.assumeIsolated { self?.onAction(actionID, itemID) }
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    onAction(actionID, self.itemID)
+                }
             }
-            row.append(child: button)
+            widget.append(child: button)
         }
+    }
 
-        return row
+    func show(_ item: WidgetListItem) {
+        itemID = item.id
+        title.setText(str: item.title)
+        subtitle.setText(str: item.subtitle ?? "")
+        subtitle.visible = item.subtitle != nil
+        accessory.setText(str: item.accessory ?? "")
+        accessory.visible = item.accessory != nil
     }
 }
 
 @MainActor
-private final class TableView {
+private final class TableRowPresenter: WidgetRowPresenter {
     let widget: Box
     private let columns: [InstrumentWidget.Column]
-    private let actions: [InstrumentWidget.Action]
-    private let onAction: (_ action: String, _ item: String?) -> Void
-    private let body: Box
-    private var rowsByID: [String: Box] = [:]
-    private var orderedIDs: [String] = []
-    private let emptyLabel: Label
+    private let cells: [Label]
+    private var rowID = ""
 
-    init(columns: [InstrumentWidget.Column], actions: [InstrumentWidget.Action], initialRows: [WidgetTableRow], onAction: @escaping (_ action: String, _ item: String?) -> Void) {
-        self.columns = columns
-        self.actions = actions
-        self.onAction = onAction
-
-        widget = Box(orientation: .vertical, spacing: 0)
-        widget.add(cssClass: "boxed-list")
-
+    static func makeHeader(columns: [InstrumentWidget.Column]) -> Box {
         let header = Box(orientation: .horizontal, spacing: 8)
         header.marginStart = 8
         header.marginEnd = 8
@@ -709,94 +784,51 @@ private final class TableView {
             label.add(cssClass: "dim-label")
             header.append(child: label)
         }
-        widget.append(child: header)
-
-        body = Box(orientation: .vertical, spacing: 0)
-        widget.append(child: body)
-
-        emptyLabel = Label(str: "No rows.")
-        emptyLabel.add(cssClass: "dim-label")
-        emptyLabel.halign = .start
-        emptyLabel.marginStart = 8
-        emptyLabel.marginEnd = 8
-        emptyLabel.marginTop = 6
-        emptyLabel.marginBottom = 6
-        widget.append(child: emptyLabel)
-
-        for row in initialRows {
-            upsert(row: row)
-        }
-        refreshVisibility()
+        return header
     }
 
-    func upsert(row: WidgetTableRow) {
-        if let existing = rowsByID[row.id] {
-            body.remove(child: existing)
-            let replacement = makeRow(row)
-            rowsByID[row.id] = replacement
-            body.append(child: replacement)
-        } else {
-            let widget = makeRow(row)
-            rowsByID[row.id] = widget
-            orderedIDs.append(row.id)
-            body.append(child: widget)
-        }
-        refreshVisibility()
-    }
+    init(
+        columns: [InstrumentWidget.Column],
+        actions: [InstrumentWidget.Action],
+        onAction: @escaping (_ action: String, _ item: String?) -> Void
+    ) {
+        self.columns = columns
+        widget = Box(orientation: .horizontal, spacing: 8)
+        widget.marginStart = 8
+        widget.marginEnd = 8
+        widget.marginTop = 4
+        widget.marginBottom = 4
 
-    func remove(rowID: String) {
-        guard let row = rowsByID.removeValue(forKey: rowID) else { return }
-        orderedIDs.removeAll { $0 == rowID }
-        body.remove(child: row)
-        refreshVisibility()
-    }
-
-    func clear() {
-        for id in orderedIDs {
-            if let row = rowsByID[id] { body.remove(child: row) }
-        }
-        rowsByID.removeAll()
-        orderedIDs.removeAll()
-        refreshVisibility()
-    }
-
-    func replace(rows: [WidgetTableRow]) {
-        clear()
-        for row in rows {
-            upsert(row: row)
-        }
-    }
-
-    private func refreshVisibility() {
-        let isEmpty = orderedIDs.isEmpty
-        body.visible = !isEmpty
-        emptyLabel.visible = isEmpty
-    }
-
-    private func makeRow(_ row: WidgetTableRow) -> Box {
-        let container = Box(orientation: .horizontal, spacing: 8)
-        container.marginStart = 8
-        container.marginEnd = 8
-        container.marginTop = 4
-        container.marginBottom = 4
-        for column in columns {
-            let label = Label(str: row.cells[column.id] ?? "")
+        cells = columns.map { column in
+            let label = Label(str: "")
             label.hexpand = true
             label.halign = column.alignment == .leading ? .start : .end
             label.ellipsize = EllipsizeMode.end
-            container.append(child: label)
+            return label
         }
-        let rowID = row.id
+        for cell in cells {
+            widget.append(child: cell)
+        }
+
         for action in actions {
             let button = Button(label: action.name)
             button.add(cssClass: "flat")
             let actionID = action.id
             button.onClicked { [weak self] _ in
-                MainActor.assumeIsolated { self?.onAction(actionID, rowID) }
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    onAction(actionID, self.rowID)
+                }
             }
-            container.append(child: button)
+            widget.append(child: button)
         }
-        return container
+    }
+
+    func show(_ row: WidgetTableRow) {
+        rowID = row.id
+        for (cell, column) in zip(cells, columns) {
+            cell.setText(str: row.cells[column.id] ?? "")
+        }
     }
 }
 
