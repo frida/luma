@@ -11,6 +11,9 @@ struct MainWindowView: View {
     private let fileURL: URL?
 
     @State private var engineResult: Result<Engine, any Swift.Error>
+    #if canImport(AppKit)
+        @State private var documentEdits = DocumentEdits()
+    #endif
     @State private var picker = TargetPicker()
     @State private var isShowingHostingBlockedAlert = false
 
@@ -40,9 +43,12 @@ struct MainWindowView: View {
                 picker: picker,
                 projectURL: projectURL,
                 restorationPath: restorationPath,
-                markDocumentEdited: { document.unsavedChangeCount &+= 1 },
+                markDocumentEdited: markDocumentEdited,
                 isShowingHostingBlockedAlert: $isShowingHostingBlockedAlert
             )
+            #if canImport(AppKit)
+                .background(DocumentWindowReader(edits: documentEdits))
+            #endif
         case .failure(let error):
             VStack(spacing: 12) {
                 Text("Failed to open project")
@@ -59,6 +65,12 @@ struct MainWindowView: View {
 
     private var restorationPath: String {
         (fileURL ?? projectURL).path
+    }
+
+    private func markDocumentEdited() {
+        #if canImport(AppKit)
+            documentEdits.markEdited()
+        #endif
     }
 }
 

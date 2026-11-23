@@ -9,11 +9,6 @@ struct LumaProject: FileDocument {
 
     var workingProjectURL: URL
 
-    /// Bumped whenever the working-copy database commits. The value is
-    /// never read back; mutating it is what tells SwiftUI the document is
-    /// edited so autosave-in-place writes a fresh snapshot.
-    var unsavedChangeCount = 0
-
     init() {
         let doc = (try? LumaDocumentLoader.makeUntitled(in: LumaAppPaths.shared.untitledDirectory))
             ?? LumaDocument(storage: .untitled(
