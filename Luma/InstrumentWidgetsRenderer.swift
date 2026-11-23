@@ -316,6 +316,7 @@ private struct WidgetCanvas: View {
         for await update in engine.widgetUpdates
         where update.instanceID == instanceID && update.widget == widgetID {
             state.apply(update.kind)
+            state.cap(to: widget.kind)
         }
     }
 }
