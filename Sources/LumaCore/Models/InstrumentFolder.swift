@@ -13,7 +13,7 @@ public struct InstrumentFolder: Sendable {
 
     static let manifestFileName = "package.json"
     private static let lockFileName = "package-lock.json"
-    private static let dependenciesDirectoryName = "node_modules"
+    static let dependenciesDirectoryName = "node_modules"
     private static let typingsFileName = "luma.d.ts"
     private static let defaultIconFileName = "icon.png"
 
