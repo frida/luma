@@ -642,7 +642,7 @@ private final class WidgetRowList<Presenter: WidgetRowPresenter> {
         state.cap(to: kind)
         guard refresh == .idle else { return }
         refresh = .scheduled
-        Task { @MainActor [weak self] in
+        NextFrame.run(on: widget) { [weak self] in
             self?.refreshRows()
         }
     }
@@ -705,6 +705,26 @@ private final class WidgetRowList<Presenter: WidgetRowPresenter> {
                 model.splice(position: position, nRemovals: removals, additions: $0.baseAddress)
             }
         }
+    }
+}
+
+@MainActor
+private final class NextFrame {
+    private let work: () -> Void
+
+    private init(_ work: @escaping () -> Void) {
+        self.work = work
+    }
+
+    static func run(on widget: Widget, _ work: @escaping () -> Void) {
+        gtk_widget_add_tick_callback(
+            widget.widget_ptr!,
+            { _, _, frame in
+                MainActor.assumeIsolated { Unmanaged<NextFrame>.fromOpaque(frame!).takeUnretainedValue().work() }
+                return gboolean(0)
+            },
+            Unmanaged.passRetained(NextFrame(work)).toOpaque(),
+            { frame in Unmanaged<NextFrame>.fromOpaque(frame!).release() })
     }
 }
 
