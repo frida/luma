@@ -137,7 +137,7 @@ private struct WidgetCanvas: View {
         if state.listItems.isEmpty {
             Text("No items.").font(.caption).foregroundStyle(.secondary)
         } else {
-            VStack(alignment: .leading, spacing: 4) {
+            ScrollingRows(spacing: 4) {
                 ForEach(state.listItems) { item in
                     listRow(item: item, actions: cfg.actions)
                 }
@@ -175,9 +175,13 @@ private struct WidgetCanvas: View {
             VStack(alignment: .leading, spacing: 0) {
                 tableHeader(cfg)
                 Divider()
-                ForEach(state.tableRows) { row in
-                    tableRow(row: row, columns: cfg.columns, actions: cfg.actions)
-                    Divider().opacity(0.3)
+                ScrollingRows(spacing: 0) {
+                    ForEach(state.tableRows) { row in
+                        VStack(spacing: 0) {
+                            tableRow(row: row, columns: cfg.columns, actions: cfg.actions)
+                            Divider().opacity(0.3)
+                        }
+                    }
                 }
             }
             .font(.system(.caption, design: .monospaced))
@@ -472,5 +476,23 @@ private struct ConsoleWidgetView: View {
         case .output, .image, .error:
             return widgetName
         }
+    }
+}
+
+private struct ScrollingRows<Rows: View>: View {
+    let spacing: CGFloat
+    @ViewBuilder let rows: Rows
+
+    private static var maxHeight: CGFloat { 340 }
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: spacing) {
+                rows
+            }
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .frame(maxHeight: Self.maxHeight)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
