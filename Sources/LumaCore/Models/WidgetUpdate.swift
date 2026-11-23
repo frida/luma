@@ -642,7 +642,7 @@ public struct WidgetState: Codable, Sendable, Equatable {
             break
         case .histogram(let cfg):
             if histogram.count > cfg.maxBuckets {
-                histogram = Array(histogram.suffix(cfg.maxBuckets))
+                histogram.removeFirst(histogram.count - cfg.maxBuckets)
             }
         case .graph(let cfg):
             for (seriesID, points) in graphSeries where points.count > cfg.maxPoints {
@@ -650,11 +650,11 @@ public struct WidgetState: Codable, Sendable, Equatable {
             }
         case .list(let cfg):
             if listItems.count > cfg.maxItems {
-                listItems = Array(listItems.suffix(cfg.maxItems))
+                listItems.removeFirst(listItems.count - cfg.maxItems)
             }
         case .table(let cfg):
             if tableRows.count > cfg.maxRows {
-                tableRows = Array(tableRows.suffix(cfg.maxRows))
+                tableRows.removeFirst(tableRows.count - cfg.maxRows)
             }
         case .hex(let cfg):
             if let h = hex, h.bytes.count > cfg.maxBytes {
@@ -666,7 +666,7 @@ public struct WidgetState: Codable, Sendable, Equatable {
             }
         case .console(let cfg):
             if consoleEntries.count > cfg.maxEntries {
-                consoleEntries = Array(consoleEntries.suffix(cfg.maxEntries))
+                consoleEntries.removeFirst(consoleEntries.count - cfg.maxEntries)
             }
         case .view:
             break

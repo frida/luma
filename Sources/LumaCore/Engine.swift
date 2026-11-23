@@ -5502,30 +5502,22 @@ public final class Engine {
     }
 
     private func applyWidgetUpdate(_ proposed: WidgetUpdate, sessionID: UUID, origin: WidgetUpdateOrigin) {
-        let widgetDef = widget(forInstanceID: proposed.instanceID, widgetID: proposed.widget)
-        var states = widgetStates[proposed.instanceID, default: [:]]
-        var state = states[proposed.widget, default: WidgetState()]
-        let update: WidgetUpdate
-        switch origin {
-        case .local:
-            update = localUserHosts(sessionID) ? stamped(proposed, after: state) : proposed
-        case .remote:
-            guard proposed.supersedes(state) else { return }
-            update = proposed
+        guard let update = admitted(proposed, sessionID: sessionID, origin: origin) else { return }
+        let key = InstrumentViews.Key(instanceID: update.instanceID, widget: update.widget)
+        let widgetDef = widget(forInstanceID: update.instanceID, widgetID: update.widget)
+        let state = modifyWidgetState(of: key) { state in
+            state.apply(update.kind)
+            if !update.kind.isTransient {
+                state.revision = max(state.revision, update.revision)
+            }
+            if let widgetDef { state.cap(to: widgetDef.kind) }
         }
-        state.apply(update.kind)
-        if !update.kind.isTransient {
-            state.revision = max(state.revision, update.revision)
-        }
-        if let widgetDef { state.cap(to: widgetDef.kind) }
-        states[update.widget] = state
-        widgetStates[update.instanceID] = states
         _widgetUpdates.yield(update)
 
         if let widgetDef, widgetDef.persistence == .session, !update.kind.isTransient {
-            try? store.saveWidgetState(instanceID: update.instanceID, widgetID: update.widget, state: state)
+            try? store.saveWidgetState(instanceID: key.instanceID, widgetID: key.widget, state: state)
             if widgetDef.kind.isView {
-                persistViewData(of: state.view, instanceID: update.instanceID, widget: update.widget)
+                persistViewData(of: state.view, instanceID: key.instanceID, widget: key.widget)
             }
         }
 
@@ -5541,6 +5533,21 @@ public final class Engine {
                 collaboration.sendWidgetUpdate(sessionID: collabSID, update: update)
             }
         }
+    }
+
+    private func admitted(_ proposed: WidgetUpdate, sessionID: UUID, origin: WidgetUpdateOrigin) -> WidgetUpdate? {
+        let state = widgetStates[proposed.instanceID]?[proposed.widget] ?? WidgetState()
+        switch origin {
+        case .local:
+            return localUserHosts(sessionID) ? stamped(proposed, after: state) : proposed
+        case .remote:
+            return proposed.supersedes(state) ? proposed : nil
+        }
+    }
+
+    private func modifyWidgetState(of key: InstrumentViews.Key, _ body: (inout WidgetState) -> Void) -> WidgetState {
+        body(&widgetStates[key.instanceID, default: [:]][key.widget, default: WidgetState()])
+        return widgetStates[key.instanceID]![key.widget]!
     }
 
     private func stamped(_ update: WidgetUpdate, after state: WidgetState) -> WidgetUpdate {
