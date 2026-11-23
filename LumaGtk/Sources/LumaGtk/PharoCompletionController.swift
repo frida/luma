@@ -283,7 +283,7 @@ final class PharoCompletionController {
         buffer.insertAtCursor(text: text, len: Int(text.utf8.count))
     }
 
-    private func dismiss() {
+    func dismiss() {
         generation &+= 1
         pending?.cancel()
         pending = nil

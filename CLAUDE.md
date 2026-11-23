@@ -420,8 +420,13 @@ is gitignored — it is produced at build time.
   coloring is `TypeScriptLexer`, and `SourceSyntaxPalette` its colors,
   shared by both frontends. A file in an instrument is edited as what
   `SourceSyntax(path:)` says it is: scripts as TypeScript, patterns as
-  patterns, and anything else as plain text, which no server is asked
-  about.
+  patterns, `.st` files as Smalltalk, and anything else as plain text.
+  No server is asked about the last two. A `.st` file is a
+  `TonelDocument`, completed by the image as the playground is, and on
+  macOS colored by it too, a method at a time with the framing as one
+  expression of its own; GTK colors it the way its playground does. The
+  instrument's own classes live where the image's completion does not
+  look, so what its files define is offered beside it.
 - **Pharo bridges (`Sources/LumaCore/Pharo/`)** — `PharoAsyncBridge`
   carries the image's requests to the Engine and the answers back,
   one reply or a stream of them; `Engine+PharoRequests` answers for

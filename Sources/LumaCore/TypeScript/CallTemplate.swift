@@ -20,6 +20,24 @@ public struct CallTemplate: Equatable, Sendable {
         self.placeholders = placeholders
     }
 
+    /// A Smalltalk keyword message, each keyword followed by a slot for its
+    /// argument: "at:put:" lays down as "at: … put: …".
+    public init(keywordSelector selector: String) {
+        var text = ""
+        var placeholders: [Range<Int>] = []
+        for keyword in selector.split(separator: ":") {
+            if !text.isEmpty {
+                text += " "
+            }
+            text += keyword + ": "
+            let start = text.utf16.count
+            text += "\u{2026}"
+            placeholders.append(start..<text.utf16.count)
+        }
+        self.text = text
+        self.placeholders = placeholders
+    }
+
     public var snippet: String {
         var snippet = ""
         var cursor = 0

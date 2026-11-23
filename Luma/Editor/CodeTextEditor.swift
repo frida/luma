@@ -115,6 +115,7 @@ struct CodeTextEditor: PlatformViewRepresentable {
         var parent: CodeTextEditor
         private weak var view: CodeTextView?
         private var session: TypeScriptEditorSession?
+        private var tonelDocument: TonelDocument?
         private var sessionProfile: EditorProfile?
         private var sessionGeneration = 0
         private var appliedFocus = false
@@ -140,7 +141,15 @@ struct CodeTextEditor: PlatformViewRepresentable {
             if let previous {
                 previous.close()
             }
-            guard profile.syntax != .plainText else { return }
+            tonelDocument?.close()
+            tonelDocument = nil
+            view?.tonelDocument = nil
+            if profile.syntax == .smalltalk {
+                let document = TonelDocument(siblings: profile.projectFiles.map(\.text))
+                tonelDocument = document
+                view?.tonelDocument = document
+            }
+            guard profile.syntax.isReadByLanguageServer else { return }
             let text = view?.source ?? parent.text
             Task { @MainActor in
                 guard let session = try? await TypeScriptEditorSession.open(engine: engine, profile: profile, text: text),

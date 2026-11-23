@@ -67,6 +67,10 @@ public enum LSP {
         public var data: JSONValue?
 
         public var isSnippet: Bool { insertTextFormat == 2 }
+
+        public init(label: String) {
+            self.label = label
+        }
     }
 
     public struct CompletionTextEdit: Codable, Hashable, Sendable {

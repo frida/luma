@@ -35,6 +35,8 @@ public final class CodeEditor {
     private var suppressChange = false
     private var session: TypeScriptEditorSession?
     private var sessionGeneration = 0
+    private var tonelDocument: TonelDocument?
+    private var smalltalkCompletion: PharoCompletionController?
     private var themeSubscription: gulong = 0
 
     public init(engine: Engine?, profile: EditorProfile = .init(), initialText: String = "") {
@@ -114,18 +116,24 @@ public final class CodeEditor {
         editor.onUnmap { [weak self] _ in
             MainActor.assumeIsolated { self?.abandonLookups() }
         }
-        applyStyleScheme()
+        applyHighlighting()
         themeSubscription = ThemeWatcher.subscribe(owner: self) { $0.retheme() }
         restartSession()
     }
 
     private func retheme() {
-        applyStyleScheme()
+        applyHighlighting()
         highlighter.apply(to: text)
         semanticHighlighter.retheme()
     }
 
-    private func applyStyleScheme() {
+    private func applyHighlighting() {
+        if profile.syntax == .smalltalk {
+            PharoHighlighting.apply(to: buffer)
+            return
+        }
+        buffer.language = nil
+        buffer.highlightSyntax = false
         let dark = ThemeWatcher.currentAppearance() == .dark
         guard let scheme = GtkSource.StyleSchemeManager.getDefault()?.getScheme(schemeId: dark ? "Adwaita-dark" : "Adwaita") else { return }
         buffer.styleScheme = scheme
@@ -185,6 +193,7 @@ public final class CodeEditor {
         if highlighter.syntax != newProfile.syntax {
             highlighter.syntax = newProfile.syntax
             highlighter.apply(to: text)
+            applyHighlighting()
         }
         if needsNewSession {
             restartSession()
@@ -216,7 +225,14 @@ public final class CodeEditor {
         semanticHighlighter.setTokens([], to: text)
         folding.setRanges([], in: text)
         swatches.setColors([], in: text)
-        guard let engine, profile.syntax != .plainText else { return }
+        smalltalkCompletion?.dismiss()
+        tonelDocument?.close()
+        tonelDocument = nil
+        if profile.syntax == .smalltalk {
+            tonelDocument = TonelDocument(siblings: profile.projectFiles.map(\.text))
+            completeSmalltalk()
+        }
+        guard let engine, profile.syntax.isReadByLanguageServer else { return }
         let profile = profile
         let text = text
         Task { @MainActor in
@@ -224,6 +240,14 @@ public final class CodeEditor {
                 generation == self.sessionGeneration
             else { return }
             self.adopt(session)
+        }
+    }
+
+    private func completeSmalltalk() {
+        guard smalltalkCompletion == nil else { return }
+        smalltalkCompletion = PharoCompletionController(editor: editor, buffer: buffer) { [weak self] source, cursor in
+            guard let document = self?.tonelDocument else { return nil }
+            return await document.completions(in: source, atUTF16: CharacterOffsets(text: source).utf16Offset(ofCharacter: cursor))
         }
     }
 
@@ -280,6 +304,9 @@ public final class CodeEditor {
                 guard let self else { return false }
                 if state.contains(.controlMask), isEnter(keyval), let onCommit = self.onCommit {
                     onCommit()
+                    return true
+                }
+                if self.smalltalkCompletion?.handleKey(keyval) == true {
                     return true
                 }
                 return self.signatureHelp.handleKey(keyval)

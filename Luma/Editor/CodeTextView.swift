@@ -28,6 +28,10 @@ final class CodeTextView: CodeTextViewBase {
         didSet { bindSession() }
     }
 
+    var tonelDocument: TonelDocument? {
+        didSet { bindTonelDocument() }
+    }
+
     var syntax: SourceSyntax = .typeScript {
         didSet {
             if oldValue != syntax { restyle() }
@@ -48,6 +52,7 @@ final class CodeTextView: CodeTextViewBase {
 
     private var diagnostics: [LSP.Diagnostic] = []
     private var semanticTokens: [SemanticToken] = []
+    private var smalltalkSpans: [TonelStyleSpan] = []
     private var fetched: [LSP.CompletionItem] = []
     private var isReplacingSource = false
     private var lookups: [Lookup: Task<Void, Never>] = [:]
@@ -83,6 +88,7 @@ final class CodeTextView: CodeTextViewBase {
         isReplacingSource = false
         restyle()
         session?.document.replaceText(newSource)
+        tonelDocument?.replaceText(newSource)
         #if canImport(AppKit)
             onLineStateChanged?()
         #endif
@@ -115,6 +121,17 @@ final class CodeTextView: CodeTextViewBase {
         #endif
     }
 
+    private func bindTonelDocument() {
+        smalltalkSpans = []
+        restyle()
+        guard let tonelDocument else { return }
+        tonelDocument.onStyleSpans = { [weak self] spans in
+            self?.smalltalkSpans = spans
+            self?.restyle()
+        }
+        tonelDocument.replaceText(source)
+    }
+
     func noteCaretMoved() {
         onCaretMove?(caretPosition)
     }
@@ -127,6 +144,7 @@ final class CodeTextView: CodeTextViewBase {
             onLineStateChanged?()
         #endif
         session?.document.replaceText(text)
+        tonelDocument?.replaceText(text)
         onEdit?(text)
     }
 
@@ -144,6 +162,17 @@ final class CodeTextView: CodeTextViewBase {
             let range = NSRange(location: token.utf16Range.lowerBound, length: token.utf16Range.count)
             storage.addAttribute(.foregroundColor, value: PlatformColor.syntaxRun(light: style.color, dark: darkStyle.color), range: range)
             if style.bold {
+                storage.addAttribute(.font, value: boldSourceFont, range: range)
+            }
+        }
+        for span in smalltalkSpans {
+            let upper = min(span.utf16Range.upperBound, storage.length)
+            guard span.utf16Range.lowerBound < upper else { continue }
+            let range = NSRange(location: span.utf16Range.lowerBound, length: upper - span.utf16Range.lowerBound)
+            if let color = PlatformColor.pharoRun(lightHex: span.lightHex, darkHex: span.darkHex) {
+                storage.addAttribute(.foregroundColor, value: color, range: range)
+            }
+            if span.bold {
                 storage.addAttribute(.font, value: boldSourceFont, range: range)
             }
         }
@@ -235,6 +264,9 @@ final class CodeTextView: CodeTextViewBase {
     }
 
     func askForCompletions(trigger: String?) {
+        if let tonelDocument {
+            return askForCompletions(from: tonelDocument)
+        }
         guard let document = session?.document else { return }
         let text = source
         let position = caretPosition
@@ -242,6 +274,17 @@ final class CodeTextView: CodeTextViewBase {
             guard let list = try? await document.completions(at: position, triggerCharacter: trigger), !Task.isCancelled, source == text
             else { return }
             fetched = list.items.sorted { ($0.sortText ?? $0.label, $0.label) < ($1.sortText ?? $1.label, $1.label) }
+            offerCompletions()
+        }
+    }
+
+    private func askForCompletions(from document: TonelDocument) {
+        let text = source
+        let caret = self.caret
+        startLookup(.completions) { [self] in
+            let candidates = await document.completions(in: text, atUTF16: caret)
+            guard !Task.isCancelled, source == text else { return }
+            fetched = candidates.map(LSP.CompletionItem.init(label:))
             offerCompletions()
         }
     }
@@ -331,6 +374,7 @@ final class CodeTextView: CodeTextViewBase {
                 let replacementLength = (replacementString ?? "").utf16.count
                 shiftPlaceholders(for: affectedCharRange, replacementLength: replacementLength)
                 shiftFolds(for: affectedCharRange, replacementLength: replacementLength)
+                shiftSmalltalkSpans(for: affectedCharRange, replacementLength: replacementLength)
             }
             return allowed
         }
@@ -411,6 +455,21 @@ final class CodeTextView: CodeTextViewBase {
             foldsDroppedByEdit = foldsDroppedByEdit || folds.count != previousCount
         }
 
+        private func shiftSmalltalkSpans(for edited: NSRange, replacementLength: Int) {
+            guard !smalltalkSpans.isEmpty else { return }
+            let delta = replacementLength - edited.length
+            let editedRange = edited.location..<NSMaxRange(edited)
+            smalltalkSpans = smalltalkSpans.compactMap { span in
+                if span.utf16Range.lowerBound >= editedRange.upperBound {
+                    return span.shifted(by: delta)
+                }
+                if span.utf16Range.upperBound <= editedRange.lowerBound {
+                    return span
+                }
+                return nil
+            }
+        }
+
         private func applyFolds() {
             hideFoldedParagraphs(relayout: true)
             restyle()
@@ -437,7 +496,7 @@ final class CodeTextView: CodeTextViewBase {
             guard let typed else { return }
             if isWordUnit(typed) {
                 askForCompletions(trigger: nil)
-            } else if typed == 0x2E {
+            } else if typed == 0x2E, tonelDocument == nil {
                 askForCompletions(trigger: ".")
             } else {
                 completionPanel.dismiss()
@@ -558,6 +617,10 @@ final class CodeTextView: CodeTextViewBase {
             completionPanel.dismiss()
             let range = completionWordRange
             let name = item.textEdit?.newText ?? item.insertText ?? item.label
+            if tonelDocument != nil, name.contains(":") {
+                layDownCall(CallTemplate(keywordSelector: name), from: range.location)
+                return
+            }
             guard !item.isSnippet, isCallable(item), let document = session?.document else {
                 replace(range, with: insertion(for: item))
                 return
@@ -909,7 +972,7 @@ final class CodeTextView: CodeTextViewBase {
             guard text.utf16.count == 1, let unit = text.utf16.first else { return }
             if isWordUnit(unit) {
                 askForCompletions(trigger: nil)
-            } else if text == "." {
+            } else if text == ".", tonelDocument == nil {
                 askForCompletions(trigger: ".")
             }
         }

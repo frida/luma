@@ -33,6 +33,8 @@ public struct EditorProfile: Sendable, Equatable {
         switch languageId {
         case "hexpat":
             return .pattern
+        case "smalltalk":
+            return .smalltalk
         case "plaintext":
             return .plainText
         default:
@@ -88,6 +90,11 @@ extension EditorProfile {
                 languageId: "hexpat",
                 projectFiles: projectFiles.filter { $0.languageId == "hexpat" },
                 activePath: activePath)
+        case .smalltalk:
+            return EditorProfile(
+                languageId: "smalltalk",
+                projectFiles: files.compactMap(smalltalkFile(of:)).filter { $0.path != activePath },
+                activePath: activePath)
         case .plainText:
             return EditorProfile(languageId: "plaintext", activePath: activePath)
         case .typeScript:
@@ -109,24 +116,43 @@ extension EditorProfile {
             return EditorProjectFile(path: path, text: file.content)
         case .pattern:
             return EditorProjectFile(path: path, text: file.content, languageId: "hexpat")
-        case .plainText:
+        case .smalltalk, .plainText:
             return nil
         }
+    }
+
+    private static func smalltalkFile(of file: CustomInstrumentFile) -> EditorProjectFile? {
+        guard SourceSyntax(path: file.path) == .smalltalk else { return nil }
+        let path = CustomInstrumentFile.workspaceRelativePath(defID: file.defID, path: file.path)
+        return EditorProjectFile(path: path, text: file.content, languageId: "smalltalk")
     }
 }
 
 public enum SourceSyntax: Hashable, Sendable {
     case typeScript
     case pattern
+    case smalltalk
     case plainText
 
     public init(path: String) {
+        let pathExtension = (path as NSString).pathExtension.lowercased()
         if PatternSource.Kind(path: path) != nil {
             self = .pattern
-        } else if Self.scriptExtensions.contains((path as NSString).pathExtension.lowercased()) {
+        } else if Self.scriptExtensions.contains(pathExtension) {
             self = .typeScript
+        } else if pathExtension == "st" {
+            self = .smalltalk
         } else {
             self = .plainText
+        }
+    }
+
+    public var isReadByLanguageServer: Bool {
+        switch self {
+        case .typeScript, .pattern:
+            return true
+        case .smalltalk, .plainText:
+            return false
         }
     }
 
@@ -138,7 +164,7 @@ public enum SourceSyntax: Hashable, Sendable {
             return TypeScriptLexer.tokenize(text)
         case .pattern:
             return PatternLexer.tokenize(text)
-        case .plainText:
+        case .smalltalk, .plainText:
             return []
         }
     }
