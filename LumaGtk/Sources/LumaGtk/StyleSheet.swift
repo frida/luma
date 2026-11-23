@@ -609,6 +609,9 @@ enum StyleSheet {
         margin-left: 6px;
         margin-right: 6px;
     }
+    listview.luma-widget-rows > row {
+        padding: 0;
+    }
     label.luma-pharo-tag {
         color: alpha(@window_fg_color, 0.7);
         background-color: alpha(@window_fg_color, 0.12);

@@ -614,6 +614,7 @@ private final class WidgetRowList<Presenter: WidgetRowPresenter> {
         let selection = NoSelection(model: model)
         let factory = SignalListItemFactory()
         let list = Gtk.ListView(model: selection, factory: factory)
+        list.add(cssClass: "luma-widget-rows")
         _ = g_object_ref(model.ptr)
         _ = g_object_ref(selection.ptr)
 
