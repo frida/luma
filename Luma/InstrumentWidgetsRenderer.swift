@@ -157,10 +157,7 @@ private struct WidgetCanvas: View {
             if let accessory = item.accessory {
                 Text(accessory).font(.caption).foregroundStyle(.secondary)
             }
-            ForEach(actions) { action in
-                Button(action.name) { invoke(action: action.id, item: item.id) }
-                    .buttonStyle(.borderless)
-            }
+            actionButtons(actions, item: item.id)
         }
         .padding(.vertical, 2)
     }
@@ -196,7 +193,9 @@ private struct WidgetCanvas: View {
                     .foregroundStyle(.secondary)
             }
             if !cfg.actions.isEmpty {
-                Color.clear.frame(width: actionWidth(cfg.actions))
+                actionButtons(cfg.actions, item: "")
+                    .hidden()
+                    .accessibilityHidden(true)
             }
         }
         .padding(.vertical, 4)
@@ -210,13 +209,7 @@ private struct WidgetCanvas: View {
                     .frame(maxWidth: .infinity, alignment: alignment(for: col.alignment))
             }
             if !actions.isEmpty {
-                HStack(spacing: 4) {
-                    ForEach(actions) { action in
-                        Button(action.name) { invoke(action: action.id, item: row.id) }
-                            .buttonStyle(.borderless)
-                    }
-                }
-                .frame(width: actionWidth(actions), alignment: .trailing)
+                actionButtons(actions, item: row.id)
             }
         }
         .padding(.vertical, 2)
@@ -226,8 +219,14 @@ private struct WidgetCanvas: View {
         value == .leading ? .leading : .trailing
     }
 
-    private func actionWidth(_ actions: [InstrumentWidget.Action]) -> CGFloat {
-        CGFloat(actions.count) * 64
+    private func actionButtons(_ actions: [InstrumentWidget.Action], item: String) -> some View {
+        HStack(spacing: 2) {
+            ForEach(actions) { action in
+                Button(action.name) { invoke(action: action.id, item: item) }
+                    .buttonStyle(RowActionButtonStyle())
+            }
+        }
+        .fixedSize()
     }
 
     @ViewBuilder
@@ -536,5 +535,37 @@ private struct ScrollingRows<Rows: View>: View {
         .scrollBounceBehavior(.basedOnSize)
         .frame(maxHeight: Self.maxHeight)
         .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+private struct RowActionButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        RowActionLabel(configuration: configuration)
+    }
+}
+
+private struct RowActionLabel: View {
+    let configuration: ButtonStyleConfiguration
+
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var isHovered = false
+
+    var body: some View {
+        configuration.label
+            .foregroundStyle(isEnabled ? Color.accentColor : Color.secondary)
+            .padding(.horizontal, 6)
+            .background {
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.accentColor.opacity(highlight))
+                    .padding(.vertical, -1)
+            }
+            .contentShape(Rectangle())
+            .onHover { isHovered = $0 }
+    }
+
+    private var highlight: Double {
+        guard isEnabled else { return 0 }
+        if configuration.isPressed { return 0.25 }
+        return isHovered ? 0.12 : 0
     }
 }
