@@ -206,7 +206,7 @@ final class PharoPlaygroundPane {
             completion: { [weak self] source, position in
                 guard let self, let engine = self.engine else { return nil }
                 try? await PharoRuntime.shared.startPlayground(for: engine)
-                return try? await PharoRuntime.shared.completions(for: source, at: position)
+                return (try? await PharoRuntime.shared.completions(for: source, at: position))?.completions
             }
         )
         card.onRun = { [weak self] mode in self?.run(id, mode) }

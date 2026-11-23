@@ -5,7 +5,6 @@ import Gdk
 import struct Graphene.PointRef
 import Gtk
 import GtkSource
-import SwiftyPharo
 
 /// Drives an on-demand completion popover for the Pharo playground editor,
 /// asking the runtime what identifiers complete the token at the caret and
@@ -14,7 +13,7 @@ import SwiftyPharo
 final class PharoCompletionController {
     private let editor: GtkSource.View
     private let buffer: GtkSource.Buffer
-    private let suggest: (String, Int) async -> PharoCompletions?
+    private let suggest: (String, Int) async -> [String]?
 
     /// The source and caret the marks leave once their anchor characters are
     /// taken out, so the image sees the code and not the placeholders.
@@ -30,7 +29,7 @@ final class PharoCompletionController {
 
 
 
-    init(editor: GtkSource.View, buffer: GtkSource.Buffer, suggest: @escaping (String, Int) async -> PharoCompletions?) {
+    init(editor: GtkSource.View, buffer: GtkSource.Buffer, suggest: @escaping (String, Int) async -> [String]?) {
         self.editor = editor
         self.buffer = buffer
         self.suggest = suggest
@@ -74,12 +73,12 @@ final class PharoCompletionController {
         let generationAtRequest = generation
         pending?.cancel()
         pending = Task { @MainActor in
-            guard let answer = await suggest(source, cursor), generation == generationAtRequest else { return }
-            guard !answer.completions.isEmpty else {
+            guard let candidates = await suggest(source, cursor), generation == generationAtRequest else { return }
+            guard !candidates.isEmpty else {
                 dismiss()
                 return
             }
-            show(candidates: answer.completions)
+            show(candidates: candidates)
         }
     }
 

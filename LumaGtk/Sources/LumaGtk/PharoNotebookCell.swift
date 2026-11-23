@@ -90,7 +90,7 @@ final class PharoNotebookCell {
             editor: editor, buffer: buffer, runtime: PharoRuntime.shared, selfClass: nil,
             highlight: { PharoHighlighting.apply(to: $0) })
         completion = PharoCompletionController(editor: editor, buffer: buffer) { source, position in
-            try? await PharoRuntime.shared.completions(for: source, at: position)
+            (try? await PharoRuntime.shared.completions(for: source, at: position))?.completions
         }
         completion.cleanSource = { [weak self] in self?.marks.source }
         completion.cleanCursor = { [weak self] in self?.marks.sourceCursor() }

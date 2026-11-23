@@ -50,7 +50,7 @@ final class PharoSnippetCard {
         id: UUID,
         source: String,
         highlight: @escaping (GtkSource.Buffer) -> Void,
-        completion suggest: @escaping (String, Int) async -> PharoCompletions?
+        completion suggest: @escaping (String, Int) async -> [String]?
     ) {
         self.id = id
         self.highlight = highlight
