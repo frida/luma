@@ -313,11 +313,52 @@ private struct WidgetCanvas: View {
         let instanceID = instance.id
         let engine = engine
         state = engine.widgetState(instanceID: instanceID, widget: widgetID)
+        let pending = PendingWidgetUpdates { batch in apply(batch) }
+        defer { pending.stop() }
         for await update in engine.widgetUpdates
         where update.instanceID == instanceID && update.widget == widgetID {
-            state.apply(update.kind)
-            state.cap(to: widget.kind)
+            pending.add(update.kind)
         }
+    }
+
+    private func apply(_ batch: [WidgetUpdate.Kind]) {
+        var next = state
+        for kind in batch {
+            next.apply(kind)
+        }
+        next.cap(to: widget.kind)
+        state = next
+    }
+}
+
+@MainActor
+private final class PendingWidgetUpdates: NSObject {
+    private let apply: ([WidgetUpdate.Kind]) -> Void
+    private var kinds: [WidgetUpdate.Kind] = []
+    private var frames: CADisplayLink!
+
+    init(apply: @escaping ([WidgetUpdate.Kind]) -> Void) {
+        self.apply = apply
+        super.init()
+        frames = Platform.displayLink(target: self, selector: #selector(frameWillDraw))
+        frames.isPaused = true
+        frames.add(to: .main, forMode: .common)
+    }
+
+    func add(_ kind: WidgetUpdate.Kind) {
+        kinds.append(kind)
+        frames.isPaused = false
+    }
+
+    func stop() {
+        frames.invalidate()
+    }
+
+    @objc private func frameWillDraw() {
+        frames.isPaused = true
+        let batch = kinds
+        kinds.removeAll()
+        apply(batch)
     }
 }
 

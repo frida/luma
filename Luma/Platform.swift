@@ -1,3 +1,4 @@
+import QuartzCore
 import SwiftUI
 
 extension Color {
@@ -47,6 +48,14 @@ enum Platform {
             NSWorkspace.shared.open(url)
         #elseif canImport(UIKit)
             UIApplication.shared.open(url)
+        #endif
+    }
+
+    static func displayLink(target: Any, selector: Selector) -> CADisplayLink {
+        #if canImport(AppKit)
+            NSScreen.screens[0].displayLink(target: target, selector: selector)
+        #else
+            CADisplayLink(target: target, selector: selector)
         #endif
     }
 }
