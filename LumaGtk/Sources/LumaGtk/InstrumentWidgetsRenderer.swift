@@ -170,9 +170,10 @@ private final class WidgetCanvas {
             listView = view
             column.append(child: view.widget)
         case .table(let cfg):
-            let header = TableRowPresenter.makeHeader(columns: cfg.columns)
+            let layout = TableLayout(columns: cfg.columns, actions: cfg.actions)
+            let header = layout.makeHeader()
             let view = WidgetRowList(kind: definition.kind, initial: snapshot, rows: \.tableRows, header: header, emptyText: "No rows.") {
-                TableRowPresenter(columns: cfg.columns, actions: cfg.actions, onAction: onAction)
+                TableRowPresenter(layout: layout, onAction: onAction)
             }
             tableView = view
             column.append(child: view.widget)
@@ -766,51 +767,22 @@ private final class ListItemPresenter: WidgetRowPresenter {
 @MainActor
 private final class TableRowPresenter: WidgetRowPresenter {
     let widget: Box
-    private let columns: [InstrumentWidget.Column]
+    private let layout: TableLayout
     private let cells: [Label]
     private var rowID = ""
 
-    static func makeHeader(columns: [InstrumentWidget.Column]) -> Box {
-        let header = Box(orientation: .horizontal, spacing: 8)
-        header.marginStart = 8
-        header.marginEnd = 8
-        header.marginTop = 6
-        header.marginBottom = 6
-        for column in columns {
-            let label = Label(str: column.name)
-            label.hexpand = true
-            label.halign = column.alignment == .leading ? .start : .end
-            label.add(cssClass: "caption")
-            label.add(cssClass: "dim-label")
-            header.append(child: label)
-        }
-        return header
-    }
+    init(layout: TableLayout, onAction: @escaping (_ action: String, _ item: String?) -> Void) {
+        self.layout = layout
+        widget = layout.makeRow(verticalMargin: 4)
 
-    init(
-        columns: [InstrumentWidget.Column],
-        actions: [InstrumentWidget.Action],
-        onAction: @escaping (_ action: String, _ item: String?) -> Void
-    ) {
-        self.columns = columns
-        widget = Box(orientation: .horizontal, spacing: 8)
-        widget.marginStart = 8
-        widget.marginEnd = 8
-        widget.marginTop = 4
-        widget.marginBottom = 4
-
-        cells = columns.map { column in
-            let label = Label(str: "")
-            label.hexpand = true
-            label.halign = column.alignment == .leading ? .start : .end
-            label.ellipsize = EllipsizeMode.end
-            return label
-        }
+        cells = layout.columns.map { layout.makeCell(for: $0, text: "") }
         for cell in cells {
             widget.append(child: cell)
         }
 
-        for action in actions {
+        guard !layout.actions.isEmpty else { return }
+        let buttons = layout.makeActionsBox()
+        for action in layout.actions {
             let button = Button(label: action.name)
             button.add(cssClass: "flat")
             let actionID = action.id
@@ -820,15 +792,66 @@ private final class TableRowPresenter: WidgetRowPresenter {
                     onAction(actionID, self.rowID)
                 }
             }
-            widget.append(child: button)
+            buttons.append(child: button)
         }
+        widget.append(child: buttons)
     }
 
     func show(_ row: WidgetTableRow) {
         rowID = row.id
-        for (cell, column) in zip(cells, columns) {
+        for (cell, column) in zip(cells, layout.columns) {
             cell.setText(str: row.cells[column.id] ?? "")
         }
+    }
+}
+
+@MainActor
+private final class TableLayout {
+    let columns: [InstrumentWidget.Column]
+    let actions: [InstrumentWidget.Action]
+    private let actionsWidth = SizeGroup(mode: .horizontal)
+
+    init(columns: [InstrumentWidget.Column], actions: [InstrumentWidget.Action]) {
+        self.columns = columns
+        self.actions = actions
+    }
+
+    func makeHeader() -> Box {
+        let header = makeRow(verticalMargin: 6)
+        for column in columns {
+            let label = makeCell(for: column, text: column.name)
+            label.add(cssClass: "caption")
+            label.add(cssClass: "dim-label")
+            header.append(child: label)
+        }
+        if !actions.isEmpty {
+            header.append(child: makeActionsBox())
+        }
+        return header
+    }
+
+    func makeRow(verticalMargin: Int) -> Box {
+        let row = Box(orientation: .horizontal, spacing: 8)
+        row.marginStart = 8
+        row.marginEnd = 8
+        row.marginTop = verticalMargin
+        row.marginBottom = verticalMargin
+        return row
+    }
+
+    func makeCell(for column: InstrumentWidget.Column, text: String) -> Label {
+        let label = Label(str: text)
+        label.hexpand = true
+        label.xalign = column.alignment == .leading ? 0 : 1
+        label.ellipsize = EllipsizeMode.end
+        label.maxWidthChars = 1
+        return label
+    }
+
+    func makeActionsBox() -> Box {
+        let box = Box(orientation: .horizontal, spacing: 4)
+        actionsWidth.add(widget: box)
+        return box
     }
 }
 
