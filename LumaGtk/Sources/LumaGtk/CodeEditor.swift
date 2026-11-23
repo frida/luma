@@ -228,8 +228,8 @@ public final class CodeEditor {
         smalltalkCompletion?.dismiss()
         tonelDocument?.close()
         tonelDocument = nil
-        if profile.syntax == .smalltalk {
-            tonelDocument = TonelDocument(siblings: profile.projectFiles.map(\.text))
+        if profile.syntax == .smalltalk, let engine {
+            tonelDocument = TonelDocument(siblings: profile.projectFiles.map(\.text), workspace: engine.pharo)
             completeSmalltalk()
         }
         guard let engine, profile.syntax.isReadByLanguageServer else { return }

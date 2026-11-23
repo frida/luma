@@ -15,7 +15,7 @@ public final class PharoWorkspace {
     public let runtime = PharoRuntime.shared
 
     private weak var engine: Engine?
-    private var hasBindings = false
+    private var bindings = Bindings.absent
     private var objects: [Int: PharoObject] = [:]
 
     public init(engine: Engine) {
@@ -36,12 +36,31 @@ public final class PharoWorkspace {
             return try await engine.answerPharoRequest(request)
         }
 
-        guard !hasBindings else { return runtime }
-        try await PharoLumaBindings.install(into: runtime)
-        try await replayDefinitions(from: engine.store)
-        _ = try await runtime.evaluate("LumaJournal start")
-        hasBindings = true
+        try await installBindings(from: engine.store)
         return runtime
+    }
+
+    private func installBindings(from store: ProjectStore) async throws {
+        switch bindings {
+        case .installed:
+            return
+        case .installing(let installing):
+            try await installing.value
+        case .absent:
+            let installing = Task {
+                try await PharoLumaBindings.install(into: runtime)
+                try await replayDefinitions(from: store)
+                _ = try await runtime.evaluate("LumaJournal start")
+            }
+            bindings = .installing(installing)
+            do {
+                try await installing.value
+                bindings = .installed
+            } catch {
+                bindings = .absent
+                throw error
+            }
+        }
     }
 
     private func replayDefinitions(from store: ProjectStore) async throws {
@@ -79,7 +98,7 @@ public final class PharoWorkspace {
     }
 
     public func stopRun(_ owner: UUID) async {
-        guard hasBindings else { return }
+        guard case .installed = bindings else { return }
         try? await runtime.stopRun(owner)
     }
 
@@ -128,6 +147,12 @@ public final class PharoWorkspace {
         for object in held {
             try? await runtime.release(object)
         }
+    }
+
+    private enum Bindings {
+        case absent
+        case installing(Task<Void, any Error>)
+        case installed
     }
 }
 

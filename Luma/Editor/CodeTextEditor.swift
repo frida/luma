@@ -145,7 +145,7 @@ struct CodeTextEditor: PlatformViewRepresentable {
             tonelDocument = nil
             view?.tonelDocument = nil
             if profile.syntax == .smalltalk {
-                let document = TonelDocument(siblings: profile.projectFiles.map(\.text))
+                let document = TonelDocument(siblings: profile.projectFiles.map(\.text), workspace: engine.pharo)
                 tonelDocument = document
                 view?.tonelDocument = document
             }

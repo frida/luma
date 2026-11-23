@@ -426,7 +426,9 @@ is gitignored — it is produced at build time.
   macOS colored by it too, a method at a time with the framing as one
   expression of its own; GTK colors it the way its playground does. The
   instrument's own classes live where the image's completion does not
-  look, so what its files define is offered beside it.
+  look, so what its files define is offered beside it. Opening one starts
+  the workspace, as the playground does, so Luma's own classes complete
+  whoever started it first.
 - **Pharo bridges (`Sources/LumaCore/Pharo/`)** — `PharoAsyncBridge`
   carries the image's requests to the Engine and the answers back,
   one reply or a stream of them; `Engine+PharoRequests` answers for

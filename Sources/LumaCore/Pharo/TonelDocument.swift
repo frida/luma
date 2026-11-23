@@ -21,20 +21,24 @@ public struct TonelStyleSpan: Equatable, Sendable {
 /// image the way the playground's Smalltalk is. The instrument's own classes
 /// live in an environment of their own, which the image's completion does not
 /// look in, so what the instrument's files define is offered beside it.
+///
+/// Opening one starts the project's workspace, as the playground does, so the
+/// image knows Luma's own classes by the time a completion is asked for.
 @MainActor
 public final class TonelDocument {
     public var onStyleSpans: (([TonelStyleSpan]) -> Void)?
 
-    private let runtime: PharoRuntime
+    private let workspace: PharoWorkspace
     private let siblings: [TonelSource]
     private var text = ""
     private var styling: Task<Void, Never>?
     private var isStyleStale = false
     private var styled: [StyleRequest: [PharoStyleSpan]] = [:]
 
-    public init(siblings: [String], runtime: PharoRuntime = .shared) {
+    public init(siblings: [String], workspace: PharoWorkspace) {
         self.siblings = siblings.map(TonelSource.init)
-        self.runtime = runtime
+        self.workspace = workspace
+        Task { try? await workspace.started() }
     }
 
     /// Styles the text once the image answers, and afresh whenever it has moved
@@ -59,9 +63,8 @@ public final class TonelDocument {
         guard let method = source.method(enclosingUTF16: caret) else { return [] }
         let methodSource = source.methodSource(of: method)
         let position = ScalarOffsets(methodSource).scalarOffset(ofUTF16: caret - method.source.lowerBound)
-        let fromImage = try? await whenRunning {
-            try await runtime.completions(for: String(utf16CodeUnits: methodSource, count: methodSource.count), at: position)
-        }
+        let fromImage = try? await workspace.started().completions(
+            for: String(utf16CodeUnits: methodSource, count: methodSource.count), at: position)
         let own = ownCompletions(at: caret, in: source, within: method)
         var seen: Set<String> = []
         return (own + (fromImage?.completions ?? [])).filter { seen.insert($0).inserted }
@@ -80,6 +83,7 @@ public final class TonelDocument {
     }
 
     private func styleSpans(of source: TonelSource) async -> [TonelStyleSpan]? {
+        let runtime = workspace.runtime
         guard (try? await runtime.runningState()) != nil else { return nil }
         let parts = [StylePart(base: 0, units: source.frameExpression, isMethod: false)]
             + source.methods.map { StylePart(base: $0.source.lowerBound, units: source.methodSource(of: $0), isMethod: true) }
@@ -127,11 +131,6 @@ public final class TonelDocument {
         guard index > method.source.lowerBound else { return false }
         let previous = units[index - 1]
         return isWordUnit(previous) || previous == 0x29 || previous == 0x5D || previous == 0x7D || previous == 0x27
-    }
-
-    private func whenRunning<Answer>(_ request: () async throws -> Answer) async throws -> Answer {
-        try await runtime.runningState()
-        return try await request()
     }
 
     private func isWordUnit(_ unit: UTF16.CodeUnit) -> Bool {
