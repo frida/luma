@@ -703,7 +703,7 @@ final class MainWindow: InstrumentUIHost {
 
     private func observeProjectCommits(storeInstanceID: UUID) {
         commitObserver = NotificationCenter.default.addObserver(
-            forName: ProjectStore.didCommitNotification,
+            forName: ProjectStore.didChangeNotification,
             object: nil,
             queue: .main
         ) { [weak self] note in

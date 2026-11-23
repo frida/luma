@@ -163,7 +163,7 @@ private struct ProjectContentView: View {
                     await EngineRegistry.shared.release(workingProjectURL: url)
                 }
             }
-            .onReceive(NotificationCenter.default.publisher(for: ProjectStore.didCommitNotification)) { note in
+            .onReceive(NotificationCenter.default.publisher(for: ProjectStore.didChangeNotification)) { note in
                 guard let id = note.userInfo?["instanceID"] as? UUID,
                     id == engine.store.instanceID
                 else { return }

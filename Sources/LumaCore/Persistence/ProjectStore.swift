@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import Synchronization
 
 public enum ProjectStoreError: Error, LocalizedError {
     case madeByEarlierLuma
@@ -16,13 +17,22 @@ public enum ProjectStoreError: Error, LocalizedError {
 }
 
 public final class ProjectStore: Sendable {
-    public static let didCommitNotification = Notification.Name("LumaCore.ProjectStore.didCommit")
+    public static let didChangeNotification = Notification.Name("LumaCore.ProjectStore.didChange")
     private static let formatVersion = 6
 
     public let instanceID = UUID()
     private let db: DatabaseQueue
+    private let databasePath: String
+
+    private static let stagedWidgetStates = Mutex<[String: [StagedWidgetState: WidgetState]]>([:])
+
+    private struct StagedWidgetState: Hashable {
+        let instanceID: UUID
+        let widgetID: String
+    }
 
     public init(path: String) throws {
+        databasePath = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
         var config = Configuration()
         config.foreignKeysEnabled = true
         config.busyMode = .timeout(5)
@@ -41,6 +51,7 @@ public final class ProjectStore: Sendable {
     /// produces a fresh, self-contained database file with no sidecar WAL
     /// or -shm files.
     public func exportSnapshot(to destination: URL) throws {
+        writeStagedWidgetStates()
         let fm = FileManager.default
         if fm.fileExists(atPath: destination.path) {
             try fm.removeItem(at: destination)
@@ -1224,7 +1235,8 @@ public final class ProjectStore: Sendable {
     }
 
     public func fetchWidgetStates(instanceID: UUID) throws -> [String: WidgetState] {
-        try db.read { db in
+        writeStagedWidgetStates()
+        return try db.read { db in
             let rows = try Row.fetchAll(
                 db,
                 sql: "SELECT widget_id, state_json FROM widget_state WHERE instance_id = ?",
@@ -1237,6 +1249,34 @@ public final class ProjectStore: Sendable {
                 result[widgetID] = try JSONDecoder().decode(WidgetState.self, from: Data(json.utf8))
             }
             return result
+        }
+    }
+
+    public func stageWidgetState(_ state: WidgetState, instanceID: UUID, widgetID: String) {
+        let wasClean = Self.stagedWidgetStates.withLock { staged in
+            defer { staged[databasePath, default: [:]][StagedWidgetState(instanceID: instanceID, widgetID: widgetID)] = state }
+            return staged[databasePath] == nil
+        }
+        if wasClean {
+            Self.announceChange(ofStore: self.instanceID)
+        }
+    }
+
+    fileprivate static func announceChange(ofStore instanceID: UUID) {
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(
+                name: didChangeNotification,
+                object: nil,
+                userInfo: ["instanceID": instanceID]
+            )
+        }
+    }
+
+    public func writeStagedWidgetStates() {
+        Self.stagedWidgetStates.withLock { staged in
+            for (key, state) in staged.removeValue(forKey: databasePath) ?? [:] {
+                try? saveWidgetState(instanceID: key.instanceID, widgetID: key.widgetID, state: state)
+            }
         }
     }
 
@@ -1833,14 +1873,7 @@ private final class CommitNotifyingObserver: TransactionObserver {
     func observes(eventsOfKind eventKind: DatabaseEventKind) -> Bool { true }
     func databaseDidChange(with event: DatabaseEvent) {}
     func databaseDidCommit(_ db: Database) {
-        let id = instanceID
-        DispatchQueue.main.async {
-            NotificationCenter.default.post(
-                name: ProjectStore.didCommitNotification,
-                object: nil,
-                userInfo: ["instanceID": id]
-            )
-        }
+        ProjectStore.announceChange(ofStore: instanceID)
     }
     func databaseDidRollback(_ db: Database) {}
 }

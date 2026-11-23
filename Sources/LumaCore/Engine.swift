@@ -54,6 +54,13 @@ public final class Engine {
     private let _widgetUpdates = AsyncEventSource<WidgetUpdate>()
     public var widgetUpdates: AsyncStream<WidgetUpdate> { _widgetUpdates.makeStream() }
     private var widgetStates: [UUID: [String: WidgetState]] = [:]
+    private var widgetStateWrite = WidgetStateWrite.idle
+    private static let widgetStateWriteDelay = Duration.seconds(1)
+
+    private enum WidgetStateWrite {
+        case idle
+        case scheduled
+    }
     private var widgetPlacements: [UUID: [String: [PatternPlacement]]] = [:]
 
     public let eventLog = EventLog()
@@ -1990,6 +1997,7 @@ public final class Engine {
         guard !hasShutDown else { return }
         hasShutDown = true
 
+        writeStagedWidgetStates()
         eventLogTask?.cancel()
         eventLogTask = nil
         eventLog.flushNow()
@@ -4020,6 +4028,7 @@ public final class Engine {
             }
             node.removeInstrument(id: instance.id)
         }
+        writeStagedWidgetStates()
         try? store.deleteInstrument(id: instance.id)
         forgetViewData(of: instance)
         widgetStates.removeValue(forKey: instance.id)
@@ -5515,7 +5524,8 @@ public final class Engine {
         _widgetUpdates.yield(update)
 
         if let widgetDef, widgetDef.persistence == .session, !update.kind.isTransient {
-            try? store.saveWidgetState(instanceID: key.instanceID, widgetID: key.widget, state: state)
+            store.stageWidgetState(state, instanceID: key.instanceID, widgetID: key.widget)
+            scheduleWidgetStateWrite()
             if widgetDef.kind.isView {
                 persistViewData(of: state.view, instanceID: key.instanceID, widget: key.widget)
             }
@@ -5548,6 +5558,20 @@ public final class Engine {
     private func modifyWidgetState(of key: InstrumentViews.Key, _ body: (inout WidgetState) -> Void) -> WidgetState {
         body(&widgetStates[key.instanceID, default: [:]][key.widget, default: WidgetState()])
         return widgetStates[key.instanceID]![key.widget]!
+    }
+
+    private func scheduleWidgetStateWrite() {
+        guard widgetStateWrite == .idle else { return }
+        widgetStateWrite = .scheduled
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: Self.widgetStateWriteDelay)
+            self?.writeStagedWidgetStates()
+        }
+    }
+
+    private func writeStagedWidgetStates() {
+        widgetStateWrite = .idle
+        store.writeStagedWidgetStates()
     }
 
     private func stamped(_ update: WidgetUpdate, after state: WidgetState) -> WidgetUpdate {
