@@ -279,7 +279,7 @@ enum PharoInstrumentBindings {
               blob := LumaHost invoke: ''luma_blob_create_copying''
                 parameters: { TFBasicType pointer. TFBasicType sint64 } return: TFBasicType sint with: { staged. aByteArray size } ]
                 ensure: [ staged free ].
-            ^ self basicNew setBlob: blob offset: 0 size: aByteArray size; yourself'.
+            ^ self blob: blob offset: 0 size: aByteArray size'.
         bytes class compile: 'releaseBlob: aBlob
             LumaHost invoke: ''luma_blob_release''
                 parameters: { TFBasicType sint } return: TFBasicType void with: { aBlob }'.
