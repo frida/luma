@@ -313,13 +313,13 @@ final class PharoObjectChatPage {
     }
 
     private func follow() {
-        let (chat, thread, runsWithoutAsking, hasCompany) = withObservationTracking {
+        let (chat, thread, runsWithoutAsking, hasCompany): (ObjectChat?, ObjectChats.Thread, Bool, Bool) = withObservationTracking {
             let thread = chats.thread(of: chatID)
             isRemovedInLab = chats.removedInLab.contains(chatID)
             _ = chats.unsent
             _ = chats.problems
             _ = thread.toolCalls.map(chats.hold(on:))
-            return (chats.chats.first { $0.id == chatID }, thread, ObjectChatRunSetting.shared.runsWithoutAsking, hasCompany)
+            return (chats.chats.first { $0.id == chatID }, thread, ObjectChatRunSetting.shared.runsWithoutAsking, self.hasCompany)
         } onChange: { [weak self] in
             Task { @MainActor in self?.follow() }
         }

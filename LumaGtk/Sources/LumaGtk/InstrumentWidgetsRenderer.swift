@@ -770,7 +770,7 @@ private struct ChartFrame {
         defer { g_object_unref(layout) }
         if let maxWidth {
             pango_layout_set_width(layout, Int32(maxWidth * Double(PANGO_SCALE)))
-            pango_layout_set_ellipsize(layout, PANGO_ELLIPSIZE_END)
+            pango_layout_set_ellipsize(layout, EllipsizeMode.end.value)
         }
         var width: gint = 0
         var height: gint = 0
