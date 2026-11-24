@@ -223,7 +223,7 @@ private struct ProjectContentView: View {
     private func sidePanel(_ panel: SidePanel) -> some View {
         switch panel {
         case .collaboration:
-            CollaborationPanel(engine: engine)
+            CollaborationPanel(engine: engine, selection: selection)
         case .virtualMachines:
             #if canImport(AppKit)
             VirtualMachinePanel(engine: engine)
@@ -539,6 +539,9 @@ struct ProjectToolbar: ToolbarContent {
                         ? "person.2.wave.2.fill"
                         : "person.2.wave.2"
                 )
+                .overlay(alignment: .topTrailing) {
+                    ToolbarCountBadge(count: engine.objectChats.unreadCount(in: engine.objectChats.conversationID))
+                }
             }
             .help("Show or hide the collaboration panel")
             .keyboardShortcut("c", modifiers: [.command, .option])

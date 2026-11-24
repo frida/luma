@@ -4,7 +4,7 @@
     import UserNotifications
 
     /// Shows native local notifications for incoming collaboration events —
-    /// a new member joining the lab, a new notebook entry, or a chat message.
+    /// a new member joining the lab, a new notebook entry, or a message in the project chat.
     /// Push notifications already cover offline users; this class closes the
     /// blind spot where the Mac app is still connected to the portal but not
     /// frontmost (backgrounded, hidden, or covered by other windows), so the
@@ -30,12 +30,12 @@
             )
         }
 
-        func notifyChatMessage(_ message: LumaCore.CollaborationSession.ChatMessage, labID: String?) {
-            let name = displayName(message.sender)
+        func notifyChatMessage(_ message: ObjectChatMessage, in chatTitle: String, labID: String?) {
+            let sender = message.role == .assistant ? "Assistant" : message.author?.name ?? "Someone"
             deliver(
                 kind: "chat-message",
-                title: name,
-                body: message.text,
+                title: "\(sender) in \(chatTitle)",
+                body: message.bodyMarkdown,
                 labID: labID
             )
         }

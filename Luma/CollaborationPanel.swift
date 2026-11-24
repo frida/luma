@@ -13,14 +13,11 @@ import PhotosUI
 
 struct CollaborationPanel: View {
     let engine: Engine
+    @Binding var selection: SidebarItemID?
 
     @State private var didCopyInvite = false
     @State private var showLeaveLabConfirmation = false
     @State private var partnerContactFailure: UIError?
-
-    @State private var focusChatField = false
-    @State private var isPinnedToBottom = true
-    private let chatBottomID = "CHAT_BOTTOM_ANCHOR"
 
     #if canImport(UIKit)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -49,19 +46,17 @@ struct CollaborationPanel: View {
             if isActive {
                 Divider()
                 participantsSection
-                Divider()
-                chatSection
             }
+            ForEach(engine.labProblems) { problem in
+                LabProblemNotice(problem: problem, engine: engine, selection: $selection)
+            }
+            Divider()
+            ProjectChatSection(engine: engine)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(12)
         .background(.ultraThickMaterial)
         .gitHubSignInSheet(auth: engine.gitHubAuth, precedence: .ambient)
-        .onAppear {
-            if case .joined = collaboration.status {
-                focusChatField = true
-            }
-        }
         .alert("Leave this lab?", isPresented: $showLeaveLabConfirmation) {
             Button("Leave", role: .destructive) {
                 Task { @MainActor in
@@ -132,7 +127,7 @@ struct CollaborationPanel: View {
                     Text("Collaboration is currently off for this project.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text("Enable collaboration to share this project's state with teammates, including chat and presence.")
+                    Text("Enable collaboration to share this project's state with teammates, including the project chat and presence.")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .padding(.top, 2)
@@ -373,89 +368,6 @@ struct CollaborationPanel: View {
         collaboration.members.reduce(0) { $0 + ($1.role == .owner ? 1 : 0) }
     }
 
-    private var chatSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Chat")
-                .font(.subheadline).bold()
-
-            GeometryReader { outer in
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 4) {
-                            ForEach(collaboration.chatMessages) { msg in
-                                HStack(alignment: .top, spacing: 4) {
-                                    if msg.isLocal {
-                                        Spacer()
-                                    }
-
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        HStack(spacing: 4) {
-                                            avatarView(for: msg.sender)
-                                            Text("@\(msg.sender.id)")
-                                                .font(.caption2)
-                                                .foregroundColor(.secondary)
-                                            Spacer()
-                                            RelativeTimeText(
-                                                date: msg.timestamp,
-                                                color: .secondary.opacity(0.7)
-                                            )
-                                            .help(msg.timestamp.formatted())
-                                        }
-
-                                        Text(msg.text)
-                                            .font(.caption)
-                                    }
-                                    .padding(6)
-                                    .background(
-                                        msg.isLocal
-                                            ? Color.accentColor.opacity(0.35)
-                                            : Color.secondary.opacity(0.1)
-                                    )
-                                    .clipShape(RoundedRectangle(cornerRadius: 6))
-
-                                    if !msg.isLocal {
-                                        Spacer()
-                                    }
-                                }
-                            }
-
-                            Color.clear
-                                .frame(height: 0)
-                                .id(chatBottomID)
-                        }
-                        .frame(minHeight: outer.size.height, alignment: .bottomLeading)
-                    }
-                    .scrollBounceBehavior(.basedOnSize)
-                    .scrollDismissesKeyboard(.interactively)
-                    .coordinateSpace(name: "chatScroll")
-                    .simultaneousGesture(
-                        DragGesture().onChanged { _ in
-                            isPinnedToBottom = false
-                        }
-                    )
-                    .onChange(of: collaboration.chatMessages.count) { _, _ in
-                        if isPinnedToBottom {
-                            withAnimation(.easeOut(duration: 0.2)) {
-                                proxy.scrollTo(chatBottomID, anchor: .bottom)
-                            }
-                        }
-                    }
-                    .onAppear {
-                        proxy.scrollTo(chatBottomID, anchor: .bottom)
-                    }
-                }
-            }
-            .frame(minHeight: 80)
-
-            ChatInputRow(engine: engine, isFocused: $focusChatField)
-                .onChange(of: focusChatField) { _, newVal in
-                    if newVal {
-                        isPinnedToBottom = true
-                    }
-                }
-        }
-    }
-
     private func avatarSizeURL(_ user: CollaborationSession.UserInfo, size: Int) -> URL? {
         guard let base = user.avatarURL else { return nil }
         return URL(string: "\(base.absoluteString)&s=\(size)")
@@ -511,78 +423,6 @@ struct CollaborationPanel: View {
         let urlString = "https://github.com/\(user.id)"
         guard let url = URL(string: urlString) else { return }
         Platform.openURL(url)
-    }
-}
-
-private struct ChatInputRow: View {
-    let engine: Engine
-    @Binding var isFocused: Bool
-    @State private var draft: String = ""
-    @FocusState private var textFieldFocused: Bool
-
-    private var collaboration: CollaborationSession {
-        engine.collaboration
-    }
-
-    private var isActive: Bool {
-        if case .joined = collaboration.status { return true }
-        return false
-    }
-
-    var body: some View {
-        HStack {
-            TextField("Message", text: $draft, axis: .vertical)
-                .textFieldStyle(.roundedBorder)
-                .focused($textFieldFocused)
-                .onSubmit {
-                    send()
-                }
-
-            Button {
-                send()
-            } label: {
-                Image(systemName: "paperplane.fill")
-            }
-            .disabled(!canSend)
-        }
-        .font(.caption)
-        .onAppear {
-            if isFocused {
-                DispatchQueue.main.async {
-                    textFieldFocused = true
-                }
-            }
-        }
-        .onChange(of: isFocused) { _, newValue in
-            if newValue {
-                DispatchQueue.main.async {
-                    textFieldFocused = true
-                }
-            }
-        }
-        .onChange(of: textFieldFocused) { _, newValue in
-            if isFocused != newValue {
-                isFocused = newValue
-            }
-        }
-    }
-
-    private var canSend: Bool {
-        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && isActive
-    }
-
-    private func send() {
-        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, isActive else { return }
-
-        draft = ""
-        Task {
-            do {
-                try await collaboration.sendChat(text)
-            } catch {
-                draft = text
-            }
-        }
     }
 }
 

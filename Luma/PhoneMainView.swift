@@ -62,14 +62,13 @@ private struct PhoneContentView: View {
     @State private var path: [PhoneRoute] = []
     @State private var activeDrawer: DrawerKind?
     @State private var eventsBaseline: Int = 0
-    @State private var collabChatBaseline: Int = 0
 
     var body: some View {
         DrawerHost(
             active: $activeDrawer,
             engine: engine,
-            onEventsOpened: { eventsBaseline = engine.eventLog.totalReceived },
-            onCollabOpened: { collabChatBaseline = engine.collaboration.chatMessages.count }
+            selection: $path.asSidebarSelection(),
+            onEventsOpened: { eventsBaseline = engine.eventLog.totalReceived }
         ) {
             NavigationStack(path: $path) {
                 PhoneSessionsListView(
@@ -170,7 +169,6 @@ private struct PhoneContentView: View {
                 engine.setSidePanel(.collaboration)
             }
             eventsBaseline = engine.eventLog.totalReceived
-            collabChatBaseline = engine.collaboration.chatMessages.count
         }
         .onAppear {
             LumaAppState.shared.lastDocumentPath = projectURL.path
@@ -204,7 +202,7 @@ private struct PhoneContentView: View {
     }
 
     private var collabIndicator: Bool {
-        engine.collaboration.chatMessages.count > collabChatBaseline && activeDrawer != .collab
+        engine.objectChats.unreadCount(in: engine.objectChats.conversationID) > 0 && activeDrawer != .collab
     }
 }
 
@@ -251,8 +249,8 @@ enum DrawerKind: Hashable {
 private struct DrawerHost<Content: View>: View {
     @Binding var active: DrawerKind?
     let engine: Engine
+    let selection: Binding<SidebarItemID?>
     let onEventsOpened: () -> Void
-    let onCollabOpened: () -> Void
     @ViewBuilder let content: () -> Content
 
     @State private var expanded = false
@@ -306,16 +304,14 @@ private struct DrawerHost<Content: View>: View {
                 switch oldValue {
                 case .events:
                     onEventsOpened()
-                case .collab:
-                    onCollabOpened()
-                case nil:
+                case .collab, nil:
                     break
                 }
                 switch newValue {
                 case .events:
                     onEventsOpened()
                 case .collab:
-                    onCollabOpened()
+                    break
                 case nil:
                     expanded = false
                     dragOffset = 0
@@ -346,9 +342,18 @@ private struct DrawerHost<Content: View>: View {
                 )
 
             case .collab:
-                CollaborationPanel(engine: engine)
+                CollaborationPanel(engine: engine, selection: shownClosingDrawer)
             }
         }
+    }
+
+    private var shownClosingDrawer: Binding<SidebarItemID?> {
+        Binding(
+            get: { nil },
+            set: {
+                selection.wrappedValue = $0
+                close()
+            })
     }
 
     private func close() {

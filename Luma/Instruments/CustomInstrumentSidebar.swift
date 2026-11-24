@@ -78,6 +78,10 @@ struct SidebarCustomInstrumentDefRow: View {
                     .padding(.leading, 6)
                     .accessibilityIdentifier("sidebar.customInstrumentUpdate.\(def.id.uuidString)")
             }
+            if engine.isKeptFromLab(LabSubject(.definition, def.id)) {
+                NotInLabMark()
+                    .padding(.leading, 6)
+            }
             Spacer()
             if let drift = engine.instrumentFolderDrifts[def.id] {
                 folderDriftIndicator(drift)

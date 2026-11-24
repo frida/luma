@@ -295,6 +295,11 @@ private struct SidebarMissionRow: View {
             } label: {
                 Label("Delete Mission", systemImage: "trash")
             }
+            .disabled(!engine.canDelete(missionID: mission.id))
+            .help(
+                engine.canDelete(missionID: mission.id)
+                    ? "Delete this mission"
+                    : "Only the member who started this mission, or a lab owner, can delete it")
         }
         .confirmationDialog(
             "Delete Mission?",

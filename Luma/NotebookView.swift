@@ -47,6 +47,13 @@ struct NotebookView: View {
         .coordinateSpace(name: pharoPageSpace)
         .background(.pharoGutter)
         .pharoMaximizedPane(runtime: runtime, path: drillPath, onCloseAll: closeDrill)
+        .environment(\.engine, engine)
+        .environment(\.pharoChatOrigin, chatOrigin)
+    }
+
+    private var chatOrigin: PharoChatOrigin? {
+        guard let inspected, let entry = engine.notebookEntries.first(where: { $0.id == inspected }) else { return nil }
+        return PharoChatOrigin(origin: .notebookEntry(entryID: inspected), label: "a notebook cell", source: entry.details)
     }
 
     private var page: some View {

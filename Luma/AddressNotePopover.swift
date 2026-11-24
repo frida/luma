@@ -1,12 +1,6 @@
 import LumaCore
 import SwiftUI
 
-#if canImport(AppKit)
-private let textEditorBackground = Color(nsColor: .textBackgroundColor)
-#else
-private let textEditorBackground = Color(uiColor: .secondarySystemBackground)
-#endif
-
 struct AddressNotePopover: View {
     let engine: Engine
     let sessionID: UUID
@@ -198,7 +192,7 @@ struct AddressNotePopover: View {
                                     .id(message.id)
                             }
                             if let placeholder = livePlaceholder {
-                                MessageRow(message: placeholder, isEditing: false, editingDraft: .constant(""))
+                                ConversationMessageRow(message: placeholder, isEditing: false, editingDraft: .constant(""))
                                     .id(placeholder.id)
                             }
                         }
@@ -259,94 +253,43 @@ struct AddressNotePopover: View {
         .padding(.vertical, 8)
     }
 
-    @ViewBuilder
     private func messageRow(_ message: AddressNoteMessage) -> some View {
         let isEditing = editingMessageID == message.id
-        VStack(alignment: .trailing, spacing: 4) {
-            MessageRow(message: message, isEditing: isEditing, editingDraft: $editingDraft)
-                .focused($editFocused, equals: isEditing)
-            if isEditing {
-                HStack(spacing: 6) {
-                    Button("Cancel") { editingMessageID = nil }
-                        .buttonStyle(.bordered)
-                    Button("Save") { commitEdit(message: message) }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(editingDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-            }
+        return ConversationEditableMessage(
+            isEditing: isEditing,
+            editFocus: $editFocused,
+            canEdit: message.role == .user,
+            canDelete: message.role == .user,
+            canSave: !editingDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            onEdit: {
+                editingDraft = message.bodyMarkdown
+                editingMessageID = message.id
+                DispatchQueue.main.async { editFocused = true }
+            },
+            onCancel: { editingMessageID = nil },
+            onSave: { commitEdit(message: message) },
+            onDelete: { pendingDeleteMessage = message }
+        ) {
+            ConversationMessageRow(message: message, isEditing: isEditing, editingDraft: $editingDraft)
         }
-            .contextMenu {
-                if message.role == .user {
-                    Button {
-                        editingDraft = message.bodyMarkdown
-                        editingMessageID = message.id
-                        DispatchQueue.main.async { editFocused = true }
-                    } label: {
-                        Label("Edit", systemImage: "pencil")
-                    }
-                    Button(role: .destructive) {
-                        pendingDeleteMessage = message
-                    } label: {
-                        Label("Delete", systemImage: "trash")
-                    }
-                }
-            }
     }
 
     private static let bottomAnchorID = "address-note-bottom"
 
     private func inputBar(note: AddressNote) -> some View {
-        VStack(spacing: 6) {
-            if case .error(let reason) = pending {
-                Text(reason)
-                    .font(.footnote)
-                    .foregroundStyle(.red)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            HStack(alignment: .center, spacing: 6) {
-                TextEditor(text: $draft)
-                    .font(.body)
-                    .scrollContentBackground(.hidden)
-                    .padding(6)
-                    .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(textEditorBackground))
-                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Color.secondary.opacity(0.3)))
-                    .frame(height: 64)
-                    .focused($inputFocused)
-                VStack(spacing: 0) {
-                    Button {
-                        saveNote(note: note)
-                    } label: {
-                        Image(systemName: "square.and.pencil")
-                            .frame(width: 18, height: 18)
-                    }
-                    .buttonStyle(.bordered)
-                    .help("Save as user note")
-                    .disabled(isSending || draft.isEmpty)
-                    Spacer(minLength: 0)
-                    Button {
-                        if isSending {
-                            cancelReply()
-                        } else {
-                            askAI(note: note)
-                        }
-                    } label: {
-                        Group {
-                            if isSending {
-                                Image(systemName: "stop.fill")
-                            } else {
-                                Image(systemName: "paperplane.fill")
-                            }
-                        }
-                        .frame(width: 18, height: 18)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .help(isSending ? "Cancel reply" : "Ask AI")
-                    .disabled(!isSending && draft.isEmpty)
-                }
-                .frame(height: 64)
-            }
-        }
-        .padding(10)
+        ConversationInputBar(
+            draft: $draft,
+            isSending: isSending,
+            failure: failure,
+            focus: $inputFocused,
+            secondary: ConversationInputAction(symbol: "square.and.pencil", help: "Save as user note") { saveNote(note: note) },
+            primary: ConversationInputAction(symbol: "paperplane.fill", help: "Ask AI") { askAI(note: note) },
+            onStop: cancelReply)
+    }
+
+    private var failure: String? {
+        if case .error(let reason) = pending { return reason }
+        return nil
     }
 
     private var isSending: Bool {
@@ -509,81 +452,5 @@ struct AddressNotePopover: View {
 
     private func noteTitle(_ note: AddressNote) -> String {
         note.title ?? "Thread from \(note.createdAt.formatted(date: .abbreviated, time: .shortened))"
-    }
-}
-
-private struct MessageRow: View {
-    let message: AddressNoteMessage
-    let isEditing: Bool
-    @Binding var editingDraft: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 6) {
-                if let author = message.author {
-                    AuthorAvatar(author: author, size: 16)
-                } else {
-                    Image(systemName: icon)
-                        .foregroundStyle(tint)
-                }
-                Text(roleLabel)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text(message.createdAt.formatted(date: .omitted, time: .shortened))
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            }
-            if isEditing {
-                TextEditor(text: $editingDraft)
-                    .font(.body)
-                    .scrollContentBackground(.hidden)
-                    .padding(6)
-                    .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(textEditorBackground))
-                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Color.secondary.opacity(0.3)))
-                    .frame(height: 120)
-            } else {
-                MarkdownView(message.bodyMarkdown, as: .conversation)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(8)
-                    .background(background, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            }
-        }
-    }
-
-    private var icon: String {
-        switch message.role {
-        case .user: return "person.crop.circle"
-        case .assistant: return "sparkles"
-        case .system: return "gearshape"
-        }
-    }
-
-    private var tint: Color {
-        switch message.role {
-        case .user: return .accentColor
-        case .assistant: return .purple
-        case .system: return .secondary
-        }
-    }
-
-    private var roleLabel: String {
-        switch message.role {
-        case .user: return message.author?.name ?? "You"
-        case .assistant:
-            if let modelID = message.modelID, !modelID.isEmpty, modelID != "default" {
-                return modelID
-            }
-            return "Assistant"
-        case .system: return "System"
-        }
-    }
-
-    private var background: AnyShapeStyle {
-        switch message.role {
-        case .user: return AnyShapeStyle(.quaternary)
-        case .assistant: return AnyShapeStyle(.tertiary)
-        case .system: return AnyShapeStyle(.quinary)
-        }
     }
 }

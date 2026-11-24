@@ -207,6 +207,7 @@ struct PharoMaximizedPane: View {
             isMaximized: true,
             onSelect: open,
             onClose: close)
+            .pharoChatOrigin(at: depth, of: path)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .pharoPane()
             .padding(8)
@@ -274,6 +275,7 @@ func pharoColumns(
                             onMaximize: { path.toggleMaximized(handle) }),
                         onSelect: { path.open($0, from: depth) },
                         onClose: close)
+                    .pharoChatOrigin(at: depth, of: path)
                     .frame(width: width)
                     .pharoPane()
                     .id(handle)
@@ -391,7 +393,12 @@ struct PharoObjectColumn: View {
     @State private var shown: String?
     @State private var receiverClass: PharoObject?
     @State private var reloadToken = 0
+    @State private var described: PharoObject?
     @State private var isPointedAt = false
+
+    @Environment(\.engine) private var engine
+    @Environment(\.pharoChatOrigin) private var chatOrigin
+    @Environment(\.errorPresenter) private var errorPresenter
 
     private static let metaView = "swpMeta"
 
@@ -437,12 +444,17 @@ struct PharoObjectColumn: View {
     }
 
     private var printStringHeader: some View {
-        Text("\(article(for: object.className)) \(object.className) \(object.display)")
+        let current = described ?? object
+        return Text("\(article(for: current.className)) \(current.className) \(current.display)")
             .font(.headline)
             .lineLimit(2)
             .accessibilityIdentifier("pharo.inspector.printString")
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(8)
+            .contentShape(Rectangle())
+            .contextMenu {
+                ForEach(paneMenu.items) { PharoPaneMenuEntry(item: $0) }
+            }
     }
 
     private func article(for className: String) -> String {
@@ -450,13 +462,29 @@ struct PharoObjectColumn: View {
     }
 
     private var menuButton: some View {
+        paneMenu
+            .padding(6)
+            .accessibilityIdentifier("pharo.inspection.menu")
+    }
+
+    private var paneMenu: PharoPaneMenuButton {
         PharoPaneMenuButton(
             isRevealed: isPointedAt || isMaximized,
             actions: isMaximized ? PharoPaneActions() : actions,
+            chatItems: chatItems,
             onClose: onClose,
             onUpdate: { reloadToken &+= 1 })
-            .padding(6)
-            .accessibilityIdentifier("pharo.inspection.menu")
+    }
+
+    private var chatItems: [PharoPaneMenuItem] {
+        guard let engine, !object.isClass || object.printString == "LumaProject" else { return [] }
+        return PharoChatPaneItems(
+            object: object,
+            chats: engine.objectChats,
+            origin: chatOrigin,
+            errorPresenter: errorPresenter,
+            onSelect: onSelect
+        ).items
     }
 
     @ViewBuilder
@@ -538,6 +566,9 @@ struct PharoObjectColumn: View {
     }
 
     private func load() async {
+        if reloadToken != 0 {
+            await redescribe()
+        }
         if !object.isClass {
             receiverClass = try? await runtime.classObject(of: object)
         }
@@ -549,6 +580,12 @@ struct PharoObjectColumn: View {
             declared = .failed(error.localizedDescription)
         }
     }
+
+    private func redescribe() async {
+        guard let fresh = try? await runtime.evaluate("SwpBridge current session objectAt: \(object.handle)") else { return }
+        described = fresh
+        try? await runtime.release(fresh)
+    }
 }
 
 struct PharoDeclaredView: View {
@@ -556,6 +593,8 @@ struct PharoDeclaredView: View {
     let source: any PharoViewSource
     let reloadToken: Int
     let onSelect: (PharoObject) -> Void
+
+    @Environment(\.engine) private var engine
 
     var body: some View {
         switch declaration.viewName {
@@ -598,6 +637,10 @@ struct PharoDeclaredView: View {
             PharoPatternView(kind: .bytes, reference: declaration.text ?? "")
         case "lumaPatternVisualization":
             PharoPatternView(kind: .visualization, reference: declaration.text ?? "")
+        case "lumaChat":
+            if let engine {
+                PharoObjectChatView(engine: engine, chatID: UUID(uuidString: declaration.text ?? "")!, onSelect: onSelect)
+            }
         default:
             ContentUnavailableView(
                 "\(declaration.viewName) views are not rendered yet", systemImage: "square.dashed")
@@ -914,6 +957,7 @@ struct PharoPaneMenuButton: View {
     let isRevealed: Bool
     var canClose = true
     let actions: PharoPaneActions
+    var chatItems: [PharoPaneMenuItem] = []
     let onClose: () -> Void
     let onUpdate: () -> Void
 
@@ -933,7 +977,6 @@ struct PharoPaneMenuButton: View {
             .platformPointer(.link)
             .help(help)
             .opacity(isRevealed ? 1 : 0)
-            .allowsHitTesting(isRevealed)
             .onChange(of: isRevealed, initial: true) { _, revealed in
                 revealed ? modifiers.watch() : modifiers.forget()
             }
@@ -951,7 +994,7 @@ struct PharoPaneMenuButton: View {
         #else
             Menu {
                 ForEach(items) { item in
-                    Button(item.title, systemImage: item.symbol, action: item.run)
+                    PharoPaneMenuEntry(item: item)
                 }
             } label: {
                 PharoRoundIcon(systemName: icon)
@@ -976,7 +1019,7 @@ struct PharoPaneMenuButton: View {
         }
     }
 
-    private var items: [PharoPaneMenuItem] {
+    var items: [PharoPaneMenuItem] {
         var items: [PharoPaneMenuItem] = []
         if actions.canCollapse {
             items.append(PharoPaneMenuItem(title: "Collapse pane", symbol: "poweron", run: actions.onCollapse))
@@ -991,7 +1034,7 @@ struct PharoPaneMenuButton: View {
                 run: actions.onMaximize))
         }
         items.append(PharoPaneMenuItem(title: "Update pane tool", symbol: "arrow.clockwise", run: onUpdate))
-        return items
+        return items + chatItems
     }
 
     #if canImport(AppKit)
@@ -1004,17 +1047,26 @@ struct PharoPaneMenuButton: View {
     }
 
     private func showMenu() {
-        let menu = NSMenu()
         var runners: [PharoMenuRunner] = []
+        menu(of: items, keeping: &runners).popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+    }
+
+    private func menu(of items: [PharoPaneMenuItem], keeping runners: inout [PharoMenuRunner]) -> NSMenu {
+        let menu = NSMenu()
         for item in items {
-            let entry = NSMenuItem(title: item.title, action: #selector(PharoMenuRunner.fire), keyEquivalent: "")
-            let runner = PharoMenuRunner(item.run)
-            runners.append(runner)
-            entry.target = runner
+            let entry = NSMenuItem(title: item.title, action: nil, keyEquivalent: "")
+            if item.children.isEmpty {
+                let runner = PharoMenuRunner(item.run)
+                runners.append(runner)
+                entry.action = #selector(PharoMenuRunner.fire)
+                entry.target = runner
+            } else {
+                entry.submenu = self.menu(of: item.children, keeping: &runners)
+            }
             entry.image = NSImage(systemSymbolName: item.symbol, accessibilityDescription: nil)
             menu.addItem(entry)
         }
-        menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+        return menu
     }
     #endif
 }
@@ -1022,9 +1074,26 @@ struct PharoPaneMenuButton: View {
 struct PharoPaneMenuItem: Identifiable {
     let title: String
     let symbol: String
-    let run: () -> Void
+    var children: [PharoPaneMenuItem] = []
+    var run: () -> Void = {}
 
     var id: String { title }
+}
+
+struct PharoPaneMenuEntry: View {
+    let item: PharoPaneMenuItem
+
+    var body: some View {
+        if item.children.isEmpty {
+            Button(item.title, systemImage: item.symbol, action: item.run)
+        } else {
+            Menu(item.title, systemImage: item.symbol) {
+                ForEach(item.children) { child in
+                    Button(child.title, systemImage: child.symbol, action: child.run)
+                }
+            }
+        }
+    }
 }
 
 @Observable

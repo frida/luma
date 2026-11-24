@@ -28,6 +28,7 @@ struct CustomInstrumentMenuItems: View {
     @Binding var presentation: CustomInstrumentMenuPresentation
 
     private var isLinked: Bool { engine.instrumentFolderLinks[def.id] != nil }
+    private var labSubject: LabSubject { LabSubject(.definition, def.id) }
 
     var body: some View {
         Button {
@@ -96,6 +97,13 @@ struct CustomInstrumentMenuItems: View {
                 Label("Publish to Store\u{2026}", systemImage: "storefront")
             }
             .accessibilityIdentifier("customInstrument.publishToStore")
+        }
+        if engine.isKeptFromLab(labSubject) {
+            Button {
+                engine.addToLab(labSubject)
+            } label: {
+                Label("Add to Lab", systemImage: "person.2.wave.2")
+            }
         }
         Divider()
         Button(role: .destructive) {

@@ -40,6 +40,8 @@ struct PharoPlaygroundView: View {
         .background(.pharoGutter)
         .pharoMaximizedPane(runtime: runtime, path: columnPath, onCloseAll: columnPath.clear)
         .overlay { if isPageMaximized { maximizedPage } }
+        .environment(\.engine, engine)
+        .environment(\.pharoChatOrigin, chatOrigin)
         .task { await start() }
         .onAppear {
             snippets = engine.pharoSnippets
@@ -48,6 +50,11 @@ struct PharoPlaygroundView: View {
         }
         .onChange(of: snippets) { engine.setPharoSnippets(snippets) }
         .onChange(of: isPageMaximized) { engine.setPharoPageMaximized(isPageMaximized) }
+    }
+
+    private var chatOrigin: PharoChatOrigin? {
+        guard let inspected, let snippet = snippets.first(where: { $0.id == inspected }) else { return nil }
+        return PharoChatOrigin(origin: .snippet(snippetID: inspected), label: "a Playground snippet", source: snippet.source)
     }
 
     private var workspace: some View {

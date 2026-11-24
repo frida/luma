@@ -5,12 +5,14 @@ struct MissionTranscriptView: View {
     let turns: [MissionTurn]
     let actions: [MissionAction]
     let liveText: String
+    let starterName: String?
     private let actionsByTurnID: [UUID: [MissionAction]]
 
-    init(turns: [MissionTurn], actions: [MissionAction], liveText: String) {
+    init(turns: [MissionTurn], actions: [MissionAction], liveText: String, starterName: String?) {
         self.turns = turns
         self.actions = actions
         self.liveText = liveText
+        self.starterName = starterName
         actionsByTurnID = Dictionary(grouping: actions.compactMap { action -> (UUID, MissionAction)? in
             guard let turnID = action.turnID else { return nil }
             return (turnID, action)
@@ -24,7 +26,7 @@ struct MissionTranscriptView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
                     ForEach(turns) { turn in
-                        TurnCard(turn: turn, actions: actionsByTurnID[turn.id] ?? [])
+                        TurnCard(turn: turn, actions: actionsByTurnID[turn.id] ?? [], starterName: starterName)
                             .equatable()
                             .id(turn.id)
                     }
@@ -48,12 +50,14 @@ struct MissionTranscriptView: View {
 private struct TurnCard: View, Equatable {
     let turn: MissionTurn
     let actions: [MissionAction]
+    let starterName: String?
     private let parsedBlocks: [LLMContentBlock]
     private let actionKeys: [ActionRenderKey]
 
-    init(turn: MissionTurn, actions: [MissionAction]) {
+    init(turn: MissionTurn, actions: [MissionAction], starterName: String?) {
         self.turn = turn
         self.actions = actions
+        self.starterName = starterName
         parsedBlocks = Self.decodeBlocks(from: turn)
         actionKeys = actions.map(ActionRenderKey.init)
     }
@@ -83,12 +87,13 @@ private struct TurnCard: View, Equatable {
             && lhs.turn.contentJSON == rhs.turn.contentJSON
             && lhs.turn.outputTokens == rhs.turn.outputTokens
             && lhs.actionKeys == rhs.actionKeys
+            && lhs.starterName == rhs.starterName
     }
 
     private var roleLabel: String {
         switch turn.role {
         case .assistant: return "Assistant"
-        case .user: return userTurnIsToolResults ? "Tool results" : "You"
+        case .user: return userTurnIsToolResults ? "Tool results" : starterName ?? "You"
         case .tool: return "Tool"
         }
     }

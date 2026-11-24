@@ -108,7 +108,7 @@ struct PatternsListView: View {
             Button {
                 selection = .pattern(source.id)
             } label: {
-                PatternListRow(source: source)
+                PatternListRow(source: source, engine: engine)
             }
             .buttonStyle(.plain)
         }
@@ -174,6 +174,7 @@ struct PatternsListView: View {
 
 private struct PatternListRow: View {
     let source: PatternSource
+    let engine: Engine
 
     var body: some View {
         HStack(spacing: 10) {
@@ -181,8 +182,13 @@ private struct PatternListRow: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 2) {
-                Text(source.name)
-                    .font(.headline)
+                HStack(spacing: 6) {
+                    Text(source.name)
+                        .font(.headline)
+                    if source.keptFromLab(in: engine) != nil {
+                        NotInLabMark()
+                    }
+                }
                 Text(source.originDescription)
                     .font(.caption)
                     .foregroundStyle(.secondary)

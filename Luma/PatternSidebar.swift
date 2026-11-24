@@ -150,6 +150,10 @@ private struct SidebarPatternRow: View {
             Text(source.name)
                 .lineLimit(1)
                 .truncationMode(.tail)
+            if keptSubject != nil {
+                NotInLabMark()
+                    .padding(.leading, 6)
+            }
             Spacer(minLength: 0)
         }
         .accessibilityElement(children: .combine)
@@ -162,6 +166,13 @@ private struct SidebarPatternRow: View {
                     isShowingRename = true
                 } label: {
                     Label("Rename…", systemImage: "pencil")
+                }
+                if let keptSubject {
+                    Button {
+                        engine.addToLab(keptSubject)
+                    } label: {
+                        Label("Add to Lab", systemImage: "person.2.wave.2")
+                    }
                 }
                 Button(role: .destructive) {
                     isShowingDeleteConfirmation = true
@@ -190,6 +201,10 @@ private struct SidebarPatternRow: View {
         } message: { message in
             Text(message)
         }
+    }
+
+    private var keptSubject: LabSubject? {
+        source.keptFromLab(in: engine)
     }
 
     private func rename() {
@@ -285,6 +300,11 @@ extension PatternSource {
         case .package(let origin), .instrument(let origin):
             return "From \(origin)"
         }
+    }
+
+    func keptFromLab(in engine: Engine) -> LabSubject? {
+        guard let recordID = UUID(uuidString: id), engine.isKeptFromLab(LabSubject(.pattern, recordID)) else { return nil }
+        return LabSubject(.pattern, recordID)
     }
 }
 

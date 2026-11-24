@@ -38,7 +38,7 @@ struct MissionView: View {
                     compactBody(mission: mission)
                 } else {
                     PlatformHSplit {
-                        MissionTranscriptView(turns: turns, actions: actions, liveText: liveText)
+                        MissionTranscriptView(turns: turns, actions: actions, liveText: liveText, starterName: starterName(of: mission))
                             .frame(idealWidth: 480)
 
                         FindingsListView(engine: engine, missionID: mission.id, findings: findings)
@@ -79,10 +79,14 @@ struct MissionView: View {
 
         switch compactPane {
         case .transcript:
-            MissionTranscriptView(turns: turns, actions: actions, liveText: liveText)
+            MissionTranscriptView(turns: turns, actions: actions, liveText: liveText, starterName: starterName(of: mission))
         case .findings:
             FindingsListView(engine: engine, missionID: mission.id, findings: findings)
         }
+    }
+
+    private func starterName(of mission: Mission) -> String? {
+        engine.isStartedByMe(mission) ? nil : mission.author?.name
     }
 
     private var mission: Mission? {
@@ -165,6 +169,8 @@ private struct MissionHeader: View {
                 }
 
                 metadataRow
+                MissionStarterWaitNote(mission: mission, engine: engine)
+                    .fixedSize(horizontal: !isCompactWidth, vertical: false)
             }
 
             Spacer(minLength: 12)
@@ -179,7 +185,11 @@ private struct MissionHeader: View {
                         Label("Stop Mission", systemImage: "stop.circle")
                     }
                 }
-                .help("Cancel this mission. Pending tool calls won't be approved or run.")
+                .disabled(!engine.canStop(mission))
+                .help(
+                    engine.canStop(mission)
+                        ? "Cancel this mission. Pending tool calls won't be approved or run."
+                        : "Only the member who started this mission, or a lab owner, can stop it")
             }
         }
         .padding()

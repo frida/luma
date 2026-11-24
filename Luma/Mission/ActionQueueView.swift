@@ -4,6 +4,7 @@ import SwiftUI
 struct ActionQueueView: View {
     let engine: Engine
     let actions: [MissionAction]
+    let onOpenChat: (UUID) -> Void
 
     @State private var rejectingAction: MissionAction?
     @State private var rejectReason: String = ""
@@ -17,7 +18,7 @@ struct ActionQueueView: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Spacer(minLength: 8)
-                Text("\(actions.count) pending")
+                Text("\(actions.count + chatCalls.count) pending")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -25,7 +26,7 @@ struct ActionQueueView: View {
             }
             .padding()
 
-            if actions.isEmpty {
+            if actions.isEmpty && chatCalls.isEmpty {
                 Text("No actions awaiting approval.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
@@ -51,6 +52,9 @@ struct ActionQueueView: View {
                                 )
                             }
                         }
+                        ForEach(chatCalls) { call in
+                            chatCall(call)
+                        }
                     }
                     .padding(.horizontal)
                     .padding(.bottom)
@@ -75,6 +79,26 @@ struct ActionQueueView: View {
             if let a = rejectingAction {
                 Text("Tell the agent why you rejected \(a.toolName). This signal can help it adjust.")
             }
+        }
+    }
+
+    private var chatCalls: [ObjectChatToolCall] {
+        engine.objectChats.callsWaitingForMe
+    }
+
+    private func chatCall(_ call: ObjectChatToolCall) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(engine.objectChats.displayTitle(of: engine.objectChats.chats.first { $0.id == call.chatID }!))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer()
+                Button("Open Chat") { onOpenChat(call.chatID) }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+            }
+            PharoChatToolCallCard(call: call, engine: engine, onSelect: { _ in })
         }
     }
 }
@@ -116,7 +140,11 @@ struct ActionCard: View {
             HStack {
                 Button("Reject", role: .destructive, action: onReject)
                 Spacer()
-                Button("Approve", action: onApprove).buttonStyle(.borderedProminent)
+                if engine.canApprove(action) {
+                    Button("Approve", action: onApprove).buttonStyle(.borderedProminent)
+                } else {
+                    ExecutorWaitNote(executorName: engine.executor(of: action)?.name ?? "the session's host", hold: engine.hold(on: action))
+                }
             }
         }
         .padding()
@@ -253,3 +281,8 @@ struct RequestUserInputCard: View {
     }
 }
 
+extension Engine {
+    func waitsForMe(_ action: MissionAction) -> Bool {
+        canApprove(action) || action.toolName == MissionTools.requestUserInputToolName
+    }
+}

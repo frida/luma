@@ -51,7 +51,7 @@ struct MissionsListView: View {
                         Button {
                             selection = .mission(mission.id)
                         } label: {
-                            MissionListRow(mission: mission)
+                            MissionListRow(mission: mission, engine: engine)
                         }
                         .buttonStyle(.plain)
                     }
@@ -71,6 +71,7 @@ struct MissionsListView: View {
 
 private struct MissionListRow: View {
     let mission: Mission
+    let engine: Engine
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -91,6 +92,7 @@ private struct MissionListRow: View {
             }
             .font(.caption)
             .foregroundStyle(.secondary)
+            MissionStarterWaitNote(mission: mission, engine: engine)
         }
         .padding(.vertical, 4)
     }
@@ -129,6 +131,19 @@ struct MissionStatusBadge: View {
         case .completed: .green
         case .failed: .red
         case .cancelled: .gray
+        }
+    }
+}
+
+struct MissionStarterWaitNote: View {
+    let mission: Mission
+    let engine: Engine
+
+    var body: some View {
+        if engine.isWaitingForStarter(mission), let starter = mission.author {
+            Label("Continues when \(starter.name), who started it, is back online", systemImage: "clock")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 }
