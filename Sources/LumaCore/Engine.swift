@@ -3532,6 +3532,11 @@ public final class Engine {
         modulesSnapshot(forSessionID: sessionID).first { address >= $0.base && address < ($0.base &+ $0.size) }
     }
 
+    public func anchor(for address: UInt64, sessionID: UUID) -> AddressAnchor {
+        guard let module = enclosingModule(at: address, sessionID: sessionID) else { return .absolute(address) }
+        return .moduleOffset(name: module.name, offset: address &- module.base)
+    }
+
     public func resolve(sessionID: UUID, anchor: AddressAnchor, hint: UInt64? = nil) async -> UInt64? {
         if let node = node(forSessionID: sessionID) {
             do {

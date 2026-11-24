@@ -6,7 +6,7 @@ extension Engine {
         func node() throws -> ProcessNode { try pharoNode(of: request) }
         switch operation {
         case "modules":
-            return try node().modules.map(\.pharoJSON)
+            return modulesSnapshot(forSessionID: try pharoSessionID(of: request)).map(\.pharoJSON)
         case "threads":
             return try node().threads.map(\.pharoJSON)
         case "module_functions":
@@ -18,25 +18,31 @@ extension Engine {
         case "symbolicate":
             let addresses: [NSNumber] = try pharoArgument("addresses", of: request)
             return try await node().symbolicate(addresses: addresses.map(\.uint64Value)).map { Self.pharoNullable($0?.pharoJSON) }
+        case "anchors":
+            let addresses: [NSNumber] = try pharoArgument("addresses", of: request)
+            let sessionID = try pharoSessionID(of: request)
+            return addresses.map { anchor(for: $0.uint64Value, sessionID: sessionID).toJSON() }
+        case "resolve_anchor":
+            let anchor = try AddressAnchor.fromJSON(try pharoArgument("anchor", of: request))
+            return Self.pharoNullable(await resolve(sessionID: try pharoSessionID(of: request), anchor: anchor))
         case "range_at":
             return Self.pharoNullable(try await node().findRangeByAddress(try pharoAddress(of: request))?.pharoJSON)
         case "thread_snapshot":
             let id: NSNumber = try pharoArgument("thread", of: request)
             return Self.pharoNullable(try await node().fetchThreadSnapshot(id: id.uintValue)?.pharoJSON)
         case "disassemble":
-            return try await disassembleForPharo(request, in: try node())
+            return try await disassembleForPharo(request)
         case "r2":
-            return try await radareOutputForPharo(request, in: try node())
+            return try await radareOutputForPharo(request)
         case "decompile":
-            return try await decompileForPharo(request, in: try node())
+            return try await decompileForPharo(request)
         case "analyze_module":
-            try await analyzeModuleForPharo(request, in: try node())
+            try await analyzeModuleForPharo(request)
             return NSNull()
         case "evaluate_js":
             return try await node().evaluateJavaScript(try pharoArgument("source", of: request)).pharoJSON
         case "read_memory":
-            let count: Int = try pharoArgument("count", of: request)
-            return Data(try await node().readRemoteMemory(at: try pharoAddress(of: request), count: count)).base64EncodedString()
+            return Data(try await readMemoryForPharo(request)).base64EncodedString()
         case "write_memory":
             let encoded: String = try pharoArgument("bytes", of: request)
             guard let bytes = Data(base64Encoded: encoded) else { throw PharoAsyncBridgeError.missingArgument("bytes") }
@@ -52,7 +58,7 @@ extension Engine {
     }
 
     private func moduleFunctionsForPharo(_ request: [String: Any], in node: ProcessNode) async throws -> [[String: Any]] {
-        let module = try pharoModule(of: request, in: node)
+        let module = try pharoModule(of: request)
         return try await node.enumerateModuleFunctions(name: module.name).map {
             ["name": $0.name, "address": module.base + $0.offset, "detail": $0.source.rawValue]
         }
@@ -66,9 +72,9 @@ extension Engine {
         return ["name": name, "address": address, "detail": target["detail"] as? String ?? ""]
     }
 
-    private func disassembleForPharo(_ request: [String: Any], in node: ProcessNode) async throws -> [[String: String]] {
+    private func disassembleForPharo(_ request: [String: Any]) async throws -> [[String: String]] {
         let count: Int = try pharoArgument("count", of: request)
-        let lines = try await pharoDisassembler(for: node).disassemble(
+        let lines = try await pharoDisassembler(of: request).disassemble(
             DisassemblyRequest(address: try pharoAddress(of: request), count: count, appearance: .light))
         return lines.map {
             [
@@ -80,29 +86,41 @@ extension Engine {
         }
     }
 
-    private func radareOutputForPharo(_ request: [String: Any], in node: ProcessNode) async throws -> String {
+    private func radareOutputForPharo(_ request: [String: Any]) async throws -> String {
         let command: String = try pharoArgument("command", of: request)
-        return try Self.pharoRadareOutput(of: await pharoDisassembler(for: node).runCommand(command))
+        return try Self.pharoRadareOutput(of: await pharoDisassembler(of: request).runCommand(command))
     }
 
-    private func decompileForPharo(_ request: [String: Any], in node: ProcessNode) async throws -> String {
-        try Self.pharoRadareOutput(of: await pharoDisassembler(for: node).decompile(at: try pharoAddress(of: request)))
+    private func decompileForPharo(_ request: [String: Any]) async throws -> String {
+        let decompiled = try await pharoDisassembler(of: request).decompile(at: try pharoAddress(of: request))
+        guard let pseudoC = decompiled.output, !pseudoC.isEmpty else { return try Self.pharoRadareOutput(of: decompiled) }
+        return StyledText.parseAnsi(pseudoC).plainText
     }
 
-    private func analyzeModuleForPharo(_ request: [String: Any], in node: ProcessNode) async throws {
-        try await pharoDisassembler(for: node).analyze(module: try pharoModule(of: request, in: node))
+    private func analyzeModuleForPharo(_ request: [String: Any]) async throws {
+        try await pharoDisassembler(of: request).analyze(module: try pharoModule(of: request))
     }
 
-    private func pharoModule(of request: [String: Any], in node: ProcessNode) throws -> ProcessModule {
+    private func readMemoryForPharo(_ request: [String: Any]) async throws -> [UInt8] {
+        let address = try pharoAddress(of: request)
+        let count: Int = try pharoArgument("count", of: request)
+        let sessionID = try pharoSessionID(of: request)
+        guard let node = node(forSessionID: sessionID) else {
+            return try await memoryReader(forSessionID: sessionID).read(at: address, count: count)
+        }
+        return try await node.readRemoteMemory(at: address, count: count)
+    }
+
+    private func pharoModule(of request: [String: Any]) throws -> ProcessModule {
         let name: String = try pharoArgument("module", of: request)
-        guard let module = node.modules.first(where: { $0.name == name }) else {
+        guard let module = modulesSnapshot(forSessionID: try pharoSessionID(of: request)).first(where: { $0.name == name }) else {
             throw PharoAsyncBridgeError.missingArgument("module")
         }
         return module
     }
 
-    private func pharoDisassembler(for node: ProcessNode) throws -> Disassembler {
-        guard let disassembler = disassembler(forSessionID: node.sessionID) else { throw PatternMemoryError.detached }
+    private func pharoDisassembler(of request: [String: Any]) throws -> Disassembler {
+        guard let disassembler = disassembler(forSessionID: try pharoSessionID(of: request)) else { throw PatternMemoryError.detached }
         return disassembler
     }
 

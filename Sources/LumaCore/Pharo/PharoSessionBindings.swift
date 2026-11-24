@@ -1,6 +1,7 @@
 enum PharoSessionBindings {
     static let source = """
-        | session modules module functions function hook call pointer threads thread radare flags flag references reference |
+        | session modules module functions function hook call instructions instruction blocks block pointer threads thread radare flags flag
+          references reference |
         session := LumaSession.
         session compile: 'id
             ^ self at: #id'.
@@ -44,6 +45,24 @@ enum PharoSessionBindings {
             ^ self request: { #op -> ''write_memory''. #address -> anAddress. #bytes -> aByteArray base64Encoded }'.
         session compile: 'disassemble: aCount at: anAddress
             ^ self request: { #op -> ''disassemble''. #address -> anAddress. #count -> aCount }'.
+        session compile: 'instructionAt: anAddress
+            ^ LumaInstruction in: self at: (LumaPointer numberFrom: anAddress)'.
+        session compile: 'instructionAnchoredTo: anAnchor
+            ^ LumaInstruction in: self anchor: anAnchor'.
+        session compile: 'functionAt: anAddress
+            self analyzeAt: anAddress.
+            ^ (self r2 json: ''afij'' at: anAddress)
+                ifEmpty: [ nil ]
+                ifNotEmpty: [ :found | LumaFunction fromRadare: found first in: self ]'.
+        session compile: 'blockAt: anAddress
+            ^ (self functionAt: anAddress) ifNotNil: [
+                LumaBasicBlock in: self json: (self r2 json: ''afbij'' at: anAddress) first ]'.
+        session compile: 'anchorsAt: someAddresses
+            ^ self request: { #op -> ''anchors''. #addresses -> someAddresses asArray }'.
+        session compile: 'addressOf: anAnchor
+            ^ self request: { #op -> ''resolve_anchor''. #anchor -> anAnchor }'.
+        session compile: 'analyzeAt: anAddress
+            (self modules items detect: [ :each | each contains: anAddress ] ifNone: [ nil ]) ifNotNil: [ :found | found analyze ]'.
         session compile: 'r2
             ^ LumaRadare on: self'.
         session compile: 'r2: aCommand
@@ -157,6 +176,13 @@ enum PharoSessionBindings {
             install.
         function class compile: 'fromJSON: aDictionary in: aSession
             ^ self new setSession: aSession json: aDictionary; yourself'.
+        function class compile: 'fromRadare: aDictionary in: aSession
+            ^ self
+                fromJSON: {
+                    ''name'' -> (aDictionary at: ''name'').
+                    ''address'' -> (LumaPointer numberFrom: (aDictionary at: ''addr'')).
+                    ''detail'' -> (aDictionary at: ''type'') } asDictionary
+                in: aSession'.
         function compile: 'setSession: aSession json: aDictionary
             session := aSession.
             name := aDictionary at: ''name''.
@@ -189,6 +215,18 @@ enum PharoSessionBindings {
             ^ session moduleAt: address'.
         function compile: 'disassembly
             ^ session disassemble: 64 at: address'.
+        function compile: 'comments
+            ^ (self disassembly collect: [ :each | (each at: ''address'') -> (each at: ''comment'') ]) asDictionary'.
+        function compile: 'instructions
+            session analyzeAt: address.
+            ^ LumaInstructions new
+                setItems: (LumaInstruction in: session ops: ((session r2 json: ''pdfj'' at: address) at: ''ops''));
+                yourself'.
+        function compile: 'blocks
+            session analyzeAt: address.
+            ^ LumaBasicBlocks new
+                setItems: ((session r2 json: ''afbj'' at: address) collect: [ :each | LumaBasicBlock in: session json: each ]);
+                yourself'.
         function compile: 'r2: aCommand
             ^ session r2 cmd: aCommand at: address'.
         function compile: 'decompile
@@ -201,14 +239,16 @@ enum PharoSessionBindings {
             ^ LumaHook on: self at: #leave do: aBlock'.
         function compile: 'gtDisassemblyFor: aView
             <gtView>
+            | comments |
             ^ aView columnedList
                 title: ''Disassembly'';
                 priority: 1;
-                items: [ self disassembly ];
-                column: ''Address'' text: [ :each | each at: ''address'' ];
-                column: ''Bytes'' text: [ :each | each at: ''bytes'' ];
-                column: ''Instruction'' text: [ :each | each at: ''asm'' ];
-                column: ''Comment'' text: [ :each | each at: ''comment'' ]'.
+                items: [ self instructions items ];
+                column: ''Address'' text: [ :each | each addressString ];
+                column: ''Bytes'' text: [ :each | each bytesString ];
+                column: ''Instruction'' text: [ :each | each text ];
+                column: ''Comment'' text: [ :each |
+                    (comments ifNil: [ comments := self comments ]) at: each addressString ifAbsent: [ '''' ] ]'.
         function compile: 'gtDecompileFor: aView
             <gtView>
             ^ aView text
@@ -225,6 +265,13 @@ enum PharoSessionBindings {
                 column: ''Kind'' text: [ :each | each kind ];
                 column: ''In'' text: [ :each | each functionName ];
                 column: ''Instruction'' text: [ :each | each opcode ]'.
+        function compile: 'gtBlocksFor: aView
+            <gtView>
+            ^ aView forward
+                title: ''Blocks'';
+                priority: 4;
+                object: [ self blocks ];
+                view: #gtBlocksFor:'.
 
         hook := LumaSubscription << #LumaHook
             slots: { #function. #tag. #cut };
@@ -361,6 +408,194 @@ enum PharoSessionBindings {
                 column: ''Field'' text: [ :each | each key ];
                 column: ''Value'' text: [ :each | each value ]'.
 
+        instructions := LumaRecords << #LumaInstructions slots: {}; package: 'Luma'; install.
+        instructions compile: 'gtInstructionsFor: aView
+            <gtView>
+            ^ aView columnedList
+                title: ''Instructions'';
+                items: [ items ];
+                column: ''Address'' text: [ :each | each addressString ];
+                column: ''Bytes'' text: [ :each | each bytesString ];
+                column: ''Instruction'' text: [ :each | each text ]'.
+
+        instruction := Object << #LumaInstruction slots: { #session. #anchor. #address. #op }; package: 'Luma'; install.
+        instruction class compile: 'in: aSession at: anAddress
+            aSession analyzeAt: anAddress.
+            ^ (self in: aSession ops: (aSession r2 json: ''pdj 1'' at: anAddress)) first'.
+        instruction class compile: 'in: aSession anchor: anAnchor
+            ^ self in: aSession at: ((aSession addressOf: anAnchor) ifNil: [
+                LumaHostError signal: ''nothing in this session is at '' , (STONJSON toString: anAnchor) ])'.
+        instruction class compile: 'in: aSession ops: someOps
+            | anchors |
+            anchors := aSession anchorsAt: (someOps collect: [ :each | LumaPointer numberFrom: (each at: ''addr'') ]).
+            ^ someOps with: anchors collect: [ :op :anchor | self new setSession: aSession anchor: anchor op: op; yourself ]'.
+        instruction compile: 'setSession: aSession anchor: anAnchor op: aDictionary
+            session := aSession.
+            anchor := anAnchor.
+            op := aDictionary.
+            address := LumaPointer numberFrom: (aDictionary at: ''addr'')'.
+        instruction compile: 'session ^ session'.
+        instruction compile: 'anchor ^ anchor'.
+        instruction compile: 'address ^ address'.
+        instruction compile: 'op ^ op'.
+        instruction compile: 'pointer
+            ^ session pointer: address'.
+        instruction compile: 'addressString
+            ^ self pointer hex'.
+        instruction compile: 'size
+            ^ op at: ''size'''.
+        instruction compile: 'bytesString
+            ^ op at: ''bytes'''.
+        instruction compile: 'bytes
+            ^ ByteArray readHexFrom: self bytesString'.
+        instruction compile: 'text
+            ^ op at: ''disasm'''.
+        instruction compile: 'mnemonic
+            ^ (op at: ''opcode'') substrings first'.
+        instruction compile: 'operands
+            ^ ((op at: ''opcode'') copyAfter: Character space) trimBoth'.
+        instruction compile: 'type
+            ^ op at: ''type'''.
+        instruction compile: 'next
+            ^ session instructionAt: address + self size'.
+        instruction compile: 'previous
+            ^ (LumaInstruction in: session ops: (session r2 json: ''pdj -1'' at: address)) first'.
+        instruction compile: 'function
+            ^ session functionAt: address'.
+        instruction compile: 'block
+            ^ session blockAt: address'.
+        instruction compile: 'references
+            ^ session r2 referencesTo: address'.
+        instruction compile: 'surroundings
+            ^ self function
+                ifNil: [ LumaInstructions new setItems: { self }; yourself ]
+                ifNotNil: [ :found | found instructions ]'.
+        instruction compile: 'label
+            ^ (session r2 cmd: ''fd'' at: address) trimBoth ifEmpty: [ self addressString ]'.
+        instruction compile: 'printOn: aStream
+            aStream nextPutAll: self label; nextPutAll: '': ''; nextPutAll: self text'.
+        instruction compile: '= anObject
+            ^ (anObject isKindOf: LumaInstruction)
+                and: [ anObject session id = session id and: [ anObject anchor = anchor ] ]'.
+        instruction compile: 'hash
+            ^ session id hash bitXor: anchor hash'.
+        instruction compile: 'gtDisassemblyFor: aView
+            <gtView>
+            ^ (LumaView new kindName: ''lumaDisassembly'')
+                title: ''Disassembly'';
+                priority: 1;
+                text: [ session id , '':'' , self addressString ];
+                yourself'.
+        instruction compile: 'gtInstructionsFor: aView
+            <gtView>
+            ^ aView columnedList
+                title: ''Instructions'';
+                priority: 2;
+                items: [ self surroundings items ];
+                column: '''' text: [ :each | each = self ifTrue: [ ''▸'' ] ifFalse: [ '''' ] ];
+                column: ''Address'' text: [ :each | each addressString ];
+                column: ''Bytes'' text: [ :each | each bytesString ];
+                column: ''Instruction'' text: [ :each | each text ]'.
+        instruction compile: 'gtDecompileFor: aView
+            <gtView>
+            | function |
+            function := self function.
+            function ifNil: [ ^ aView ].
+            ^ aView forward
+                title: ''Pseudo-C'';
+                priority: 3;
+                object: [ function ];
+                view: #gtDecompileFor:'.
+        instruction compile: 'gtBytesFor: aView
+            <gtView>
+            ^ (LumaView new kindName: ''lumaBytes'')
+                title: ''Bytes'';
+                priority: 4;
+                text: [ self addressString , '':'' , self bytes base64Encoded ];
+                yourself'.
+        instruction compile: 'gtReferencesFor: aView
+            <gtView>
+            ^ aView forward
+                title: ''References'';
+                priority: 5;
+                object: [ self references ];
+                view: #gtReferencesFor:'.
+
+        blocks := LumaRecords << #LumaBasicBlocks slots: {}; package: 'Luma'; install.
+        blocks compile: 'gtBlocksFor: aView
+            <gtView>
+            ^ aView columnedList
+                title: ''Blocks'';
+                items: [ items ];
+                column: ''Address'' text: [ :each | each addressString ];
+                column: ''Size'' text: [ :each | each size printString ];
+                column: ''Instructions'' text: [ :each | each instructionCount printString ]'.
+
+        block := Object << #LumaBasicBlock slots: { #session. #address. #json }; package: 'Luma'; install.
+        block class compile: 'in: aSession json: aDictionary
+            ^ self new setSession: aSession json: aDictionary; yourself'.
+        block compile: 'setSession: aSession json: aDictionary
+            session := aSession.
+            address := LumaPointer numberFrom: (aDictionary at: ''addr'').
+            json := aDictionary'.
+        block compile: 'session ^ session'.
+        block compile: 'address ^ address'.
+        block compile: 'size
+            ^ json at: ''size'''.
+        block compile: 'instructionCount
+            ^ json at: ''ninstr'''.
+        block compile: 'pointer
+            ^ session pointer: address'.
+        block compile: 'addressString
+            ^ self pointer hex'.
+        block compile: 'instructions
+            ^ LumaInstructions new
+                setItems: (LumaInstruction in: session ops: (session r2 json: ''pdj '' , self instructionCount printString at: address));
+                yourself'.
+        block compile: 'successors
+            ^ LumaBasicBlocks new
+                setItems: (self successorAddresses collect: [ :each | session blockAt: each ]);
+                yourself'.
+        block compile: 'successorAddresses
+            ^ (#(''jump'' ''fail'') select: [ :each | json includesKey: each ])
+                collect: [ :each | LumaPointer numberFrom: (json at: each) ]'.
+        block compile: 'predecessors
+            ^ LumaBasicBlocks new
+                setItems: (self function blocks items select: [ :each | each successorAddresses includes: address ]);
+                yourself'.
+        block compile: 'function
+            ^ session functionAt: address'.
+        block compile: 'printOn: aStream
+            aStream
+                nextPutAll: (session r2 cmd: ''fd'' at: address) trimBoth;
+                nextPutAll: '' (''; print: self instructionCount; nextPutAll: '' instructions)'''.
+        block compile: '= anObject
+            ^ (anObject isKindOf: LumaBasicBlock)
+                and: [ anObject session id = session id and: [ anObject address = address ] ]'.
+        block compile: 'hash
+            ^ session id hash bitXor: address hash'.
+        block compile: 'gtInstructionsFor: aView
+            <gtView>
+            ^ aView forward
+                title: ''Instructions'';
+                priority: 1;
+                object: [ self instructions ];
+                view: #gtInstructionsFor:'.
+        block compile: 'gtSuccessorsFor: aView
+            <gtView>
+            ^ aView forward
+                title: ''Successors'';
+                priority: 2;
+                object: [ self successors ];
+                view: #gtBlocksFor:'.
+        block compile: 'gtPredecessorsFor: aView
+            <gtView>
+            ^ aView forward
+                title: ''Predecessors'';
+                priority: 3;
+                object: [ self predecessors ];
+                view: #gtBlocksFor:'.
+
         pointer := Object << #LumaPointer slots: { #session. #address }; package: 'Luma'; install.
         pointer class compile: 'in: aSession at: anAddressOrHex
             ^ self new setSession: aSession address: (self numberFrom: anAddressOrHex); yourself'.
@@ -437,6 +672,8 @@ enum PharoSessionBindings {
             ^ session r2 cmd: aCommand at: address'.
         pointer compile: 'references
             ^ session r2 referencesTo: address'.
+        pointer compile: 'instruction
+            ^ session instructionAt: address'.
         pointer compile: 'hexDump: aCount
             | bytes |
             bytes := self read: aCount.
@@ -540,11 +777,7 @@ enum PharoSessionBindings {
             ^ STONJSON fromString: (self cmd: aCommand at: anAddress)'.
         radare compile: 'functions
             ^ LumaFunctions new
-                setItems: ((self json: ''aflj'') collect: [ :each |
-                    LumaFunction fromJSON: {
-                        ''name'' -> (each at: ''name'').
-                        ''address'' -> (LumaPointer numberFrom: (each at: ''addr'')).
-                        ''detail'' -> (each at: ''type'') } asDictionary in: session ]);
+                setItems: ((self json: ''aflj'') collect: [ :each | LumaFunction fromRadare: each in: session ]);
                 yourself'.
         radare compile: 'flags
             ^ LumaFlags new

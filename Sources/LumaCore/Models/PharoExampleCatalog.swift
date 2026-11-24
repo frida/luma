@@ -142,6 +142,12 @@ public enum PharoExampleCatalog {
                 title: "Who refers to a function \u{2014} calls, jumps and data",
                 code: "(LumaProject sessions items first functionNamed: 'malloc') references."),
             PharoExample(
+                title: "An instruction \u{2014} its bytes, block, function and neighbors",
+                code: "(LumaProject sessions items first functionNamed: 'malloc') pointer instruction."),
+            PharoExample(
+                title: "A function's basic blocks, from block to instruction to its references",
+                code: "(LumaProject sessions items first functionNamed: 'malloc') blocks."),
+            PharoExample(
                 title: "Analyze a module, then see what radare2 found \u{2014} functions and flags",
                 code: """
                 | session |
