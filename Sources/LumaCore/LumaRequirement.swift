@@ -10,6 +10,7 @@ extension LumaVersion {
 
 extension StoreVersion {
     static let instrumentViews = StoreVersion(major: 3, minor: 0, patch: 0)
+    static let widgetsAndSettings = StoreVersion(major: 4, minor: 0, patch: 0)
 
     public static func least(inEngineRange range: String) -> StoreVersion? {
         guard range.hasPrefix(">=") else { return nil }
@@ -23,19 +24,25 @@ extension StoreVersion {
 
 extension CustomInstrumentBundle {
     var undeclaredLumaRequirement: StoreVersion? {
-        guard def.declaresView || files.contains(where: { HostCode.isHostCode($0.path) }) else { return nil }
-        guard let declared = def.minAppVersion, declared >= .instrumentViews else { return .instrumentViews }
+        guard let required = def.lumaRequirement(given: files) else { return nil }
+        guard let declared = def.minAppVersion, declared >= required else { return required }
         return nil
     }
 }
 
 extension CustomInstrumentDef {
-    mutating func requireLumaForViews(in files: [CustomInstrumentFile]) {
-        guard declaresView || files.contains(where: { HostCode.isHostCode($0.path) }) else { return }
-        minAppVersion = max(minAppVersion ?? .instrumentViews, .instrumentViews)
+    mutating func requireLuma(given files: [CustomInstrumentFile]) {
+        guard let required = lumaRequirement(given: files) else { return }
+        minAppVersion = max(minAppVersion ?? required, required)
     }
 
-    fileprivate var declaresView: Bool {
-        widgets.contains { $0.kind.isView }
+    fileprivate func lumaRequirement(given files: [CustomInstrumentFile]) -> StoreVersion? {
+        if !widgets.isEmpty || !features.isEmpty {
+            return .widgetsAndSettings
+        }
+        if files.contains(where: { HostCode.isHostCode($0.path) }) {
+            return .instrumentViews
+        }
+        return nil
     }
 }

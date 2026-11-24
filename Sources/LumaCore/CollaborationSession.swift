@@ -81,6 +81,7 @@ public final class CollaborationSession {
         public var threads: [ProcessThread]
         public var replCells: [REPLCell]
         public var instruments: [InstrumentInstance]
+        public var instrumentAgents: [UUID: InstrumentAgentState]
         public var insights: [AddressInsight]
         public var traces: [ITrace]
         public var processInfo: ProcessSession.ProcessInfo?
@@ -102,6 +103,7 @@ public final class CollaborationSession {
             threads: [ProcessThread] = [],
             replCells: [REPLCell] = [],
             instruments: [InstrumentInstance] = [],
+            instrumentAgents: [UUID: InstrumentAgentState] = [:],
             insights: [AddressInsight] = [],
             traces: [ITrace] = [],
             processInfo: ProcessSession.ProcessInfo? = nil,
@@ -122,6 +124,7 @@ public final class CollaborationSession {
             self.threads = threads
             self.replCells = replCells
             self.instruments = instruments
+            self.instrumentAgents = instrumentAgents
             self.insights = insights
             self.traces = traces
             self.processInfo = processInfo
@@ -161,7 +164,11 @@ public final class CollaborationSession {
             let cells = cellObjs.compactMap(REPLCell.fromWireJSON)
 
             let instrumentObjs = (obj["instruments"] as? [[String: Any]]) ?? []
-            let instruments = instrumentObjs.compactMap(InstrumentInstance.fromWireJSON)
+            let parsedInstruments = instrumentObjs.compactMap(SessionOp.parseWireInstrument)
+            let instruments = parsedInstruments.map(\.instance)
+            let instrumentAgents = Dictionary(
+                parsedInstruments.compactMap { parsed in parsed.agent.map { (parsed.instance.id, $0) } },
+                uniquingKeysWith: { _, last in last })
 
             let insightObjs = (obj["insights"] as? [[String: Any]]) ?? []
             let insights = insightObjs.compactMap(AddressInsight.fromWireJSON)
@@ -221,6 +228,7 @@ public final class CollaborationSession {
                 threads: threads,
                 replCells: cells,
                 instruments: instruments,
+                instrumentAgents: instrumentAgents,
                 insights: insights,
                 traces: traces,
                 processInfo: processInfo,
@@ -327,6 +335,7 @@ public final class CollaborationSession {
     public var onSessionReplEvalRequested: ((UUID, String, REPLLanguage, UUID) -> Void)?
     public var onSessionInstrumentAdded: ((UUID, InstrumentInstance) -> Void)?
     public var onSessionInstrumentUpdated: ((UUID, InstrumentInstance) -> Void)?
+    public var onSessionInstrumentAgentReported: ((UUID, InstrumentAgentState) -> Void)?
     public var onSessionInstrumentRemoved: ((UUID, UUID) -> Void)?
     public var onSessionInstrumentSetStateRequested: ((UUID, UUID, InstrumentState) -> Void)?
     public var onSessionInstrumentRemoveRequested: ((UUID, UUID) -> Void)?
@@ -1045,16 +1054,26 @@ public final class CollaborationSession {
         enqueueSessionOp(.updateReplCell(.init(sessionID: sessionID, cell: wireCell)))
     }
 
-    public func enqueueAddInstrument(sessionID: UUID, instance: InstrumentInstance, runtimeStatus: InstrumentStatus? = nil) {
+    public func enqueueAddInstrument(
+        sessionID: UUID,
+        instance: InstrumentInstance,
+        runtimeStatus: InstrumentStatus? = nil,
+        agent: InstrumentAgentState? = nil
+    ) {
         var wireInst = instance
         wireInst.sessionID = sessionID
-        enqueueSessionOp(.addInstrument(.init(sessionID: sessionID, instance: wireInst, runtimeStatus: runtimeStatus)))
+        enqueueSessionOp(.addInstrument(.init(sessionID: sessionID, instance: wireInst, runtimeStatus: runtimeStatus, agent: agent)))
     }
 
-    public func enqueueUpdateInstrument(sessionID: UUID, instance: InstrumentInstance, runtimeStatus: InstrumentStatus? = nil) {
+    public func enqueueUpdateInstrument(
+        sessionID: UUID,
+        instance: InstrumentInstance,
+        runtimeStatus: InstrumentStatus? = nil,
+        agent: InstrumentAgentState? = nil
+    ) {
         var wireInst = instance
         wireInst.sessionID = sessionID
-        enqueueSessionOp(.updateInstrument(.init(sessionID: sessionID, instance: wireInst, runtimeStatus: runtimeStatus)))
+        enqueueSessionOp(.updateInstrument(.init(sessionID: sessionID, instance: wireInst, runtimeStatus: runtimeStatus, agent: agent)))
     }
 
     public func enqueueRemoveInstrument(sessionID: UUID, instanceID: UUID) {
@@ -1413,9 +1432,15 @@ public final class CollaborationSession {
             onSessionReplCellUpdated?(u.sessionID, u.cell)
 
         case .addInstrument(let a):
+            if let agent = a.agent {
+                onSessionInstrumentAgentReported?(a.instance.id, agent)
+            }
             onSessionInstrumentAdded?(a.sessionID, a.instance)
 
         case .updateInstrument(let u):
+            if let agent = u.agent {
+                onSessionInstrumentAgentReported?(u.instance.id, agent)
+            }
             onSessionInstrumentUpdated?(u.sessionID, u.instance)
 
         case .removeInstrument(let r):

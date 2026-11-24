@@ -32,6 +32,7 @@ export interface WidgetHandle {
     appendImage(image: ConsoleImage): void;
     setState(value: unknown, data?: ViewData | null): void;
     sendEvent(value: unknown, data?: ViewData | null): void;
+    setActionEnabled(action: string, enabled: boolean): void;
     clear(): void;
 }
 
@@ -177,6 +178,7 @@ export async function loadInstrument({ instanceId, moduleName, source, config, r
     const instrument = await loadInstrumentModule(moduleName, source);
     const ctx = makeInstrumentContext(instanceId);
 
+    ctx.post("instrument-actions-reset", {});
     const handle = await instrument.create(ctx, config, restored);
 
     const controller: InstrumentController = {
@@ -224,7 +226,11 @@ export async function invokeWidgetAction({ instanceId, widget, action, item }: {
         throw new Error(`No such instance: ${instanceId}`);
     }
 
-    await controller.handle.onAction?.({ widget, action, item });
+    const chosen: WidgetAction = { widget, action };
+    if (item !== undefined) {
+        chosen.item = item;
+    }
+    await controller.handle.onAction?.(chosen);
 }
 
 export async function submitConsoleInput({ instanceId, widget, entryId, text }: {
@@ -428,6 +434,9 @@ function makeInstrumentContext(instanceId: string): InstrumentContext {
                 sendEvent(value, data) {
                     const [payload, bytes] = viewPayload("event", value, data, viewLimits.eventDataBytes);
                     post("widget-view-event", { widget: id, ...payload }, bytes);
+                },
+                setActionEnabled(action, enabled) {
+                    post("widget-action-enabled", { widget: id, action, enabled });
                 },
                 clear() {
                     post("widget-clear", { widget: id });

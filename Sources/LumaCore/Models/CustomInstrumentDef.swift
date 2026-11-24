@@ -38,6 +38,7 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
         }
 
         public init(from decoder: Decoder) throws {
+            try decoder.refuseUnknownKeys(CodingKeys.self)
             let c = try decoder.container(keyedBy: CodingKeys.self)
             self.init(
                 id: try c.decode(String.self, forKey: .id),
@@ -286,15 +287,15 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
         // host loads via the standard instrument lifecycle.
         //
         // create():    install your hooks; return updateConfig + dispose,
-        //              plus onAction if your list or table widgets declare
-        //              actions, and onConsoleInput if you have a console
-        //              widget.
+        //              plus onAction if your widgets declare actions or
+        //              row actions, and onConsoleInput if you have a
+        //              console widget.
         // dispose():   undo every side effect (detach listeners, revert
         //              replacements). Save will call this and then re-create
         //              with the new source.
         //
-        // Features declared in the sidebar show up on `config.features`
-        // typed exactly as you defined them. Accessing a feature you have
+        // Settings declared in the sidebar show up on `config.settings`
+        // typed exactly as you defined them. Accessing a setting you have
         // not declared is a type error.
         //
         // Widgets declared in the sidebar render in the instance pane and
@@ -317,9 +318,16 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
         //                Smalltalk (.st files), which may answer through
         //                onViewMessage({ widget, value, data })
         //
-        // Action buttons on a list or table widget invoke onAction({
-        // widget, action, item }) on the handle. Submissions from a
-        // console widget invoke
+        // A widget's actions are buttons in its header, and a list's or
+        // table's row actions are buttons on each row; either invokes
+        // onAction({ widget, action, item }) on the handle, `item` being
+        // the row's id for a row action and absent otherwise. Luma never
+        // clears a widget by itself: offer an action that calls clear()
+        // when the user should be able to. A widget with actions also has
+        // setActionEnabled(action, enabled) to gray one out while it
+        // cannot run; every action is enabled again each time create()
+        // runs, and clear() leaves them as they are. Submissions from a console
+        // widget invoke
         //   onConsoleInput({ widget, entryId, text }, respond)
         // and `respond.output` / `respond.error` / `respond.value` post
         // entries that are visually grouped with the originating input.
@@ -335,10 +343,10 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
         //   - one graph widget `opens` with series `length` and
         //     Persistence = Session (required for `restored.opens`
         //     to type-check)
-        //   - one list widget `paths` with action `bookmark`
+        //   - one list widget `paths` with row action `bookmark`
         //   - one console widget `repl`
         // Until you add them, the lines referencing them are type
-        // errors — add them via right-click → Features… / Widgets…,
+        // errors — add them via right-click → Settings… / Widgets…,
         // or delete the corresponding lines.
 
         export const instrument: CustomInstrument = {
@@ -355,7 +363,7 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
                             ctx.emit({ syscall: "open", path });
                             ctx.widget("opens").push({ series: "length", x: ++count, y: path.length });
                             ctx.widget("paths").upsertItem({ id: path, title: path });
-                            if (current.features.logStack) {
+                            if (current.settings.logStack) {
                                 ctx.emit({ stack: this.context.sp.readByteArray(64) });
                             }
                         }

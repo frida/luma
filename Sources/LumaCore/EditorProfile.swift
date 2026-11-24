@@ -103,7 +103,7 @@ extension EditorProfile {
                 projectFiles: projectFiles,
                 activePath: activePath,
                 ambientDeclarations: [CustomInstrumentTypings.ambient]
-                    + (def.flatMap(CustomInstrumentTypings.featureMap(for:)).map { [$0] } ?? [])
+                    + (def.flatMap(CustomInstrumentTypings.settingMap(for:)).map { [$0] } ?? [])
                     + PackageAliasTypings.declarations(for: packages)
             )
         }
@@ -193,13 +193,13 @@ public enum CustomInstrumentTypings {
             clear(): void;
         }
 
-        declare interface CustomInstrumentListWidget<Action extends string> {
+        declare interface CustomInstrumentListWidget {
             upsertItem(item: { id: string, title: string, subtitle?: string, accessory?: string }): void;
             removeItem(id: string): void;
             clear(): void;
         }
 
-        declare interface CustomInstrumentTableWidget<Column extends string, Action extends string> {
+        declare interface CustomInstrumentTableWidget<Column extends string> {
             upsertRow(row: { id: string, cells: { [K in Column]: string } }): void;
             removeRow(id: string): void;
             clear(): void;
@@ -235,17 +235,17 @@ public enum CustomInstrumentTypings {
             clear(): void;
         }
 
+        declare interface CustomInstrumentWidgetActions<Action extends string> {
+            setActionEnabled(action: Action, enabled: boolean): void;
+        }
+
         declare interface CustomInstrumentWidgetMap {
         }
 
-        declare type CustomInstrumentAction = {
-            [K in keyof CustomInstrumentWidgetMap]:
-                CustomInstrumentWidgetMap[K] extends CustomInstrumentListWidget<infer A>
-                    ? { widget: K; action: A; item: string }
-                : CustomInstrumentWidgetMap[K] extends CustomInstrumentTableWidget<any, infer A>
-                    ? { widget: K; action: A; item: string }
-                    : never
-        }[keyof CustomInstrumentWidgetMap];
+        declare interface CustomInstrumentActionMap {
+        }
+
+        declare type CustomInstrumentAction = CustomInstrumentActionMap[keyof CustomInstrumentActionMap];
 
         declare type CustomInstrumentConsoleInput = {
             [K in keyof CustomInstrumentWidgetMap]:
@@ -268,13 +268,13 @@ public enum CustomInstrumentTypings {
             image(image: CustomInstrumentConsoleImage): void;
         }
 
-        declare type CustomFeatureValue = boolean | number | string | CustomFeatureValue[] | { [name: string]: CustomFeatureValue };
+        declare type CustomSettingValue = boolean | number | string | CustomSettingValue[] | { [name: string]: CustomSettingValue };
 
-        declare interface CustomInstrumentFeatureMap {
+        declare interface CustomInstrumentSettingMap {
         }
 
         declare interface CustomInstrumentConfig {
-            features: CustomInstrumentFeatureMap;
+            settings: CustomInstrumentSettingMap;
         }
 
         declare interface CustomInstrumentHandle {
@@ -337,7 +337,7 @@ public enum CustomInstrumentTypings {
         fileName: "custom-instrument.d.ts"
     )
 
-    public static func featureMap(for def: CustomInstrumentDef) -> AmbientDeclarations? {
+    public static func settingMap(for def: CustomInstrumentDef) -> AmbientDeclarations? {
         guard !def.features.isEmpty || !def.widgets.isEmpty else { return nil }
         return AmbientDeclarations(
             content: defScopedDeclarations(for: def),
@@ -346,21 +346,25 @@ public enum CustomInstrumentTypings {
     }
 
     public static func compilerTypings(for def: CustomInstrumentDef, packages: [InstalledPackage]) -> [AmbientDeclarations] {
-        [ambient] + (featureMap(for: def).map { [$0] } ?? []) + PackageAliasTypings.declarations(for: packages)
+        [ambient] + (settingMap(for: def).map { [$0] } ?? []) + PackageAliasTypings.declarations(for: packages)
     }
 
     public static func declarations(for def: CustomInstrumentDef) -> String {
-        ([ambient.content] + (featureMap(for: def).map { [$0.content] } ?? []))
+        ([ambient.content] + (settingMap(for: def).map { [$0.content] } ?? []))
             .joined(separator: "\n\n")
     }
 
     public static func defScopedDeclarations(for def: CustomInstrumentDef) -> String {
         var sections: [String] = []
         if !def.features.isEmpty {
-            sections.append(featureMapDeclarations(for: def))
+            sections.append(settingMapDeclarations(for: def))
         }
         if !def.widgets.isEmpty {
             sections.append(widgetMapDeclarations(for: def))
+        }
+        let actingWidgets = def.widgets.filter { !$0.actions.isEmpty || !$0.kind.rowActions.isEmpty }
+        if !actingWidgets.isEmpty {
+            sections.append(actionMapDeclarations(for: actingWidgets))
         }
         let persistentWidgets = def.widgets.filter { $0.persistence == .session }
         if !persistentWidgets.isEmpty {
@@ -369,8 +373,8 @@ public enum CustomInstrumentTypings {
         return sections.joined(separator: "\n\n")
     }
 
-    public static func featureMapDeclarations(for def: CustomInstrumentDef) -> String {
-        var lines: [String] = ["declare interface CustomInstrumentFeatureMap {"]
+    public static func settingMapDeclarations(for def: CustomInstrumentDef) -> String {
+        var lines: [String] = ["declare interface CustomInstrumentSettingMap {"]
         for feature in def.features {
             let optionalMark = feature.optional ? "?" : ""
             lines.append("    /** \(jsDocText(feature.name)) */")
@@ -383,8 +387,25 @@ public enum CustomInstrumentTypings {
     public static func widgetMapDeclarations(for def: CustomInstrumentDef) -> String {
         var lines: [String] = ["declare interface CustomInstrumentWidgetMap {"]
         for widget in def.widgets {
-            lines.append("    /** \(jsDocText(widget.name)) */")
-            lines.append("    \(featureKey(widget.id)): \(widgetType(for: widget.kind));")
+            lines.append("    /** \(jsDocText(widget.label)) */")
+            lines.append("    \(featureKey(widget.id)): \(widgetType(for: widget));")
+        }
+        lines.append("}")
+        return lines.joined(separator: "\n")
+    }
+
+    public static func actionMapDeclarations(for actingWidgets: [InstrumentWidget]) -> String {
+        var lines: [String] = ["declare interface CustomInstrumentActionMap {"]
+        for widget in actingWidgets {
+            let widgetLiteral = jsStringLiteral(widget.id)
+            var variants: [String] = []
+            if !widget.actions.isEmpty {
+                variants.append("{ widget: \(widgetLiteral); action: \(stringLiteralUnion(widget.actions.map(\.id))); item?: undefined }")
+            }
+            if !widget.kind.rowActions.isEmpty {
+                variants.append("{ widget: \(widgetLiteral); action: \(stringLiteralUnion(widget.kind.rowActions.map(\.id))); item: string }")
+            }
+            lines.append("    \(featureKey(widget.id)): \(variants.joined(separator: " | "));")
         }
         lines.append("}")
         return lines.joined(separator: "\n")
@@ -393,11 +414,17 @@ public enum CustomInstrumentTypings {
     public static func restoredStateDeclarations(for persistentWidgets: [InstrumentWidget]) -> String {
         var lines: [String] = ["declare interface CustomInstrumentRestoredState {"]
         for widget in persistentWidgets {
-            lines.append("    /** \(jsDocText(widget.name)) */")
+            lines.append("    /** \(jsDocText(widget.label)) */")
             lines.append("    \(featureKey(widget.id)): \(snapshotType(for: widget.kind));")
         }
         lines.append("}")
         return lines.joined(separator: "\n")
+    }
+
+    private static func widgetType(for widget: InstrumentWidget) -> String {
+        let kindType = widgetType(for: widget.kind)
+        guard !widget.actions.isEmpty else { return kindType }
+        return "\(kindType) & CustomInstrumentWidgetActions<\(stringLiteralUnion(widget.actions.map(\.id)))>"
     }
 
     private static func widgetType(for kind: InstrumentWidget.Kind) -> String {
@@ -408,10 +435,10 @@ public enum CustomInstrumentTypings {
             return "CustomInstrumentHistogramWidget"
         case .graph(let cfg):
             return "CustomInstrumentGraphWidget<\(stringLiteralUnion(cfg.series.map(\.id)))>"
-        case .list(let cfg):
-            return "CustomInstrumentListWidget<\(stringLiteralUnion(cfg.actions.map(\.id)))>"
+        case .list:
+            return "CustomInstrumentListWidget"
         case .table(let cfg):
-            return "CustomInstrumentTableWidget<\(stringLiteralUnion(cfg.columns.map(\.id))), \(stringLiteralUnion(cfg.actions.map(\.id)))>"
+            return "CustomInstrumentTableWidget<\(stringLiteralUnion(cfg.columns.map(\.id)))>"
         case .hex:
             return "CustomInstrumentHexWidget"
         case .console:

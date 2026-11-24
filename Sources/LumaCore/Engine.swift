@@ -62,6 +62,8 @@ public final class Engine {
         case scheduled
     }
     private var widgetPlacements: [UUID: [String: [PatternPlacement]]] = [:]
+    private var disabledWidgetActions: [UUID: [String: Set<String>]] = [:]
+    private var remoteInstrumentAgents: [UUID: InstrumentAgentState] = [:]
 
     public let eventLog = EventLog()
     public let eventChime = EventChime()
@@ -133,6 +135,7 @@ public final class Engine {
     private var customInstrumentReloadWaiters: [UUID: [CheckedContinuation<Void, Never>]] = [:]
     public private(set) var instrumentFolderLinks: [UUID: InstrumentFolderLink] = [:]
     public private(set) var instrumentFolderDrifts: [UUID: InstrumentFolderDrift] = [:]
+    private var instrumentFolderSyncFailures: [UUID: String] = [:]
     @ObservationIgnored private var instrumentFolderMonitors: [UUID: InstrumentFolderMonitor] = [:]
     private var threadActionProviders: [ThreadActionProvider] = []
     @ObservationIgnored public var onSessionListChanged: (@MainActor (SessionListChange) -> Void)?
@@ -1053,8 +1056,7 @@ public final class Engine {
                 try? self.store.replaceCustomInstrumentFiles(defID: bundle.def.id, files: bundle.files)
                 self.scheduleCustomInstrumentReload(defID: bundle.def.id)
             case .remove(let r):
-                try? self.store.deleteCustomInstrumentDef(id: r.defID)
-                self.unlinkInstrumentFolder(defID: r.defID)
+                self.forgetCustomInstrument(r.defID)
             }
         }
 
@@ -1113,7 +1115,7 @@ public final class Engine {
                 self.broadcastCustomInstrumentUpsert(defID: absent.id)
             }
             for stale in local where !serverIDs.contains(stale.id) && !pending.contains(stale.id) && known.contains(stale.id) {
-                try? self.store.deleteCustomInstrumentDef(id: stale.id)
+                self.forgetCustomInstrument(stale.id)
             }
             let normalized = bundles.map { bundle -> CustomInstrumentBundle in
                 var copy = bundle
@@ -1221,6 +1223,10 @@ public final class Engine {
 
         collaboration.onSessionInstrumentUpdated = { [weak self] sessionID, instance in
             self?.applyRemoteSessionInstrumentUpdated(sessionID: sessionID, instance: instance)
+        }
+
+        collaboration.onSessionInstrumentAgentReported = { [weak self] instanceID, agent in
+            self?.remoteInstrumentAgents[instanceID] = agent
         }
 
         collaboration.onSessionInstrumentRemoved = { [weak self] sessionID, instanceID in
@@ -1565,7 +1571,8 @@ public final class Engine {
     private func broadcastInstrumentUpdate(_ instance: InstrumentInstance) {
         guard isHostingNode(instance.sessionID) else { return }
         let status = node(forSessionID: instance.sessionID)?.instruments.first(where: { $0.id == instance.id })?.status
-        collaboration.enqueueUpdateInstrument(sessionID: instance.sessionID, instance: instance, runtimeStatus: status)
+        collaboration.enqueueUpdateInstrument(
+            sessionID: instance.sessionID, instance: instance, runtimeStatus: status, agent: agentState(of: instance))
     }
 
     private func handleRemoteReplEvalRequest(sessionID: UUID, code: String, language: REPLLanguage, cellID: UUID) {
@@ -1749,7 +1756,7 @@ public final class Engine {
 
     private func announce(_ instance: InstrumentInstance, sessionID: UUID) {
         let status = node(forSessionID: sessionID)?.instruments.first(where: { $0.id == instance.id })?.status
-        collaboration.enqueueAddInstrument(sessionID: sessionID, instance: instance, runtimeStatus: status)
+        collaboration.enqueueAddInstrument(sessionID: sessionID, instance: instance, runtimeStatus: status, agent: agentState(of: instance))
         for (widget, placements) in widgetPlacements[instance.id] ?? [:] where !placements.isEmpty {
             collaboration.enqueueSetPlacements(placements, sessionID: sessionID, on: .widget(instanceID: instance.id, widget: widget))
         }
@@ -1829,6 +1836,7 @@ public final class Engine {
             onREPLCellSaved?(stored)
         }
 
+        remoteInstrumentAgents.merge(session.instrumentAgents) { _, reported in reported }
         for inst in session.instruments {
             var stored = inst
             stored.sessionID = session.id
@@ -2238,8 +2246,9 @@ public final class Engine {
             let instances = (try? store.fetchInstruments(sessionID: node.sessionID)) ?? []
             for ref in attached {
                 guard let instance = instances.first(where: { $0.id == ref.id }) else { continue }
-                try? await node.disposeInstrumentOnAgent(instanceID: instance.id)
                 node.markInstrumentDetached(id: instance.id)
+                broadcastInstrumentStatus(instanceID: instance.id, sessionID: node.sessionID)
+                try? await node.disposeInstrumentOnAgent(instanceID: instance.id)
                 await loadInstrumentOnNode(
                     instanceID: instance.id,
                     kind: instance.kind,
@@ -4076,8 +4085,9 @@ public final class Engine {
             )
         case .disabled:
             if node.instruments.first(where: { $0.id == inst.id })?.attachment == .attached {
-                try? await node.disposeInstrumentOnAgent(instanceID: inst.id)
                 node.markInstrumentDetached(id: inst.id)
+                broadcastInstrumentStatus(instanceID: inst.id, sessionID: node.sessionID)
+                try? await node.disposeInstrumentOnAgent(instanceID: inst.id)
             }
         }
     }
@@ -5115,10 +5125,18 @@ public final class Engine {
         return def
     }
 
+    public func updateCustomInstrument(_ defID: UUID, _ change: (inout CustomInstrumentDef) -> Void) {
+        guard let current = customInstruments.def(withId: defID) else { return }
+        var updated = current
+        change(&updated)
+        guard updated != current else { return }
+        updateCustomInstrument(updated)
+    }
+
     public func updateCustomInstrument(_ def: CustomInstrumentDef) {
         var updated = def
         updated.normalize()
-        updated.requireLumaForViews(in: (try? store.fetchCustomInstrumentFiles(defID: def.id)) ?? [])
+        updated.requireLuma(given: (try? store.fetchCustomInstrumentFiles(defID: def.id)) ?? [])
         updated.updatedAt = Date()
         try? store.save(updated)
         registerDescriptor(customInstruments.descriptor(for: updated))
@@ -5129,7 +5147,14 @@ public final class Engine {
 
     @discardableResult
     public func addCustomInstrumentFile(defID: UUID, path: String, by author: CustomInstrumentAuthor = .localUser) throws -> String {
-        try writeCustomInstrumentFile(defID: defID, path: path, content: PatternSource.Kind(path: path)?.template ?? "", by: author)
+        let validatedPath = try CustomInstrumentFile.validateRelativePath(path)
+        try requireNoProblem(customInstrumentFileProblem(defID: defID, path: validatedPath))
+        return try writeCustomInstrumentFile(
+            defID: defID,
+            path: validatedPath,
+            content: PatternSource.Kind(path: validatedPath)?.template ?? "",
+            by: author
+        )
     }
 
     @discardableResult
@@ -5140,12 +5165,13 @@ public final class Engine {
         by author: CustomInstrumentAuthor = .localUser
     ) throws -> String {
         let validatedPath = try CustomInstrumentFile.validateRelativePath(path)
+        try requireNoProblem(reservedCustomInstrumentFileProblem(defID: defID, path: validatedPath))
         let file = CustomInstrumentFile(defID: defID, path: validatedPath, content: content)
         _ = try requireCustomInstrumentDef(defID: defID)
         try noteHostCodeEdit(ofCustomInstrument: defID, by: author) {
             try store.save(file)
         }
-        try store.save(requiringLumaForViews(touchUpdatedAt(defID: defID)))
+        try store.save(requiringLuma(touchUpdatedAt(defID: defID)))
         broadcastCustomInstrumentUpsert(defID: defID)
         scheduleCustomInstrumentReload(defID: defID)
         return validatedPath
@@ -5177,6 +5203,7 @@ public final class Engine {
         guard try store.fetchCustomInstrumentFile(defID: defID, path: fromPath) != nil else {
             throw LumaCoreError.invalidArgument("No file '\(fromPath)' in this custom instrument.")
         }
+        try requireNoProblem(customInstrumentFileProblem(defID: defID, path: toPath))
         let renamesEntrypoint = try requireCustomInstrumentDef(defID: defID).entrypoint == fromPath
         if renamesEntrypoint {
             try Self.requireEntrypointCandidate(toPath)
@@ -5184,7 +5211,7 @@ public final class Engine {
         try noteHostCodeEdit(ofCustomInstrument: defID, by: author) {
             try store.renameCustomInstrumentFile(defID: defID, from: fromPath, to: toPath)
         }
-        var def = try requiringLumaForViews(touchUpdatedAt(defID: defID))
+        var def = try requiringLuma(touchUpdatedAt(defID: defID))
         if renamesEntrypoint {
             def.entrypoint = toPath
         }
@@ -5216,9 +5243,9 @@ public final class Engine {
         instrumentViews.noteEdit(ofCustomInstrument: defID, from: previous, to: next, by: author)
     }
 
-    private func requiringLumaForViews(_ def: CustomInstrumentDef) throws -> CustomInstrumentDef {
+    private func requiringLuma(_ def: CustomInstrumentDef) throws -> CustomInstrumentDef {
         var required = def
-        required.requireLumaForViews(in: try store.fetchCustomInstrumentFiles(defID: def.id))
+        required.requireLuma(given: try store.fetchCustomInstrumentFiles(defID: def.id))
         return required
     }
 
@@ -5257,6 +5284,29 @@ public final class Engine {
         return def
     }
 
+    public func customInstrumentFileProblem(defID: UUID, path: String) -> String? {
+        if customInstruments.file(defID: defID, path: path) != nil {
+            return "There is already a file '\(path)' in this custom instrument."
+        }
+        return reservedCustomInstrumentFileProblem(defID: defID, path: path)
+    }
+
+    private func reservedCustomInstrumentFileProblem(defID: UUID, path: String) -> String? {
+        let folder = instrumentFolderLinks[defID].flatMap { try? InstrumentFolder(folderURL: $0.folderURL) }
+        let prefix = folder?.prefix ?? ""
+        let ownPath = path.hasPrefix(prefix) ? String(path.dropFirst(prefix.count)) : path
+        let usesIconFile = if case .pixels = customInstruments.def(withId: defID)?.icon { true } else { false }
+        let iconPath = usesIconFile ? folder?.iconPath ?? InstrumentFolder.defaultIconFileName : nil
+        guard path.hasPrefix(prefix), !InstrumentFolder.isInstrumentFile(ownPath, iconPath: iconPath) else { return nil }
+        return "'\(path)' is kept by Luma and cannot be a file of this custom instrument."
+    }
+
+    private func requireNoProblem(_ problem: String?) throws {
+        if let problem {
+            throw LumaCoreError.invalidArgument(problem)
+        }
+    }
+
     private func touchUpdatedAt(defID: UUID) throws -> CustomInstrumentDef {
         var def = try requireCustomInstrumentDef(defID: defID)
         def.updatedAt = Date()
@@ -5291,6 +5341,11 @@ public final class Engine {
     public func customInstrumentID(linkedToFolderAt folderURL: URL) -> UUID? {
         let path = folderURL.standardizedFileURL.path
         return instrumentFolderLinks.first { $0.value.folderURL.standardizedFileURL.path == path }?.key
+    }
+
+    private func forgetCustomInstrument(_ defID: UUID) {
+        try? store.deleteCustomInstrumentDef(id: defID)
+        unlinkInstrumentFolder(defID: defID)
     }
 
     public func unlinkInstrumentFolder(defID: UUID) {
@@ -5351,6 +5406,7 @@ public final class Engine {
         instrumentFolderMonitors.removeValue(forKey: defID)?.stop()
         guard let link = instrumentFolderLinks[defID] else {
             instrumentFolderDrifts[defID] = nil
+            instrumentFolderSyncFailures[defID] = nil
             return
         }
         instrumentFolderMonitors[defID] = InstrumentFolderMonitor(folderURL: link.folderURL) { [weak self] in
@@ -5370,7 +5426,16 @@ public final class Engine {
             unlinkInstrumentFolder(defID: defID)
             return
         }
-        instrumentFolderDrifts[defID] = try? writeThroughOrReportDrift(defID: defID)
+        do {
+            instrumentFolderDrifts[defID] = try writeThroughOrReportDrift(defID: defID)
+            instrumentFolderSyncFailures[defID] = nil
+        } catch {
+            let name = customInstruments.def(withId: defID)?.name ?? "A custom instrument"
+            let text = "\(name) could not be synced with its folder: \(userFacingMessage(error))"
+            guard instrumentFolderSyncFailures[defID] != text else { return }
+            instrumentFolderSyncFailures[defID] = text
+            emitEngineError(subsystem: "instruments", text: text)
+        }
     }
 
     private func isRemovedFromLibrary(_ link: InstrumentFolderLink) -> Bool {
@@ -5448,14 +5513,6 @@ public final class Engine {
         )
     }
 
-    public func clearWidget(instance: InstrumentInstance, widget: String) {
-        applyWidgetUpdate(
-            WidgetUpdate(instanceID: instance.id, widget: widget, kind: .clear),
-            sessionID: instance.sessionID,
-            origin: .local
-        )
-    }
-
     private enum WidgetUpdateOrigin {
         case local
         case remote
@@ -5470,7 +5527,7 @@ public final class Engine {
     ) {
         guard let instance = instrumentsBySession[sessionID]?.first(where: { $0.id == instanceID }) else { return }
         Task { @MainActor [weak self] in
-            await self?.invokeWidgetAction(instance: instance, widget: widget, action: action, item: item)
+            await self?.invokeAction(instance: instance, widget: widget, action: action, item: item)
         }
     }
 
@@ -5616,6 +5673,7 @@ public final class Engine {
     ) async -> ConsoleResponse {
         let entry = WidgetConsoleEntry(kind: .input, text: text)
         let inputID = entry.id
+        guard canSubmitConsoleInput(of: instance) else { return ConsoleResponse(inputEntryID: inputID, replies: []) }
         let instanceID = instance.id
         let updates = widgetUpdates
         await dispatchConsoleInput(instance: instance, widget: widget, entry: entry)
@@ -5649,6 +5707,7 @@ public final class Engine {
         widget: String,
         entry: WidgetConsoleEntry
     ) async {
+        guard canSubmitConsoleInput(of: instance) else { return }
         let update = WidgetUpdate(instanceID: instance.id, widget: widget, kind: .consoleAppend(entry))
         applyWidgetUpdate(update, sessionID: instance.sessionID, origin: .local)
 
@@ -5662,12 +5721,42 @@ public final class Engine {
         }
     }
 
-    public func invokeWidgetAction(
-        instance: InstrumentInstance,
-        widget: String,
-        action: String,
-        item: String? = nil
-    ) async {
+    public func canChooseWidgetActions(of instance: InstrumentInstance) -> Bool {
+        canReachAgent(of: instance)
+    }
+
+    public func canChoose(_ action: String, of widget: String, instance: InstrumentInstance) -> Bool {
+        canReachAgent(of: instance) && agentState(of: instance).isEnabled(action, of: widget)
+    }
+
+    public func canSubmitConsoleInput(of instance: InstrumentInstance) -> Bool {
+        isHostingNode(instance.sessionID) && agentState(of: instance).isLive
+    }
+
+    public func canReachAgent(of instance: InstrumentInstance) -> Bool {
+        let mayAsk = isHostingNode(instance.sessionID) || (isHostedRemotelyLive(instance.sessionID) && collaboration.isOwner)
+        return mayAsk && agentState(of: instance).isLive
+    }
+
+    public func agentState(of instance: InstrumentInstance) -> InstrumentAgentState {
+        if let node = node(forSessionID: instance.sessionID) {
+            let isLive = node.instruments.first(where: { $0.id == instance.id })?.attachment == .attached
+            return InstrumentAgentState(isLive: isLive, disabledActions: disabledWidgetActions[instance.id] ?? [:])
+        }
+        guard isHostedRemotelyLive(instance.sessionID) else { return InstrumentAgentState() }
+        return remoteInstrumentAgents[instance.id] ?? InstrumentAgentState()
+    }
+
+    public func invokeWidgetAction(instance: InstrumentInstance, widget: String, action: String) async {
+        await invokeAction(instance: instance, widget: widget, action: action, item: nil)
+    }
+
+    public func invokeRowAction(instance: InstrumentInstance, widget: String, action: String, item: String) async {
+        await invokeAction(instance: instance, widget: widget, action: action, item: item)
+    }
+
+    func invokeAction(instance: InstrumentInstance, widget: String, action: String, item: String?) async {
+        guard canReachAgent(of: instance), item != nil || agentState(of: instance).isEnabled(action, of: widget) else { return }
         if isHostedRemotelyLive(instance.sessionID) {
             collaboration.sendWidgetAction(
                 sessionID: instance.sessionID,
@@ -5678,9 +5767,7 @@ public final class Engine {
             )
             return
         }
-        guard let node = node(forSessionID: instance.sessionID),
-            node.instruments.first(where: { $0.id == instance.id })?.attachment == .attached
-        else { return }
+        guard let node = node(forSessionID: instance.sessionID) else { return }
         do {
             try await node.invokeWidgetAction(instanceID: instance.id, widget: widget, action: action, item: item)
         } catch {
@@ -5696,8 +5783,7 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         for instance in doomedInstances {
             await removeInstrument(instance)
         }
-        try? store.deleteCustomInstrumentDef(id: defID)
-        unlinkInstrumentFolder(defID: defID)
+        forgetCustomInstrument(defID)
         broadcastCustomInstrumentRemove(defID: defID)
         onSessionListChanged?(.customInstrumentDefsChanged)
     }
@@ -5730,6 +5816,8 @@ public func deleteCustomInstrument(_ defID: UUID) async {
                     normalizedConfig: cfg
                 )
                 if wasAttached {
+                    node.markInstrumentDetached(id: liveInstance.id)
+                    broadcastInstrumentStatus(instanceID: liveInstance.id, sessionID: node.sessionID)
                     do {
                         try await node.disposeInstrumentOnAgent(instanceID: liveInstance.id)
                     } catch {
@@ -5738,7 +5826,6 @@ public func deleteCustomInstrument(_ defID: UUID) async {
                             text: "Failed to dispose custom instance \(liveInstance.id): \(userFacingMessage(error))"
                         )
                     }
-                    node.markInstrumentDetached(id: liveInstance.id)
                 }
                 if await skipIfIncompatible(instanceID: liveInstance.id, compatibility: def.compatibility, on: node) {
                     onSessionListChanged?(.instrumentUpdated(liveInstance))
@@ -6117,6 +6204,27 @@ public func deleteCustomInstrument(_ defID: UUID) async {
             for await update in node.widgetUpdates {
                 self?.applyWidgetUpdate(update, sessionID: sessionID, origin: .local)
             }
+        }
+
+        Task { @MainActor [weak self, weak node] in
+            guard let node else { return }
+            for await change in node.actionStateChanges {
+                self?.applyActionStateChange(change, sessionID: sessionID)
+            }
+        }
+    }
+
+    private func applyActionStateChange(_ change: InstrumentActionStateChange, sessionID: UUID) {
+        switch change {
+        case .reset(let instanceID):
+            guard disabledWidgetActions.removeValue(forKey: instanceID) != nil else { return }
+            broadcastInstrumentStatus(instanceID: instanceID, sessionID: sessionID)
+        case .set(let instanceID, let widget, let action, let isEnabled):
+            var disabled = disabledWidgetActions[instanceID, default: [:]][widget, default: []]
+            let changed = isEnabled ? disabled.remove(action) != nil : disabled.insert(action).inserted
+            guard changed else { return }
+            disabledWidgetActions[instanceID, default: [:]][widget] = disabled.isEmpty ? nil : disabled
+            broadcastInstrumentStatus(instanceID: instanceID, sessionID: sessionID)
         }
     }
 

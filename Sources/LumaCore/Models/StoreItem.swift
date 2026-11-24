@@ -129,8 +129,10 @@ extension StoreAccess: Codable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         switch try c.decode(Kind.self, forKey: .kind) {
         case .free:
+            try decoder.refuseUnknownKeys(CodingKeys.self, knowing: [.kind])
             self = .free
         case .sponsor:
+            try decoder.refuseUnknownKeys(CodingKeys.self)
             self = .sponsor(minimumMonthlyCents: try c.decode(Int.self, forKey: .minMonthlyCents))
         }
     }

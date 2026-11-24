@@ -10,6 +10,29 @@ public enum FeatureValue: Sendable, Equatable {
     case object([String: FeatureValue])
     case array([FeatureValue])
 
+    public func reconciled(with schema: FeatureSchema) -> FeatureValue {
+        switch (self, schema) {
+        case (.object(let values), .object(let fields)):
+            return .object(FeatureValue.reconciled(values, with: fields))
+        case (.array(let items), .array(let item, _)):
+            return .array(items.map { $0.reconciled(with: item.asFeatureSchema) })
+        default:
+            return matches(schema: schema) ? self : schema.defaultValue
+        }
+    }
+
+    private static func reconciled(_ values: [String: FeatureValue], with fields: [ObjectField]) -> [String: FeatureValue] {
+        var kept: [String: FeatureValue] = [:]
+        for field in fields {
+            if let value = values[field.id] {
+                kept[field.id] = value.reconciled(with: field.schema)
+            } else if !field.optional {
+                kept[field.id] = field.schema.defaultValue
+            }
+        }
+        return kept
+    }
+
     public func matches(schema: FeatureSchema) -> Bool {
         switch (self, schema) {
         case (.boolean, .boolean): return true
@@ -92,6 +115,7 @@ extension FeatureValue: Codable {
     }
 
     public init(from decoder: Decoder) throws {
+        try decoder.refuseUnknownKeys(CodingKeys.self)
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let kind = try c.decode(Kind.self, forKey: .kind)
         switch kind {

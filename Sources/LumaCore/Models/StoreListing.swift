@@ -12,6 +12,17 @@ public struct StoreListing: Codable, Hashable, Sendable {
     }
 }
 
+extension StoreListing {
+    public init(from decoder: Decoder) throws {
+        try decoder.refuseUnknownKeys(CodingKeys.self)
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            summary: try c.decode(String.self, forKey: .summary),
+            category: try c.decodeIfPresent(StoreCategory.ID.self, forKey: .category),
+            access: try c.decode(StoreAccess.self, forKey: .access))
+    }
+}
+
 public struct StorePublishDraft: Hashable, Sendable {
     public let slug: String
     public var version: StoreVersion?

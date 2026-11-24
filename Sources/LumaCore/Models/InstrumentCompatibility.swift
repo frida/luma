@@ -23,11 +23,27 @@ public struct InstrumentCompatibility: Codable, Hashable, Sendable {
         case archs
     }
 
+    public init(from decoder: Decoder) throws {
+        try decoder.refuseUnknownKeys(CodingKeys.self)
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        platforms = try c.decodeIfPresent(Set<String>.self, forKey: .platforms)
+        osIDs = try c.decodeIfPresent(Set<String>.self, forKey: .osIDs)
+        archs = try c.decodeIfPresent(Set<String>.self, forKey: .archs)
+    }
+
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encodeIfPresent(platforms?.sorted(), forKey: .platforms)
-        try container.encodeIfPresent(osIDs?.sorted(), forKey: .osIDs)
-        try container.encodeIfPresent(archs?.sorted(), forKey: .archs)
+        try container.encodeIfPresent(platforms.map { Self.ordered($0, known: Self.knownPlatforms) }, forKey: .platforms)
+        try container.encodeIfPresent(osIDs.map { Self.ordered($0, known: Self.knownOSIDs) }, forKey: .osIDs)
+        try container.encodeIfPresent(archs.map { Self.ordered($0, known: Self.knownArchs) }, forKey: .archs)
+    }
+
+    public static let knownPlatforms = ["windows", "darwin", "linux", "freebsd", "qnx", "barebone"]
+    public static let knownOSIDs = ["windows", "macos", "linux", "ios", "watchos", "tvos", "visionos", "android", "freebsd", "qnx"]
+    public static let knownArchs = ["ia32", "x64", "arm", "arm64", "mips"]
+
+    public static func ordered(_ values: Set<String>, known: [String]) -> [String] {
+        known.filter(values.contains) + values.subtracting(known).sorted()
     }
 
     public var isUniversal: Bool {

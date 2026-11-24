@@ -195,7 +195,7 @@ is gitignored — it is produced at build time.
   whose `main` is the entrypoint, whose `dependencies` are the packages
   it imports, whose `engines.luma` (`>=MAJOR.MINOR.PATCH`, the one form
   taken) is the oldest Luma it runs in, and whose `luma` object carries
-  name, icon, compatibility, features and widgets. Instruments in one repository
+  name, icon, compatibility, settings and widgets. Instruments in one repository
   share code by naming a `luma.root` above their folders: what the
   sources import by relative path from under that root comes along, and
   the instrument's paths are then relative to it. Linking one brings it into the
@@ -210,7 +210,20 @@ is gitignored — it is produced at build time.
   package shows come from `displayName`. The library is the folders under
   `dataDirectory/Instruments`. An instrument's dependencies install
   into its own `node_modules` inside the compiler workspace, ahead of
-  the project-wide packages.
+  the project-wide packages. A widget's `actions` are buttons in its
+  header and a list's or table's `config.rowActions` buttons on each
+  row, their ids unique within the widget; choosing one runs the
+  handle's `onAction` in the host's agent, with `item` the row's id for
+  a row action and absent otherwise. Luma never empties a widget of its
+  own accord: an instrument that wants a Clear declares one. The agent
+  grays one of a widget's actions with `setActionEnabled`, and every
+  action is enabled again as `create` begins. That, and whether the
+  instance's handle exists in the agent at all (`attachment`, from
+  `create` resolving until dispose begins), is `InstrumentAgentState`:
+  runtime only, never in widget state, and carried to a lab as `agent`
+  on the instance in its add and update ops, which the server keeps
+  with the instance for later joiners. Actions, console input and a
+  view's `send:` follow it.
 - **`AddressAction` / `ThreadAction`** — pluggable per-address and
   per-thread action providers. The tracer registers itself at engine
   init; future instrument kinds can call
@@ -342,10 +355,11 @@ is gitignored — it is produced at build time.
   the connection, so the store shows each item at the newest version
   this Luma runs and sends updates only for those; an item whose
   `min_app_version` this Luma does not meet is `.requiresLuma` and is not
-  offered for adding. A view widget or `.st` files need Luma 3.0.0, so an
-  instrument with either is published only once its `engines.luma` says
-  so, and an edit made in Luma that adds a view widget or a `.st` file
-  raises it.
+  offered for adding. Any widget or setting needs Luma 4.0.0, whose
+  `package.json` form 3.0.0 cannot read, and `.st` files alone need
+  3.0.0 (`LumaRequirement`), so an instrument is published only once its
+  `engines.luma` says what it needs, and an edit made in Luma that brings
+  it to need more raises it.
 
 - **Instrument views (`Sources/LumaCore/InstrumentViews/`)** — a custom
   instrument's `.st` files are Tonel classes it ships, and a widget of

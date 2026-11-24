@@ -24,7 +24,7 @@ extension Engine {
             case .view(let config) = widget.kind,
             let files = try? store.fetchCustomInstrumentFiles(defID: defID)
         else { return nil }
-        return InstrumentViewTarget(instance: instance, def: def, config: config, widgetName: widget.name, hostCode: HostCode(files: files))
+        return InstrumentViewTarget(instance: instance, def: def, config: config, widgetName: widget.label, hostCode: HostCode(files: files))
     }
 
     func isViewWidget(_ key: InstrumentViews.Key) -> Bool {
@@ -93,10 +93,7 @@ extension Engine {
     }
 
     private func canSendViewMessage(from instance: InstrumentInstance) -> Bool {
-        if let node = node(forSessionID: instance.sessionID) {
-            return node.instruments.first(where: { $0.id == instance.id })?.attachment == .attached
-        }
-        return isHostedRemotelyLive(instance.sessionID) && collaboration.isOwner
+        canReachAgent(of: instance)
     }
 
     private static func viewDataBlobID(instanceID: UUID, widget: String) -> UUID {

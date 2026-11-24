@@ -316,17 +316,20 @@ public enum SessionOp: Sendable {
         public let sessionID: UUID
         public let instance: InstrumentInstance
         public let runtimeStatus: InstrumentStatus?
+        public let agent: InstrumentAgentState?
 
         public init(
             opID: UUID = UUID(),
             sessionID: UUID,
             instance: InstrumentInstance,
-            runtimeStatus: InstrumentStatus? = nil
+            runtimeStatus: InstrumentStatus? = nil,
+            agent: InstrumentAgentState? = nil
         ) {
             self.opID = opID
             self.sessionID = sessionID
             self.instance = instance
             self.runtimeStatus = runtimeStatus
+            self.agent = agent
         }
     }
 
@@ -335,17 +338,20 @@ public enum SessionOp: Sendable {
         public let sessionID: UUID
         public let instance: InstrumentInstance
         public let runtimeStatus: InstrumentStatus?
+        public let agent: InstrumentAgentState?
 
         public init(
             opID: UUID = UUID(),
             sessionID: UUID,
             instance: InstrumentInstance,
-            runtimeStatus: InstrumentStatus? = nil
+            runtimeStatus: InstrumentStatus? = nil,
+            agent: InstrumentAgentState? = nil
         ) {
             self.opID = opID
             self.sessionID = sessionID
             self.instance = instance
             self.runtimeStatus = runtimeStatus
+            self.agent = agent
         }
     }
 
@@ -545,11 +551,11 @@ public enum SessionOp: Sendable {
                 obj["cell"] = cellObj
             }
         case .addInstrument(let a):
-            if let instObj = Self.wireInstrument(instance: a.instance, runtimeStatus: a.runtimeStatus) {
+            if let instObj = Self.wireInstrument(instance: a.instance, runtimeStatus: a.runtimeStatus, agent: a.agent) {
                 obj["instance"] = instObj
             }
         case .updateInstrument(let u):
-            if let instObj = Self.wireInstrument(instance: u.instance, runtimeStatus: u.runtimeStatus) {
+            if let instObj = Self.wireInstrument(instance: u.instance, runtimeStatus: u.runtimeStatus, agent: u.agent) {
                 obj["instance"] = instObj
             }
         case .removeInstrument(let r):
@@ -774,7 +780,8 @@ public enum SessionOp: Sendable {
                 opID: opID,
                 sessionID: sessionID,
                 instance: parsed.instance,
-                runtimeStatus: parsed.runtimeStatus
+                runtimeStatus: parsed.runtimeStatus,
+                agent: parsed.agent
             ))
 
         case "update-instrument":
@@ -785,7 +792,8 @@ public enum SessionOp: Sendable {
                 opID: opID,
                 sessionID: sessionID,
                 instance: parsed.instance,
-                runtimeStatus: parsed.runtimeStatus
+                runtimeStatus: parsed.runtimeStatus,
+                agent: parsed.agent
             ))
 
         case "remove-instrument":
@@ -879,20 +887,26 @@ public enum SessionOp: Sendable {
         }
     }
 
-    private static func wireInstrument(instance: InstrumentInstance, runtimeStatus: InstrumentStatus?) -> [String: Any]? {
+    private static func wireInstrument(instance: InstrumentInstance, runtimeStatus: InstrumentStatus?, agent: InstrumentAgentState?) -> [String: Any]? {
         guard var obj = instance.toWireJSON() else { return nil }
         if let runtimeStatus {
             obj["runtime_status"] = runtimeStatus.toWireJSON()
         }
+        if let agent {
+            obj["agent"] = agent.toWireJSON()
+        }
         return obj
     }
 
-    private static func parseWireInstrument(_ obj: [String: Any]) -> (instance: InstrumentInstance, runtimeStatus: InstrumentStatus?)? {
+    static func parseWireInstrument(_ obj: [String: Any])
+        -> (instance: InstrumentInstance, runtimeStatus: InstrumentStatus?, agent: InstrumentAgentState?)?
+    {
         var stripped = obj
         let statusObj = stripped.removeValue(forKey: "runtime_status") as? [String: Any]
+        let agentObj = stripped.removeValue(forKey: "agent") as? [String: Any]
         guard let instance = InstrumentInstance.fromWireJSON(stripped) else { return nil }
         let status = statusObj.flatMap(InstrumentStatus.fromWireJSON)
-        return (instance, status)
+        return (instance, status, agentObj.flatMap(InstrumentAgentState.fromWireJSON))
     }
 }
 

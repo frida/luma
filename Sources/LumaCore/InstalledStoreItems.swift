@@ -62,7 +62,12 @@ final class InstalledStoreItems {
         let folderURL = folderURL(for: item.id)
         var instrument = try Engine.validatedCustomInstrumentBundle(bundle)
         instrument.def.normalize()
-        let previousPaths = (try? InstrumentFolder(folderURL: folderURL).sourcePaths()) ?? []
+        let previous = try? InstrumentFolder(folderURL: folderURL)
+        let manifestURL = folderURL.appendingPathComponent(InstrumentFolder.manifestFileName)
+        if previous == nil, FileManager.default.fileExists(atPath: manifestURL.path) {
+            try FileManager.default.removeItem(at: manifestURL)
+        }
+        let previousPaths = try previous?.sourcePaths() ?? []
         try InstrumentFolder.stampPackage(name: item.slug, version: item.version, in: folderURL)
         try InstrumentFolder.write(instrument, to: folderURL, replacing: previousPaths)
         let installation = StoreInstallation(

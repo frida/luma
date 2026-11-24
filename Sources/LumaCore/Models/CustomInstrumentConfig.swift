@@ -21,8 +21,11 @@ public struct CustomInstrumentConfig: Codable, Equatable, Sendable {
         defID = def.id
         var newFeatures: [String: FeatureState] = [:]
         for feature in def.features {
-            if let existing = features[feature.id], existing.value.matches(schema: feature.schema) {
-                newFeatures[feature.id] = existing
+            if let existing = features[feature.id] {
+                newFeatures[feature.id] = FeatureState(
+                    enabled: existing.enabled,
+                    value: existing.value.reconciled(with: feature.schema)
+                )
             } else {
                 newFeatures[feature.id] = FeatureState(
                     enabled: feature.enabledByDefault,
@@ -40,12 +43,13 @@ public struct CustomInstrumentConfig: Codable, Equatable, Sendable {
     }
 
     public func toAgentJSON(def: CustomInstrumentDef) -> [String: Any] {
+        let current = normalized(against: def)
         let entries = def.features.compactMap { feature -> (String, Any)? in
-            guard let state = features[feature.id] else { return nil }
+            guard let state = current.features[feature.id] else { return nil }
             if feature.optional && !state.enabled { return nil }
             return (feature.id, state.value.toJSONNative())
         }
-        return ["features": Dictionary(uniqueKeysWithValues: entries)]
+        return ["settings": Dictionary(uniqueKeysWithValues: entries)]
     }
 }
 

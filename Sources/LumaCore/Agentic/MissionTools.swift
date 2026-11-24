@@ -1760,7 +1760,7 @@ public enum MissionTools {
             else { return nil }
             entry["kind"] = "custom"
             entry["def_id"] = defID.uuidString
-            entry["feature_count"] = def.features.count
+            entry["setting_count"] = def.features.count
             entry["widget_count"] = def.widgets.count
             entry.merge(linkedInstrumentFolderJSON(defID: defID, engine: engine)) { _, new in new }
         case .codeShare:
@@ -1802,7 +1802,7 @@ public enum MissionTools {
     private static func registerReadCustomInstrument(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "read_custom_instrument",
-            description: "Read a custom instrument's metadata: entrypoint, dependencies, features, widgets, and the list of file paths, plus `linked_folder` and `folder_state` (in_sync | folder_changed | diverged) when it is linked to a folder on disk. File contents are NOT included — call read_custom_instrument_file for each path you need.",
+            description: "Read a custom instrument's metadata: entrypoint, dependencies, settings, widgets, and the list of file paths, plus `linked_folder` and `folder_state` (in_sync | folder_changed | diverged) when it is linked to a folder on disk. File contents are NOT included — call read_custom_instrument_file for each path you need.",
             inputSchemaJSON: """
                 {"type":"object","properties":{"def_id":{"type":"string"}},"required":["def_id"],"additionalProperties":false}
                 """,
@@ -1822,9 +1822,9 @@ public enum MissionTools {
     private static func registerCreateCustomInstrument(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "create_custom_instrument",
-            description: "Create a custom instrument definition seeded with a `main.ts` file containing the canonical skeleton (the entrypoint). Use write_custom_instrument_file to replace its contents, and add helper files as needed. Optional 'icon' is a catalog id (e.g. wand-stars, bug, scope, network). Optional 'dependencies' names the npm packages the instrument imports; 'features' declares config toggles; 'widgets' declares live UI elements.",
+            description: "Create a custom instrument definition seeded with a `main.ts` file containing the canonical skeleton (the entrypoint). Use write_custom_instrument_file to replace its contents, and add helper files as needed. Optional 'icon' is a catalog id (e.g. wand-stars, bug, scope, network). Optional 'dependencies' names the npm packages the instrument imports; 'settings' declares config toggles; 'widgets' declares live UI elements.",
             inputSchemaJSON: """
-                {"type":"object","properties":{"name":{"type":"string"},"icon":{"type":"string","description":"Catalog id like wand-stars, bug, scope, network — see list_custom_instrument_icons"},"compatibility":\(compatibilitySchemaJSON),"dependencies":{"type":"object","additionalProperties":{"type":"string"},"description":"npm packages this instrument imports, as name → version range (e.g. {\\"frida-java-bridge\\":\\"^7.0.0\\"}). Installed for this instrument alone, ahead of the project-wide packages."},"features":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"enabled_by_default":{"type":"boolean","default":true}},"required":["id","name"],"additionalProperties":false}},"widgets":\(widgetsSchemaJSON)},"required":["name"],"additionalProperties":false}
+                {"type":"object","properties":{"name":{"type":"string"},"dependencies":{"type":"object","additionalProperties":{"type":"string"},"description":"npm packages this instrument imports, as name → version range (e.g. {\\"frida-java-bridge\\":\\"^7.0.0\\"}). Installed for this instrument alone, ahead of the project-wide packages."},"icon":{"type":"string","description":"Catalog id like wand-stars, bug, scope, network — see list_custom_instrument_icons"},"compatibility":\(compatibilitySchemaJSON),"settings":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"enabled_by_default":{"type":"boolean","default":true}},"required":["id","name"],"additionalProperties":false}},"widgets":\(widgetsSchemaJSON)},"required":["name"],"additionalProperties":false}
                 """,
             isObserve: false,
             requiresSession: false
@@ -1837,13 +1837,16 @@ public enum MissionTools {
             let icon = parseIconArg(invocation.args["icon"] as? String)
             let compatibility = parseCompatibilityArg(invocation.args["compatibility"])
             let dependencies = (invocation.args["dependencies"] as? [String: String]) ?? [:]
-            let features = parseFeaturesArg(invocation.args["features"])
+            let settings = parseSettingsArg(invocation.args["settings"])
             let widgets = parseWidgetsArg(invocation.args["widgets"])
+            if let problem = widgetProblem(in: widgets) {
+                return errorResult(problem, code: .invalidInput)
+            }
             var def = engine.createCustomInstrument(name: name, icon: icon)
-            if !compatibility.isUniversal || !dependencies.isEmpty || !features.isEmpty || !widgets.isEmpty {
+            if !compatibility.isUniversal || !dependencies.isEmpty || !settings.isEmpty || !widgets.isEmpty {
                 def.compatibility = compatibility
                 def.dependencies = dependencies
-                def.features = features
+                def.features = settings
                 def.widgets = widgets
                 engine.updateCustomInstrument(def)
             }
@@ -1857,9 +1860,9 @@ public enum MissionTools {
     private static func registerUpdateCustomInstrument(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "update_custom_instrument",
-            description: "Update a custom instrument's metadata: name, icon, compatibility, dependencies, features, or widgets. Only fields you pass change. Passing 'dependencies', 'features' or 'widgets' replaces the whole set — pass an empty one to clear. File contents are managed via write_custom_instrument_file; the entrypoint via set_custom_instrument_entrypoint.",
+            description: "Update a custom instrument's metadata: name, dependencies, icon, compatibility, settings, or widgets. Only fields you pass change. Passing 'dependencies', 'settings' or 'widgets' replaces the whole set — pass an empty one to clear. File contents are managed via write_custom_instrument_file; the entrypoint via set_custom_instrument_entrypoint.",
             inputSchemaJSON: """
-                {"type":"object","properties":{"def_id":{"type":"string"},"name":{"type":"string"},"icon":{"type":"string"},"compatibility":\(compatibilitySchemaJSON),"dependencies":{"type":"object","additionalProperties":{"type":"string"},"description":"npm packages this instrument imports, as name → version range (e.g. {\\"frida-java-bridge\\":\\"^7.0.0\\"}). Installed for this instrument alone, ahead of the project-wide packages."},"features":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"enabled_by_default":{"type":"boolean","default":true}},"required":["id","name"],"additionalProperties":false}},"widgets":\(widgetsSchemaJSON)},"required":["def_id"],"additionalProperties":false}
+                {"type":"object","properties":{"def_id":{"type":"string"},"name":{"type":"string"},"dependencies":{"type":"object","additionalProperties":{"type":"string"},"description":"npm packages this instrument imports, as name → version range (e.g. {\\"frida-java-bridge\\":\\"^7.0.0\\"}). Installed for this instrument alone, ahead of the project-wide packages."},"icon":{"type":"string"},"compatibility":\(compatibilitySchemaJSON),"settings":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"enabled_by_default":{"type":"boolean","default":true}},"required":["id","name"],"additionalProperties":false}},"widgets":\(widgetsSchemaJSON)},"required":["def_id"],"additionalProperties":false}
                 """,
             isObserve: false,
             requiresSession: false
@@ -1879,11 +1882,14 @@ public enum MissionTools {
                 if let dependencies = invocation.args["dependencies"] as? [String: String] {
                     def.dependencies = dependencies
                 }
-                if invocation.args["features"] != nil {
-                    def.features = parseFeaturesArg(invocation.args["features"])
+                if invocation.args["settings"] != nil {
+                    def.features = parseSettingsArg(invocation.args["settings"])
                 }
                 if invocation.args["widgets"] != nil {
                     def.widgets = parseWidgetsArg(invocation.args["widgets"])
+                    if let problem = widgetProblem(in: def.widgets) {
+                        return errorResult(problem, code: .invalidInput)
+                    }
                 }
                 engine.updateCustomInstrument(def)
                 await engine.awaitCustomInstrumentReload(defID: def.id)
@@ -1900,7 +1906,7 @@ public enum MissionTools {
     private static func registerLinkInstrumentFolder(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "link_instrument_folder",
-            description: "Bring an instrument that lives in a folder on disk into the project as a custom instrument, and remember the folder so the instrument can be reloaded after its files change. The folder holds a package.json beside its sources: `main` names the TypeScript entrypoint, `dependencies` the npm packages it imports, and an optional `luma` object carries `icon`, `compatibility`, `features` and `widgets`. To share code between several instruments in one repository, give `luma.root`, a relative path to a folder above this one: files under it that the sources import by relative path are taken in too, and paths are then relative to that root. Hidden files and node_modules are left out. Returns `def_id` and the `id` to pass to attach_instrument; linking a folder this project already linked returns that instrument. `displayName` is the name shown, falling back to `name`. From then on the folder follows the project: edits made through the custom instrument tools are written to it, as long as its files have not been changed on disk in the meantime. Luma also keeps the instrument's typings in `luma.d.ts` there, for an editor to pick up.",
+            description: "Bring an instrument that lives in a folder on disk into the project as a custom instrument, and remember the folder so the instrument can be reloaded after its files change. The folder holds a package.json beside its sources: `main` names the TypeScript entrypoint, `dependencies` the npm packages it imports, and an optional `luma` object carries `icon`, `compatibility`, `settings`, `widgets` and the store listing `store`, and nothing else: a key in it Luma does not know is refused, naming it. To share code between several instruments in one repository, give `luma.root`, a relative path to a folder above this one: files under it that the sources import by relative path are taken in too, and paths are then relative to that root. Hidden files and node_modules are left out. Returns `def_id` and the `id` to pass to attach_instrument; linking a folder this project already linked returns that instrument. `displayName` is the name shown, falling back to `name`. From then on the folder follows the project: edits made through the custom instrument tools are written to it, as long as its files have not been changed on disk in the meantime. Luma also keeps the instrument's typings in `luma.d.ts` there, for an editor to pick up.",
             inputSchemaJSON: """
                 {"type":"object","properties":{"path":{"type":"string","description":"Absolute path of the folder"}},"required":["path"],"additionalProperties":false}
                 """,
@@ -2344,7 +2350,7 @@ public enum MissionTools {
     private static func registerReadCustomInstrumentTemplate(in catalog: ToolCatalog) {
         let spec = ActionSpec(
             name: "read_custom_instrument_template",
-            description: "Return the canonical TypeScript skeleton for a custom instrument: how create(ctx, config) is called, how to emit events via ctx.emit, how features are typed, and how dispose() should undo every side effect.",
+            description: "Return the canonical TypeScript skeleton for a custom instrument: how create(ctx, config) is called, how to emit events via ctx.emit, how settings are typed, and how dispose() should undo every side effect.",
             inputSchemaJSON: """
                 {"type":"object","properties":{},"additionalProperties":false}
                 """,
@@ -2362,7 +2368,7 @@ public enum MissionTools {
     private static func registerReadCustomInstrumentTypings(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "read_custom_instrument_typings",
-            description: "Return the TypeScript ambient declarations the editor injects when authoring this custom instrument's source: the shared CustomInstrument* surface plus the def-scoped CustomInstrumentFeatureMap and CustomInstrumentWidgetMap that narrow `config.features.<id>`, `ctx.widget(<id>)`, and the `onAction` parameter to the exact ids/series/actions you declared. Use this to write source that compiles against the same types the editor enforces.",
+            description: "Return the TypeScript ambient declarations the editor injects when authoring this custom instrument's source: the shared CustomInstrument* surface plus the def-scoped CustomInstrumentSettingMap and CustomInstrumentWidgetMap that narrow `config.settings.<id>`, `ctx.widget(<id>)`, and the `onAction` parameter to the exact ids/series/actions you declared. Use this to write source that compiles against the same types the editor enforces.",
             inputSchemaJSON: """
                 {"type":"object","properties":{"def_id":{"type":"string"}},"required":["def_id"],"additionalProperties":false}
                 """,
@@ -2876,7 +2882,7 @@ public enum MissionTools {
         return InstrumentCompatibility(platforms: platforms, osIDs: osIDs, archs: archs)
     }
 
-    private static func parseFeaturesArg(_ raw: Any?) -> [CustomInstrumentDef.Feature] {
+    private static func parseSettingsArg(_ raw: Any?) -> [CustomInstrumentDef.Feature] {
         guard let arr = raw as? [[String: Any]] else { return [] }
         return arr.compactMap { obj in
             guard let id = obj["id"] as? String, let name = obj["name"] as? String else { return nil }
@@ -2886,36 +2892,37 @@ public enum MissionTools {
     }
 
     private static let widgetsSchemaJSON: String = """
-        {"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"kind":{"type":"string","enum":["counter","histogram","graph","list","table","hex","console","view"]},"persistence":{"type":"string","enum":["none","session"],"default":"none","description":"'none' = data lives in memory, lost on detach. 'session' = data survives reattach and app restart, replayed to create() via the `restored` argument."},"max_points":{"type":"integer","minimum":1,"default":5000,"description":"For kind=graph: rolling cap per series. Oldest points drop when exceeded."},"max_items":{"type":"integer","minimum":1,"default":1000,"description":"For kind=list: rolling cap. Oldest items drop when exceeded."},"max_rows":{"type":"integer","minimum":1,"default":1000,"description":"For kind=table: rolling cap on rows."},"max_buckets":{"type":"integer","minimum":1,"default":100,"description":"For kind=histogram: rolling cap on bucket count."},"max_bytes":{"type":"integer","minimum":1,"default":16384,"description":"For kind=hex: trailing-window cap on bytes shown."},"max_entries":{"type":"integer","minimum":1,"default":1000,"description":"For kind=console: rolling cap on entries shown. Oldest entries drop when exceeded."},"unit":{"type":"string","description":"For kind=counter: optional default unit label rendered next to the value."},"prompt":{"type":"string","description":"For kind=console: optional prompt glyph rendered before each entry and on the input row (default '›')."},"placeholder":{"type":"string","description":"For kind=console: optional placeholder text shown in the input field."},"run_button_label":{"type":"string","description":"For kind=console: optional label for the submit button (default 'Run')."},"class":{"type":"string","description":"For kind=view: the class, defined in the instrument's Tonel .st files, whose instance shows the widget inside Luma. The agent feeds it with setState(value, data?) and sendEvent(value, data?); it answers through onViewMessage."},"height":{"type":"integer","minimum":1,"default":360,"description":"For kind=view: the widget's height in points."},"series":{"type":"array","description":"For kind=graph: line series the agent will push points to.","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"}},"required":["id","name"],"additionalProperties":false}},"columns":{"type":"array","description":"For kind=table: ordered columns; each row's cells map column id to string.","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"alignment":{"type":"string","enum":["leading","trailing"],"default":"leading"}},"required":["id","name"],"additionalProperties":false}},"actions":{"type":"array","description":"For kind=list/table: per-item action buttons; clicks invoke onAction with {widget,action,item}.","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"}},"required":["id","name"],"additionalProperties":false}}},"required":["id","name","kind"],"additionalProperties":false}}
+        {"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string","description":"The title shown above the widget. Leave it out for a widget shown with no title; it may not be empty."},"kind":{"type":"string","enum":["counter","histogram","graph","list","table","hex","console","view"]},"unit":{"type":"string","description":"For kind=counter: optional default unit label rendered next to the value."},"max_buckets":{"type":"integer","minimum":1,"default":100,"description":"For kind=histogram: rolling cap on bucket count."},"series":{"type":"array","description":"For kind=graph: line series the agent will push points to.","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"}},"required":["id","name"],"additionalProperties":false}},"max_points":{"type":"integer","minimum":1,"default":5000,"description":"For kind=graph: rolling cap per series. Oldest points drop when exceeded."},"columns":{"type":"array","description":"For kind=table: ordered columns; each row's cells map column id to string.","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"alignment":{"type":"string","enum":["leading","trailing"],"default":"leading"}},"required":["id","name"],"additionalProperties":false}},"actions":{"type":"array","description":"For any kind: buttons in the widget's header, in this order; a click invokes onAction with {widget,action} and no item. Luma has no Clear of its own: declare one here and call clear() on the widget when the user should be able to empty it. Ids are unique across actions and row_actions.","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"}},"required":["id","name"],"additionalProperties":false}},"row_actions":{"type":"array","description":"For kind=list/table: per-row action buttons; a click invokes onAction with {widget,action,item}, item being the row's id.","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"}},"required":["id","name"],"additionalProperties":false}},"max_items":{"type":"integer","minimum":1,"default":1000,"description":"For kind=list: rolling cap. Oldest items drop when exceeded."},"max_rows":{"type":"integer","minimum":1,"default":1000,"description":"For kind=table: rolling cap on rows."},"max_bytes":{"type":"integer","minimum":1,"default":16384,"description":"For kind=hex: trailing-window cap on bytes shown."},"max_entries":{"type":"integer","minimum":1,"default":1000,"description":"For kind=console: rolling cap on entries shown. Oldest entries drop when exceeded."},"prompt":{"type":"string","description":"For kind=console: optional prompt glyph rendered before each entry and on the input row (default '›')."},"placeholder":{"type":"string","description":"For kind=console: optional placeholder text shown in the input field."},"run_button_label":{"type":"string","description":"For kind=console: optional label for the submit button (default 'Run')."},"class":{"type":"string","description":"For kind=view: the class, defined in the instrument's Tonel .st files, whose instance shows the widget inside Luma. The agent feeds it with setState(value, data?) and sendEvent(value, data?); it answers through onViewMessage."},"height":{"type":"integer","minimum":1,"default":360,"description":"For kind=view: the widget's height in points."},"persistence":{"type":"string","enum":["none","session"],"default":"none","description":"'none' = data lives in memory, lost on detach. 'session' = data survives reattach and app restart, replayed to create() via the `restored` argument."}},"required":["id","kind"],"additionalProperties":false}}
         """
 
     private static func parseWidgetsArg(_ raw: Any?) -> [InstrumentWidget] {
         guard let arr = raw as? [[String: Any]] else { return [] }
         return arr.compactMap { obj in
-            guard let id = obj["id"] as? String,
-                let name = obj["name"] as? String,
-                let kindStr = obj["kind"] as? String
-            else { return nil }
+            guard let id = obj["id"] as? String, let kindStr = obj["kind"] as? String else { return nil }
+            let name = obj["name"] as? String
+            let actions = parseActionsArg(obj["actions"])
             let persistence = (obj["persistence"] as? String).flatMap(InstrumentWidget.Persistence.init(rawValue:)) ?? .none
             switch kindStr {
             case "counter":
                 let cfg = InstrumentWidget.CounterConfig(unit: obj["unit"] as? String)
-                return InstrumentWidget(id: id, name: name, kind: .counter(cfg), persistence: persistence)
+                return InstrumentWidget(id: id, name: name, kind: .counter(cfg), actions: actions, persistence: persistence)
             case "histogram":
                 let maxBuckets = (obj["max_buckets"] as? Int) ?? InstrumentWidget.HistogramConfig.defaultMaxBuckets
-                return InstrumentWidget(id: id, name: name, kind: .histogram(InstrumentWidget.HistogramConfig(maxBuckets: max(1, maxBuckets))), persistence: persistence)
+                let cfg = InstrumentWidget.HistogramConfig(maxBuckets: max(1, maxBuckets))
+                return InstrumentWidget(id: id, name: name, kind: .histogram(cfg), actions: actions, persistence: persistence)
             case "graph":
                 let cfg = parseGraphConfigArg(seriesRaw: obj["series"], maxPointsRaw: obj["max_points"])
-                return InstrumentWidget(id: id, name: name, kind: .graph(cfg), persistence: persistence)
+                return InstrumentWidget(id: id, name: name, kind: .graph(cfg), actions: actions, persistence: persistence)
             case "list":
-                let cfg = parseListConfigArg(actionsRaw: obj["actions"], maxItemsRaw: obj["max_items"])
-                return InstrumentWidget(id: id, name: name, kind: .list(cfg), persistence: persistence)
+                let cfg = parseListConfigArg(rowActionsRaw: obj["row_actions"], maxItemsRaw: obj["max_items"])
+                return InstrumentWidget(id: id, name: name, kind: .list(cfg), actions: actions, persistence: persistence)
             case "table":
-                let cfg = parseTableConfigArg(columnsRaw: obj["columns"], actionsRaw: obj["actions"], maxRowsRaw: obj["max_rows"])
-                return InstrumentWidget(id: id, name: name, kind: .table(cfg), persistence: persistence)
+                let cfg = parseTableConfigArg(columnsRaw: obj["columns"], rowActionsRaw: obj["row_actions"], maxRowsRaw: obj["max_rows"])
+                return InstrumentWidget(id: id, name: name, kind: .table(cfg), actions: actions, persistence: persistence)
             case "hex":
                 let maxBytes = (obj["max_bytes"] as? Int) ?? InstrumentWidget.HexConfig.defaultMaxBytes
-                return InstrumentWidget(id: id, name: name, kind: .hex(InstrumentWidget.HexConfig(maxBytes: max(1, maxBytes))), persistence: persistence)
+                let cfg = InstrumentWidget.HexConfig(maxBytes: max(1, maxBytes))
+                return InstrumentWidget(id: id, name: name, kind: .hex(cfg), actions: actions, persistence: persistence)
             case "console":
                 let cfg = parseConsoleConfigArg(
                     promptRaw: obj["prompt"],
@@ -2923,15 +2930,44 @@ public enum MissionTools {
                     runLabelRaw: obj["run_button_label"],
                     maxEntriesRaw: obj["max_entries"]
                 )
-                return InstrumentWidget(id: id, name: name, kind: .console(cfg), persistence: persistence)
+                return InstrumentWidget(id: id, name: name, kind: .console(cfg), actions: actions, persistence: persistence)
             case "view":
                 guard let className = obj["class"] as? String else { return nil }
                 let height = (obj["height"] as? Int) ?? InstrumentWidget.ViewConfig.defaultHeight
                 let cfg = InstrumentWidget.ViewConfig(className: className, height: max(1, height))
-                return InstrumentWidget(id: id, name: name, kind: .view(cfg), persistence: persistence)
+                return InstrumentWidget(id: id, name: name, kind: .view(cfg), actions: actions, persistence: persistence)
             default:
                 return nil
             }
+        }
+    }
+
+    private static func widgetProblem(in widgets: [InstrumentWidget]) -> String? {
+        if let text = InstrumentWidget.countProblem(widgets.count) {
+            return "widgets: \(text)"
+        }
+        for (index, widget) in widgets.enumerated() {
+            if let problem = widget.problem {
+                return "widgets[\(index)]\(toolArgumentPath(problem.path)): \(problem.text)"
+            }
+        }
+        return nil
+    }
+
+    private static func toolArgumentPath(_ path: [InstrumentWidget.Problem.Step]) -> String {
+        path.filter { $0 != .key("config") }.map { step in
+            switch step {
+            case .key(let key): return "." + (key == "rowActions" ? "row_actions" : key)
+            case .index(let index): return "[\(index)]"
+            }
+        }.joined()
+    }
+
+    private static func parseActionsArg(_ raw: Any?) -> [InstrumentWidget.Action] {
+        let entries = (raw as? [[String: Any]]) ?? []
+        return entries.compactMap { obj -> InstrumentWidget.Action? in
+            guard let aid = obj["id"] as? String, let aname = obj["name"] as? String else { return nil }
+            return InstrumentWidget.Action(id: aid, name: aname)
         }
     }
 
@@ -2945,30 +2981,20 @@ public enum MissionTools {
         return InstrumentWidget.GraphConfig(series: series, maxPoints: max(1, maxPoints))
     }
 
-    private static func parseListConfigArg(actionsRaw: Any?, maxItemsRaw: Any?) -> InstrumentWidget.ListConfig {
-        let entries = (actionsRaw as? [[String: Any]]) ?? []
-        let actions = entries.compactMap { obj -> InstrumentWidget.Action? in
-            guard let aid = obj["id"] as? String, let aname = obj["name"] as? String else { return nil }
-            return InstrumentWidget.Action(id: aid, name: aname)
-        }
+    private static func parseListConfigArg(rowActionsRaw: Any?, maxItemsRaw: Any?) -> InstrumentWidget.ListConfig {
         let maxItems = (maxItemsRaw as? Int) ?? InstrumentWidget.ListConfig.defaultMaxItems
-        return InstrumentWidget.ListConfig(actions: actions, maxItems: max(1, maxItems))
+        return InstrumentWidget.ListConfig(rowActions: parseActionsArg(rowActionsRaw), maxItems: max(1, maxItems))
     }
 
-    private static func parseTableConfigArg(columnsRaw: Any?, actionsRaw: Any?, maxRowsRaw: Any?) -> InstrumentWidget.TableConfig {
+    private static func parseTableConfigArg(columnsRaw: Any?, rowActionsRaw: Any?, maxRowsRaw: Any?) -> InstrumentWidget.TableConfig {
         let columnEntries = (columnsRaw as? [[String: Any]]) ?? []
         let columns = columnEntries.compactMap { obj -> InstrumentWidget.Column? in
             guard let cid = obj["id"] as? String, let cname = obj["name"] as? String else { return nil }
             let alignment = (obj["alignment"] as? String).flatMap(InstrumentWidget.Column.Alignment.init(rawValue:)) ?? .leading
             return InstrumentWidget.Column(id: cid, name: cname, alignment: alignment)
         }
-        let actionEntries = (actionsRaw as? [[String: Any]]) ?? []
-        let actions = actionEntries.compactMap { obj -> InstrumentWidget.Action? in
-            guard let aid = obj["id"] as? String, let aname = obj["name"] as? String else { return nil }
-            return InstrumentWidget.Action(id: aid, name: aname)
-        }
         let maxRows = (maxRowsRaw as? Int) ?? InstrumentWidget.TableConfig.defaultMaxRows
-        return InstrumentWidget.TableConfig(columns: columns, actions: actions, maxRows: max(1, maxRows))
+        return InstrumentWidget.TableConfig(columns: columns, rowActions: parseActionsArg(rowActionsRaw), maxRows: max(1, maxRows))
     }
 
     private static func parseConsoleConfigArg(
@@ -2992,7 +3018,7 @@ public enum MissionTools {
     }
 
     private static func customInstrumentJSON(def: CustomInstrumentDef, files: [CustomInstrumentFile]) -> [String: Any] {
-        let features: [[String: Any]] = def.features.map { feature in
+        let settings: [[String: Any]] = def.features.map { feature in
             [
                 "id": feature.id,
                 "name": feature.name,
@@ -3007,7 +3033,7 @@ public enum MissionTools {
             "entrypoint": def.entrypoint,
             "dependencies": def.dependencies,
             "paths": files.map(\.path).sorted(),
-            "features": features,
+            "settings": settings,
             "widgets": widgets,
         ]
     }
@@ -3046,9 +3072,14 @@ public enum MissionTools {
     private static func customInstrumentWidgetJSON(_ widget: InstrumentWidget) -> [String: Any] {
         var obj: [String: Any] = [
             "id": widget.id,
-            "name": widget.name,
             "persistence": widget.persistence.rawValue,
         ]
+        if let name = widget.name {
+            obj["name"] = name
+        }
+        if !widget.actions.isEmpty {
+            obj["actions"] = widget.actions.map { ["id": $0.id, "name": $0.name] }
+        }
         switch widget.kind {
         case .counter(let cfg):
             obj["kind"] = "counter"
@@ -3062,12 +3093,12 @@ public enum MissionTools {
             obj["max_points"] = cfg.maxPoints
         case .list(let cfg):
             obj["kind"] = "list"
-            obj["actions"] = cfg.actions.map { ["id": $0.id, "name": $0.name] }
+            obj["row_actions"] = cfg.rowActions.map { ["id": $0.id, "name": $0.name] }
             obj["max_items"] = cfg.maxItems
         case .table(let cfg):
             obj["kind"] = "table"
             obj["columns"] = cfg.columns.map { ["id": $0.id, "name": $0.name, "alignment": $0.alignment.rawValue] }
-            obj["actions"] = cfg.actions.map { ["id": $0.id, "name": $0.name] }
+            obj["row_actions"] = cfg.rowActions.map { ["id": $0.id, "name": $0.name] }
             obj["max_rows"] = cfg.maxRows
         case .hex(let cfg):
             obj["kind"] = "hex"
@@ -3877,9 +3908,9 @@ public enum MissionTools {
     private static func registerInvokeWidgetAction(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "invoke_widget_action",
-            description: "Trigger a widget action (declared on a list or table widget). The instrument's onAction handler runs server-side. Use to programmatically click an action button on a row your instrument has surfaced.",
+            description: "Trigger an action a widget declares, as clicking its button would: one of the widget's own actions (a header button; omit item) or one of a list's or table's row actions (pass the row's id as item). The instrument's onAction handler runs in the host's agent.",
             inputSchemaJSON: """
-                {"type":"object","properties":{"session_id":{"type":"string"},"instance_id":{"type":"string"},"widget":{"type":"string"},"action":{"type":"string"},"item":{"type":"string","description":"Optional row/item id the action targets"}},"required":["session_id","instance_id","widget","action"],"additionalProperties":false}
+                {"type":"object","properties":{"session_id":{"type":"string"},"instance_id":{"type":"string"},"widget":{"type":"string"},"action":{"type":"string"},"item":{"type":"string","description":"The row's id, for a row action; omitted for a widget's own action"}},"required":["session_id","instance_id","widget","action"],"additionalProperties":false}
                 """,
             isObserve: false,
             requiresSession: true
@@ -3904,7 +3935,7 @@ public enum MissionTools {
             case .error(let err): return err
             }
             let item = invocation.args["item"] as? String
-            await engine.invokeWidgetAction(instance: instance, widget: widget, action: action, item: item)
+            await engine.invokeAction(instance: instance, widget: widget, action: action, item: item)
             var payload: [String: Any] = [
                 "instance_id": instanceID.uuidString,
                 "widget": widget,

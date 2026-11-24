@@ -88,14 +88,12 @@ public enum InstrumentIconCatalog {
         .init(id: "network",         displayName: "Network",    sfSymbol: "network",                           symbolicIcon: "network-workgroup-symbolic"),
         .init(id: "cpu",             displayName: "CPU",        sfSymbol: "cpu",                               symbolicIcon: "computer-symbolic"),
         .init(id: "memory",          displayName: "Memory",     sfSymbol: "memorychip",                        symbolicIcon: "drive-harddisk-symbolic"),
-        .init(id: "doc-search",      displayName: "Doc Search", sfSymbol: "doc.text.magnifyingglass",          symbolicIcon: "system-search-symbolic"),
+        .init(id: "doc-search",      displayName: "Doc Search", sfSymbol: "doc.text.magnifyingglass",          symbolicIcon: "document-print-preview-symbolic"),
         .init(id: "pin",             displayName: "Pin",        sfSymbol: "pin",                               symbolicIcon: "starred-symbolic"),
         .init(id: "scope",           displayName: "Scope",      sfSymbol: "scope",                             symbolicIcon: "view-fullscreen-symbolic"),
         .init(id: "cloud",           displayName: "Cloud",      sfSymbol: "cloud",                             symbolicIcon: "weather-overcast-symbolic"),
         .init(id: "branch",          displayName: "Branch",     sfSymbol: "arrow.triangle.branch",             symbolicIcon: "view-list-symbolic"),
     ]
-
-    public static let userPickable: [InstrumentIconConcept] = Array(all.prefix(16))
 
     public static let `default`: InstrumentIconConcept = all[0]
 

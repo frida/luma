@@ -83,6 +83,7 @@ public final class ProcessNode: Identifiable {
     private let _threadDeltas = AsyncEventSource<ThreadDelta>()
     private let _detachEvents = AsyncEventSource<SessionDetachReason>()
     private let _widgetUpdates = AsyncEventSource<WidgetUpdate>()
+    private let _actionStateChanges = AsyncEventSource<InstrumentActionStateChange>()
 
     public var events: AsyncStream<RuntimeEvent> { _events.makeStream() }
     public var replResults: AsyncStream<REPLResult> { _replResults.makeStream() }
@@ -91,6 +92,7 @@ public final class ProcessNode: Identifiable {
     public var threadDeltas: AsyncStream<ThreadDelta> { _threadDeltas.makeStream() }
     public var detachEvents: AsyncStream<SessionDetachReason> { _detachEvents.makeStream() }
     public var widgetUpdates: AsyncStream<WidgetUpdate> { _widgetUpdates.makeStream() }
+    public var actionStateChanges: AsyncStream<InstrumentActionStateChange> { _actionStateChanges.makeStream() }
 
     private var assemblingViewStates: [InstrumentViews.Key: AssemblingViewState] = [:]
     private var scriptEventsStarted = false
@@ -499,6 +501,16 @@ public final class ProcessNode: Identifiable {
                 _widgetUpdates.yield(update)
                 return true
 
+            case "widget-action-enabled":
+                guard let change = decodeActionEnabled(dict) else { return false }
+                _actionStateChanges.yield(change)
+                return true
+
+            case "instrument-actions-reset":
+                guard let instanceId = dict["instance_id"] as? String, let instanceID = UUID(uuidString: instanceId) else { return false }
+                _actionStateChanges.yield(.reset(instanceID: instanceID))
+                return true
+
             default:
                 return false
             }
@@ -742,6 +754,14 @@ public final class ProcessNode: Identifiable {
     private func decodeClearUpdate(_ dict: [String: Any]) -> WidgetUpdate? {
         guard let context = decodeWidgetContext(dict) else { return nil }
         return WidgetUpdate(instanceID: context.instanceID, widget: context.widget, kind: .clear)
+    }
+
+    private func decodeActionEnabled(_ dict: [String: Any]) -> InstrumentActionStateChange? {
+        guard let context = decodeWidgetContext(dict),
+            let action = dict["action"] as? String,
+            let isEnabled = dict["enabled"] as? Bool
+        else { return nil }
+        return .set(instanceID: context.instanceID, widget: context.widget, action: action, isEnabled: isEnabled)
     }
 
     private func decodeWidgetContext(_ dict: [String: Any]) -> (instanceID: UUID, widget: String)? {

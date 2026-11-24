@@ -644,7 +644,7 @@ public enum StorefrontError: Swift.Error, LocalizedError, Equatable {
         case .invalidPackageName(let name):
             return "'\(name)' cannot name an item in the store: use lowercase letters, digits and dashes, starting with a letter or digit."
         case .lumaRequirementMissing(let version):
-            return "An instrument with a view widget or Smalltalk files runs only in Luma \(version) or newer, so its package.json has to "
+            return "An instrument with widgets, settings or Smalltalk files runs only in Luma \(version) or newer, so its package.json has to "
                 + "say so: \"engines\": { \"luma\": \"\(version.engineRange)\" }."
         case .rejected(_, let message), .server(let message):
             return message

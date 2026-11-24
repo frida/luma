@@ -12,10 +12,37 @@ public struct InstrumentFolder: Sendable {
     }
 
     static let manifestFileName = "package.json"
-    private static let lockFileName = "package-lock.json"
+    static let lockFileName = "package-lock.json"
     static let dependenciesDirectoryName = "node_modules"
-    private static let typingsFileName = "luma.d.ts"
-    private static let defaultIconFileName = "icon.png"
+    static let typingsFileName = "luma.d.ts"
+    static let defaultIconFileName = "icon.png"
+    private static let manifestLineWidth = 100
+    private static let topLevelManifestKeys = ["name", "displayName", "version", "main", "engines", "dependencies", "luma"]
+    private static let settingManifestKeys = ["id", "name", "schema", "optional", "enabledByDefault"]
+    private static let schemaManifestKeys = ["kind", "choices", "fields", "item", "default", "min", "max"]
+    private static let choiceManifestKeys = ["id", "name"]
+    private static let manifestKeyOrders: [String: [String]] = [
+        "luma": ["root", "icon", "compatibility", "settings", "widgets", "store"],
+        "icon": ["kind", "value"],
+        "compatibility": ["platforms", "osIDs", "archs"],
+        "settings": settingManifestKeys,
+        "fields": settingManifestKeys,
+        "schema": schemaManifestKeys,
+        "item": schemaManifestKeys,
+        "choices": choiceManifestKeys,
+        "default": ["kind", "value"],
+        "widgets": ["id", "name", "kind", "config", "actions", "persistence"],
+        "config": [
+            "unit", "maxBuckets", "series", "maxPoints", "columns", "rowActions", "maxItems", "maxRows", "maxBytes", "maxEntries", "prompt",
+            "placeholder", "runButtonLabel", "class", "height",
+        ],
+        "series": choiceManifestKeys,
+        "columns": ["id", "name", "alignment"],
+        "actions": choiceManifestKeys,
+        "rowActions": choiceManifestKeys,
+        "store": ["summary", "category", "access"],
+        "access": ["kind", "minMonthlyCents"],
+    ]
 
     public let folderURL: URL
     public let name: String
@@ -41,6 +68,10 @@ public struct InstrumentFolder: Sendable {
         manifest.luma?.store
     }
 
+    var iconPath: String? {
+        manifest.luma?.iconFilePath
+    }
+
     public var rootURL: URL {
         manifest.luma?.root.map { folderURL.appendingPathComponent($0).standardizedFileURL } ?? folderURL.standardizedFileURL
     }
@@ -49,7 +80,9 @@ public struct InstrumentFolder: Sendable {
         let manifestURL = folderURL.appendingPathComponent(Self.manifestFileName)
         let manifest: Manifest
         do {
-            manifest = try JSONDecoder().decode(Manifest.self, from: Data(contentsOf: manifestURL))
+            let decoder = JSONDecoder()
+            decoder.userInfo[.refusesUnknownKeys] = true
+            manifest = try decoder.decode(Manifest.self, from: Data(contentsOf: manifestURL))
         } catch let error as DecodingError {
             throw LumaCoreError.invalidArgument("\(manifestURL.path): \(Self.problem(in: error))")
         }
@@ -84,8 +117,8 @@ public struct InstrumentFolder: Sendable {
             minAppVersion: minAppVersion,
             entrypoint: prefix + manifest.main,
             dependencies: manifest.dependencies ?? [:],
-            features: manifest.luma?.features ?? [],
-            widgets: manifest.luma?.widgets ?? [],
+            features: manifest.luma?.settings ?? [],
+            widgets: manifest.luma?.widgets?.map(\.widget) ?? [],
             createdAt: createdAt,
             updatedAt: updatedAt
         )
@@ -94,7 +127,9 @@ public struct InstrumentFolder: Sendable {
     }
 
     public func sourcePaths() throws -> [String] {
-        let own = try Self.entries(in: folderURL).filter { !$0.isDirectory && !generatedPaths.contains($0.path) }.map { prefix + $0.path }
+        let own = try Self.entries(in: folderURL)
+            .filter { !$0.isDirectory && Self.isInstrumentFile($0.path, iconPath: iconPath) }
+            .map { prefix + $0.path }
         return (own + sharedPaths(importedBy: own)).sorted()
     }
 
@@ -116,7 +151,7 @@ public struct InstrumentFolder: Sendable {
         let def = instrument.def
 
         let existingManifest = fm.contents(atPath: folderURL.appendingPathComponent(manifestFileName).path)
-        let existing = try? InstrumentFolder(folderURL: folderURL)
+        let existing = try existingManifest.map { _ in try InstrumentFolder(folderURL: folderURL) }
         let rootURL = existing?.rootURL ?? folderURL
         var generated = try generatedFiles(for: def, mergingInto: existingManifest, under: existing?.prefix ?? "")
         if existing?.definition(id: def.id, createdAt: def.createdAt, updatedAt: def.updatedAt) == def {
@@ -182,8 +217,8 @@ public struct InstrumentFolder: Sendable {
             store: existing?.luma?.store,
             icon: icon,
             compatibility: def.compatibility.isUniversal ? nil : def.compatibility,
-            features: def.features,
-            widgets: def.widgets
+            settings: def.features,
+            widgets: def.widgets.map(Manifest.Widget.init)
         )
         var package: [String: Any] =
             if let existingManifest {
@@ -198,7 +233,7 @@ public struct InstrumentFolder: Sendable {
         engines["luma"] = def.minAppVersion?.engineRange
         package["engines"] = engines.isEmpty ? nil : engines
         package["luma"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(section))
-        files.append(File(path: manifestFileName, content: try manifestData(for: package)))
+        files.append(File(path: manifestFileName, content: try manifestData(for: package, keepingOrderOf: existingManifest)))
 
         files.append(typingsFile(for: def))
 
@@ -207,18 +242,119 @@ public struct InstrumentFolder: Sendable {
 
     private static func updateManifest(in folderURL: URL, _ change: (inout [String: Any]) -> Void) throws {
         let manifestURL = folderURL.appendingPathComponent(manifestFileName)
+        let existing = FileManager.default.contents(atPath: manifestURL.path)
         var package: [String: Any] =
-            if let existing = FileManager.default.contents(atPath: manifestURL.path) {
+            if let existing {
                 try JSONSerialization.jsonObject(with: existing) as! [String: Any]
             } else {
                 [:]
             }
         change(&package)
-        try write([File(path: manifestFileName, content: try manifestData(for: package))], to: folderURL)
+        try write([File(path: manifestFileName, content: try manifestData(for: package, keepingOrderOf: existing))], to: folderURL)
     }
 
-    private static func manifestData(for package: [String: Any]) throws -> Data {
-        try JSONSerialization.data(withJSONObject: package, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+    private static func manifestData(for package: [String: Any], keepingOrderOf existingManifest: Data?) throws -> Data {
+        let originalKeys = try existingManifest.map(topLevelKeys) ?? []
+        return Data((try manifestText(package, under: nil, indent: "", lead: 0, originalKeys: originalKeys) + "\n").utf8)
+    }
+
+    private static func topLevelKeys(in manifest: Data) throws -> [String] {
+        let bytes = [UInt8](manifest)
+        var keys: [String] = []
+        var depth = 0
+        var expectsKey = false
+        var stringStart: Int?
+        var isEscaped = false
+        for (offset, byte) in bytes.enumerated() {
+            if let start = stringStart {
+                if isEscaped {
+                    isEscaped = false
+                } else if byte == UInt8(ascii: "\\") {
+                    isEscaped = true
+                } else if byte == UInt8(ascii: "\"") {
+                    if depth == 1 && expectsKey {
+                        keys.append(try JSONDecoder().decode(String.self, from: Data(bytes[start...offset])))
+                        expectsKey = false
+                    }
+                    stringStart = nil
+                }
+                continue
+            }
+            switch byte {
+            case UInt8(ascii: "\""):
+                stringStart = offset
+            case UInt8(ascii: "{"):
+                depth += 1
+                expectsKey = depth == 1
+            case UInt8(ascii: "["):
+                depth += 1
+            case UInt8(ascii: "}"), UInt8(ascii: "]"):
+                depth -= 1
+            case UInt8(ascii: ","):
+                expectsKey = depth == 1
+            default:
+                break
+            }
+        }
+        return keys
+    }
+
+    private static func manifestText(_ value: Any, under key: String?, indent: String, lead: Int, originalKeys: [String] = []) throws
+        -> String
+    {
+        if let inline = try inlineManifestText(value, under: key), indent.count + lead + inline.count <= manifestLineWidth {
+            return inline
+        }
+        let inner = indent + "  "
+        switch value {
+        case let object as [String: Any]:
+            let members = try orderedManifestKeys(of: object, under: key, originalKeys: originalKeys).map { member in
+                let name = try manifestScalar(member)
+                return inner + name + ": " + (try manifestText(object[member]!, under: member, indent: inner, lead: name.count + 3))
+            }
+            return "{\n" + members.joined(separator: ",\n") + "\n" + indent + "}"
+        case let array as [Any]:
+            let elements = try array.map { inner + (try manifestText($0, under: key, indent: inner, lead: 1)) }
+            return "[\n" + elements.joined(separator: ",\n") + "\n" + indent + "]"
+        default:
+            return try manifestScalar(value)
+        }
+    }
+
+    private static func inlineManifestText(_ value: Any, under key: String?) throws -> String? {
+        switch value {
+        case let object as [String: Any]:
+            guard !object.values.contains(where: { $0 is [String: Any] }) else { return nil }
+            var members: [String] = []
+            for member in orderedManifestKeys(of: object, under: key, originalKeys: []) {
+                guard let text = try inlineManifestText(object[member]!, under: member) else { return nil }
+                members.append(try manifestScalar(member) + ": " + text)
+            }
+            return members.isEmpty ? "{}" : "{ " + members.joined(separator: ", ") + " }"
+        case let array as [Any]:
+            guard array.filter({ $0 is [String: Any] || $0 is [Any] }).count <= 1 else { return nil }
+            var elements: [String] = []
+            for element in array {
+                guard let text = try inlineManifestText(element, under: key) else { return nil }
+                elements.append(text)
+            }
+            return "[" + elements.joined(separator: ", ") + "]"
+        default:
+            return try manifestScalar(value)
+        }
+    }
+
+    private static func orderedManifestKeys(of object: [String: Any], under key: String?, originalKeys: [String]) -> [String] {
+        let known = key.map { manifestKeyOrders[$0] ?? [] } ?? topLevelManifestKeys
+        func rank(_ member: String) -> (Int, Int, String) {
+            (known.firstIndex(of: member) ?? known.count, originalKeys.firstIndex(of: member) ?? 0, member)
+        }
+        return object.keys.sorted { rank($0) < rank($1) }
+    }
+
+    private static func manifestScalar(_ value: Any) throws -> String {
+        let data = try JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed, .withoutEscapingSlashes])
+        return String(decoding: data, as: UTF8.self)
     }
 
     private static func problem(in error: DecodingError) -> String {
@@ -257,7 +393,7 @@ public struct InstrumentFolder: Sendable {
         }
     }
 
-    private var prefix: String {
+    var prefix: String {
         let folderPath = folderURL.standardizedFileURL.path
         return folderPath == rootURL.path ? "" : String(folderPath.dropFirst(rootURL.path.count + 1)) + "/"
     }
@@ -299,12 +435,12 @@ public struct InstrumentFolder: Sendable {
         return String(repeating: "../", count: prefix.split(separator: "/").count) + entrypoint
     }
 
-    private var generatedPaths: Set<String> {
-        var paths: Set = [Self.manifestFileName, Self.lockFileName, Self.typingsFileName]
-        if let iconPath = manifest.luma?.iconFilePath {
-            paths.insert(iconPath)
-        }
-        return paths
+    static func isInstrumentFile(_ path: String, iconPath: String?) -> Bool {
+        let components = path.split(separator: "/")
+        let reserved = [manifestFileName, lockFileName, typingsFileName] + (iconPath.map { [$0] } ?? [])
+        return !reserved.contains(path)
+            && !components.contains { $0.hasPrefix(".") }
+            && !components.dropLast().contains { $0 == dependenciesDirectoryName }
     }
 
     private static func entries(in folderURL: URL) throws -> [(path: String, isDirectory: Bool)] {
@@ -348,7 +484,7 @@ public struct InstrumentFolder: Sendable {
         File(path: typingsFileName, content: Data(CustomInstrumentTypings.declarations(for: def).utf8))
     }
 
-    private struct Manifest: Decodable, Sendable {
+    fileprivate struct Manifest: Decodable, Sendable {
         let name: String
         let displayName: String?
         let version: String?
@@ -362,8 +498,8 @@ public struct InstrumentFolder: Sendable {
             var store: StoreListing?
             var icon: Icon?
             var compatibility: InstrumentCompatibility?
-            var features: [CustomInstrumentDef.Feature]?
-            var widgets: [InstrumentWidget]?
+            var settings: [CustomInstrumentDef.Feature]?
+            var widgets: [Widget]?
 
             var iconFilePath: String? {
                 if case .file(let path) = icon {
@@ -381,6 +517,7 @@ public struct InstrumentFolder: Sendable {
             private enum Kind: String, Codable { case symbolic, file }
 
             init(from decoder: Decoder) throws {
+                try decoder.refuseUnknownKeys(CodingKeys.self)
                 let c = try decoder.container(keyedBy: CodingKeys.self)
                 switch try c.decode(Kind.self, forKey: .kind) {
                 case .symbolic: self = .symbolic(try c.decode(String.self, forKey: .value))
@@ -399,6 +536,106 @@ public struct InstrumentFolder: Sendable {
                     try c.encode(path, forKey: .value)
                 }
             }
+        }
+
+        struct Widget: Codable, Sendable {
+            let widget: InstrumentWidget
+
+            private enum CodingKeys: String, CodingKey { case id, name, kind, config, actions, persistence }
+
+            init(_ widget: InstrumentWidget) {
+                self.widget = widget
+            }
+
+            init(from decoder: Decoder) throws {
+                try decoder.refuseUnknownKeys(CodingKeys.self)
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                widget = InstrumentWidget(
+                    id: try c.decode(String.self, forKey: .id),
+                    name: try c.decodeIfPresent(String.self, forKey: .name),
+                    kind: try InstrumentWidget.Kind(from: decoder),
+                    actions: try c.decodeIfPresent([InstrumentWidget.Action].self, forKey: .actions) ?? [],
+                    persistence: try c.decodeIfPresent(InstrumentWidget.Persistence.self, forKey: .persistence) ?? .none)
+                if let problem = widget.problem {
+                    throw DecodingError.dataCorrupted(
+                        .init(codingPath: decoder.codingPath + problem.path.map(ManifestKey.init), debugDescription: problem.text))
+                }
+            }
+
+            func encode(to encoder: Encoder) throws {
+                var c = encoder.container(keyedBy: CodingKeys.self)
+                try c.encode(widget.id, forKey: .id)
+                try c.encodeIfPresent(widget.name, forKey: .name)
+                try widget.kind.encode(to: encoder)
+                if !widget.actions.isEmpty {
+                    try c.encode(widget.actions, forKey: .actions)
+                }
+                try c.encode(widget.persistence, forKey: .persistence)
+            }
+        }
+    }
+}
+
+extension InstrumentFolder.Manifest.Section {
+    init(from decoder: Decoder) throws {
+        try decoder.refuseUnknownKeys(CodingKeys.self)
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            root: try c.decodeIfPresent(String.self, forKey: .root),
+            store: try c.decodeIfPresent(StoreListing.self, forKey: .store),
+            icon: try c.decodeIfPresent(InstrumentFolder.Manifest.Icon.self, forKey: .icon),
+            compatibility: try c.decodeIfPresent(InstrumentCompatibility.self, forKey: .compatibility),
+            settings: try c.decodeIfPresent([CustomInstrumentDef.Feature].self, forKey: .settings),
+            widgets: try c.decodeIfPresent([InstrumentFolder.Manifest.Widget].self, forKey: .widgets))
+        if let problem = InstrumentWidget.countProblem(widgets?.count ?? 0) {
+            throw DecodingError.dataCorrupted(.init(codingPath: c.codingPath + [CodingKeys.widgets], debugDescription: problem))
+        }
+    }
+}
+
+extension CodingUserInfoKey {
+    static let refusesUnknownKeys = CodingUserInfoKey(rawValue: "refusesUnknownKeys")!
+}
+
+extension Decoder {
+    func refuseUnknownKeys<Key: CodingKey & Equatable>(_: Key.Type, knowing known: [Key]? = nil, renamed: [String: String] = [:]) throws {
+        guard userInfo[.refusesUnknownKeys] != nil else { return }
+        let unknown = try container(keyedBy: ManifestKey.self).allKeys.filter { key in
+            Key(stringValue: key.stringValue).map { known?.contains($0) ?? true } != true
+        }
+        if let first = unknown.min(by: { $0.stringValue < $1.stringValue }) {
+            let problem = renamed[first.stringValue].map { "unknown key (now \($0))" } ?? "unknown key"
+            throw DecodingError.dataCorrupted(.init(codingPath: codingPath + [first], debugDescription: problem))
+        }
+    }
+}
+
+private struct ManifestKey: CodingKey {
+    let stringValue: String
+    let intValue: Int?
+
+    init(_ stringValue: String) {
+        self.init(stringValue: stringValue)
+    }
+
+    init(_ intValue: Int) {
+        self.init(intValue: intValue)
+    }
+
+    init(stringValue: String) {
+        self.stringValue = stringValue
+        intValue = nil
+    }
+
+    init(intValue: Int) {
+        stringValue = String(intValue)
+        self.intValue = intValue
+    }
+
+    init(_ step: InstrumentWidget.Problem.Step) {
+        switch step {
+        case .key(let key): self.init(stringValue: key)
+        case .index(let index): self.init(intValue: index)
         }
     }
 }

@@ -105,8 +105,17 @@ public enum ArrayItemSchema: Sendable, Equatable {
     }
 }
 
+extension ComboChoice {
+    public init(from decoder: Decoder) throws {
+        try decoder.refuseUnknownKeys(CodingKeys.self)
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(id: try c.decode(String.self, forKey: .id), name: try c.decode(String.self, forKey: .name))
+    }
+}
+
 extension ObjectField {
     public init(from decoder: Decoder) throws {
+        try decoder.refuseUnknownKeys(CodingKeys.self)
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.init(
             id: try c.decode(String.self, forKey: .id),
@@ -138,11 +147,22 @@ extension FeatureSchema: Codable {
         case combo
         case object
         case array
+
+        var keys: [CodingKeys] {
+            switch self {
+            case .boolean, .string, .regex: [.kind, .default]
+            case .int, .uint, .double: [.kind, .default, .min, .max]
+            case .combo: [.kind, .choices, .default]
+            case .object: [.kind, .fields]
+            case .array: [.kind, .item, .default]
+            }
+        }
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let kind = try c.decode(Kind.self, forKey: .kind)
+        try decoder.refuseUnknownKeys(CodingKeys.self, knowing: kind.keys)
         switch kind {
         case .boolean:
             self = .boolean(default: try c.decodeIfPresent(Bool.self, forKey: .default) ?? false)
@@ -262,11 +282,20 @@ extension ArrayItemSchema: Codable {
         case regex
         case combo
         case object
+
+        var keys: [CodingKeys] {
+            switch self {
+            case .boolean, .int, .uint, .double, .string, .regex: [.kind]
+            case .combo: [.kind, .choices]
+            case .object: [.kind, .fields]
+            }
+        }
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let kind = try c.decode(Kind.self, forKey: .kind)
+        try decoder.refuseUnknownKeys(CodingKeys.self, knowing: kind.keys)
         switch kind {
         case .boolean: self = .boolean
         case .int: self = .int
