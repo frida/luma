@@ -17,21 +17,29 @@ struct PharoGraphView: View {
     @State private var panBase: CGSize = .zero
     @State private var viewport: CGSize = .zero
     @State private var didFit = false
+    @State private var drawn: PharoGraph?
     @FocusState private var isFocused: Bool
 
     var body: some View {
         Group {
-            if let placed {
-                graphBody(placed)
+            if let placed, let drawn {
+                graphBody(placed, of: drawn)
             } else {
                 ProgressView().controlSize(.small)
             }
         }
-        .task(id: graph.layout) {
-            didFit = false
+        .task(id: graph) {
+            let isNewLayout = drawn?.layout != graph.layout
+            if let index = selected, index >= graph.nodes.count {
+                selected = nil
+            }
             placed = PharoGraphLayout(nodeCount: graph.nodes.count, edges: graph.edges, kind: .init(graph.layout)).solve()
-            attemptInitialFit()
-            isFocused = true
+            drawn = graph
+            if isNewLayout {
+                didFit = false
+                attemptInitialFit()
+                isFocused = true
+            }
         }
     }
 
@@ -41,9 +49,9 @@ struct PharoGraphView: View {
         fitToViewport()
     }
 
-    private func graphBody(_ placed: PharoGraphLayout.Solution) -> some View {
+    private func graphBody(_ placed: PharoGraphLayout.Solution, of drawn: PharoGraph) -> some View {
         GeometryReader { geo in
-            canvas(placed)
+            canvas(placed, of: drawn)
                 .scaleEffect(scale, anchor: .topLeading)
                 .offset(offset)
                 .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
@@ -73,10 +81,10 @@ struct PharoGraphView: View {
         .frame(minHeight: 240)
     }
 
-    private func canvas(_ placed: PharoGraphLayout.Solution) -> some View {
+    private func canvas(_ placed: PharoGraphLayout.Solution, of drawn: PharoGraph) -> some View {
         ZStack(alignment: .topLeading) {
             Canvas { context, _ in
-                for edge in graph.edges {
+                for edge in drawn.edges {
                     let incident = edge.from == selected || edge.to == selected
                     drawEdge(from: placed[edge.from], to: placed[edge.to], incident: incident, in: context)
                 }
@@ -84,8 +92,8 @@ struct PharoGraphView: View {
             .frame(width: placed.size.width, height: placed.size.height)
             .allowsHitTesting(false)
 
-            ForEach(graph.nodes.indices, id: \.self) { index in
-                node(graph.nodes[index].label, at: index)
+            ForEach(drawn.nodes.indices, id: \.self) { index in
+                node(drawn.nodes[index].label, at: index)
                     .position(placed[index])
                     .allowsHitTesting(isOnScreen(placed[index]))
             }
