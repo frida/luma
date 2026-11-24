@@ -91,6 +91,9 @@ enum StyleSheet {
     .luma-banner {
         padding: 8px 12px;
     }
+    .luma-banner.luma-banner-question {
+        padding: 12px;
+    }
     .luma-banner.luma-banner-info {
         background-color: rgba(255, 204, 0, 0.15);
         border-bottom: 1px solid rgba(255, 204, 0, 0.30);

@@ -24,6 +24,7 @@ final class PartnerContactQuestion {
         widget.hexpand = true
         widget.visible = false
         widget.add(cssClass: "luma-banner")
+        widget.add(cssClass: "luma-banner-question")
         widget.add(cssClass: LumaBannerStyle.news.cssClass)
 
         let questionLabel = Label(
