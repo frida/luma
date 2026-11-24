@@ -14,14 +14,7 @@ struct PharoSnapshotView: View {
             header
 
             if snapshot.views.count > 1 {
-                Picker("", selection: $shown) {
-                    ForEach(snapshot.views, id: \.methodSelector) { view in
-                        Text(view.title).tag(Optional(view.methodSelector))
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .padding(6)
+                PharoTabBar(tabs: snapshot.views.map { ($0.methodSelector, $0.title) }, selection: $shown)
             }
 
             Divider()
