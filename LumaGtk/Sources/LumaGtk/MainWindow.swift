@@ -1464,17 +1464,16 @@ final class MainWindow: InstrumentUIHost {
         case .diverged:
             button.set(iconName: "dialog-warning-symbolic")
             button.tooltipText = "Changed both here and on disk"
-            button.onClicked { [weak self, weak button] _ in
+            button.onClicked { [weak self] clicked in
                 MainActor.assumeIsolated {
-                    guard let self, let button else { return }
-                    self.presentFolderDivergenceMenu(anchor: button, def: def)
+                    self?.presentFolderDivergenceMenu(anchor: clicked, def: def)
                 }
             }
         }
         return button
     }
 
-    private func presentFolderDivergenceMenu(anchor: Widget, def: LumaCore.CustomInstrumentDef) {
+    private func presentFolderDivergenceMenu(anchor: ButtonRef, def: LumaCore.CustomInstrumentDef) {
         ContextMenu.present([
             [
                 .init("Reload from Folder, Discarding Edits Made Here") { [weak self] in

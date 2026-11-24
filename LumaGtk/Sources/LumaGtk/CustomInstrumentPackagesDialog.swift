@@ -10,6 +10,7 @@ final class CustomInstrumentPackagesDialog {
     private let dialog: Adw.Dialog
     private let listBox = ListBox()
     private let emptyLabel = Label(str: "This instrument does not depend on any packages.")
+    private let addButton = Button(label: "Add Package\u{2026}")
 
     init(engine: Engine, def: CustomInstrumentDef) {
         self.engine = engine
@@ -52,12 +53,11 @@ final class CustomInstrumentPackagesDialog {
         content.append(child: emptyLabel)
 
         let header = Adw.HeaderBar()
-        let addButton = Button(label: "Add Package\u{2026}")
         addButton.add(cssClass: "suggested-action")
-        addButton.onClicked { [weak self, weak addButton] _ in
+        addButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let addButton else { return }
-                self?.presentPackagePicker(anchor: addButton)
+                guard let self else { return }
+                self.presentPackagePicker(anchor: self.addButton)
             }
         }
         header.packEnd(child: addButton)
