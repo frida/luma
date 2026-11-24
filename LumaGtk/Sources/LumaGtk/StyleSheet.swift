@@ -621,6 +621,10 @@ enum StyleSheet {
     box.luma-pharo-maximized {
         background-color: @window_bg_color;
     }
+    .luma-pharo-canvas-engaged {
+        outline: 2px solid alpha(@accent_color, 0.5);
+        outline-offset: -2px;
+    }
     box.luma-pharo-body {
         margin: 2px 0;
         border: 1px solid alpha(@window_fg_color, 0.15);

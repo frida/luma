@@ -48,6 +48,7 @@ struct PharoCanvasSceneView: PlatformViewRepresentable {
 /// scene to read.
 final class CanvasSceneInputView: OnScreenMTKView {
     private let scene: Int
+    private let engagement: CanvasEngagement
     private(set) var scheme = Scheme.light
     private var pressed: Int32 = 0
 
@@ -76,6 +77,7 @@ final class CanvasSceneInputView: OnScreenMTKView {
 
     init(scene: Int) {
         self.scene = scene
+        engagement = CanvasEngagement(scene: scene)
         super.init(frame: .zero, device: nil)
         holdStill()
         visibilityChanged = { [weak self] _ in
@@ -83,7 +85,11 @@ final class CanvasSceneInputView: OnScreenMTKView {
         }
         CanvasSceneViews.register(self, for: scene)
         followAppearance()
-        #if canImport(UIKit)
+        #if canImport(AppKit)
+            engagement.onChange = { [weak self] _ in
+                self?.noteFocusRingMaskChanged()
+            }
+        #else
             registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (view: CanvasSceneInputView, _) in
                 view.followAppearance()
             }
@@ -140,8 +146,21 @@ final class CanvasSceneInputView: OnScreenMTKView {
         #endif
     }
 
+    override func resignFirstResponder() -> Bool {
+        engagement.end()
+        return super.resignFirstResponder()
+    }
+
     #if canImport(AppKit)
         override var acceptsFirstResponder: Bool { true }
+
+        override var focusRingMaskBounds: NSRect {
+            engagement.isEngaged ? bounds : .zero
+        }
+
+        override func drawFocusRingMask() {
+            bounds.fill()
+        }
 
         override func viewDidChangeEffectiveAppearance() {
             super.viewDidChangeEffectiveAppearance()
@@ -150,8 +169,14 @@ final class CanvasSceneInputView: OnScreenMTKView {
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
-            guard window == nil else { return }
-            reportPaneClosed()
+            NotificationCenter.default.removeObserver(self, name: NSWindow.didResignKeyNotification, object: nil)
+            guard let window else { return reportPaneClosed() }
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(windowResignedKey), name: NSWindow.didResignKeyNotification, object: window)
+        }
+
+        @objc private func windowResignedKey(_ notification: Notification) {
+            engagement.end()
         }
 
         override func updateTrackingAreas() {
@@ -203,6 +228,7 @@ final class CanvasSceneInputView: OnScreenMTKView {
         }
 
         override func rightMouseDown(with event: NSEvent) {
+            window?.makeFirstResponder(self)
             report { $0.buttons |= 1 << 1 }
             press(1 << 1, at: location(of: event))
         }
@@ -214,6 +240,7 @@ final class CanvasSceneInputView: OnScreenMTKView {
 
         override func otherMouseDown(with event: NSEvent) {
             guard event.buttonNumber == Self.middleButtonNumber else { return super.otherMouseDown(with: event) }
+            window?.makeFirstResponder(self)
             report { $0.buttons |= 1 << 2 }
             press(1 << 2, at: location(of: event))
         }
@@ -227,7 +254,9 @@ final class CanvasSceneInputView: OnScreenMTKView {
         private static let middleButtonNumber = 2
 
         override func scrollWheel(with event: NSEvent) {
-            deliver(.scroll, at: location(of: event), dx: Float(event.scrollingDeltaX), dy: Float(event.scrollingDeltaY))
+            if !deliver(.scroll, at: location(of: event), dx: Float(event.scrollingDeltaX), dy: Float(event.scrollingDeltaY)) {
+                super.scrollWheel(with: event)
+            }
         }
 
         override func magnify(with event: NSEvent) {
@@ -235,13 +264,15 @@ final class CanvasSceneInputView: OnScreenMTKView {
         }
 
         override func keyDown(with event: NSEvent) {
-            report { $0.keysDown.insert(Self.code(for: event)) }
-            deliver(.keyDown, at: .zero, key: Self.code(for: event))
+            if !deliver(.keyDown, at: .zero, key: Self.code(for: event)) {
+                super.keyDown(with: event)
+            }
         }
 
         override func keyUp(with event: NSEvent) {
-            report { $0.keysDown.remove(Self.code(for: event)) }
-            deliver(.keyUp, at: .zero, key: Self.code(for: event))
+            if !deliver(.keyUp, at: .zero, key: Self.code(for: event)) {
+                super.keyUp(with: event)
+            }
         }
 
         private func location(of event: NSEvent) -> CGPoint {
@@ -306,14 +337,12 @@ final class CanvasSceneInputView: OnScreenMTKView {
         override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
             let codes = presses.compactMap(Self.code)
             guard !codes.isEmpty else { return super.pressesBegan(presses, with: event) }
-            report { input in codes.forEach { input.keysDown.insert($0) } }
             codes.forEach { deliver(.keyDown, at: .zero, key: $0) }
         }
 
         override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
             let codes = presses.compactMap(Self.code)
             guard !codes.isEmpty else { return super.pressesEnded(presses, with: event) }
-            report { input in codes.forEach { input.keysDown.remove($0) } }
             codes.forEach { deliver(.keyUp, at: .zero, key: $0) }
         }
 
@@ -323,6 +352,10 @@ final class CanvasSceneInputView: OnScreenMTKView {
         }
 
         @objc private func scrolled(_ scroll: UIPanGestureRecognizer) {
+            if scroll.state == .began {
+                becomeFirstResponder()
+                engagement.engage()
+            }
             let moved = scroll.translation(in: self)
             deliver(.scroll, at: scroll.location(in: self), dx: Float(moved.x), dy: Float(moved.y))
             scroll.setTranslation(.zero, in: self)
@@ -352,6 +385,8 @@ final class CanvasSceneInputView: OnScreenMTKView {
     /// Closing the pane a scene is drawn in says what Escape says, and whoever
     /// drives the scene is already watching for that.
     private func reportPaneClosed() {
+        report { $0.isPointerInside = false }
+        deliver(.leave, at: .zero)
         report { $0.keysDown.insert(CanvasKey.escape.rawValue) }
     }
 
@@ -381,6 +416,7 @@ final class CanvasSceneInputView: OnScreenMTKView {
         CanvasRegistry.shared.reportInput(scene, change)
     }
 
+    @discardableResult
     private func deliver(
         _ kind: CanvasInputEvent.Kind,
         at point: CGPoint,
@@ -388,8 +424,8 @@ final class CanvasSceneInputView: OnScreenMTKView {
         dy: Float = 0,
         factor: Float = 1,
         key: Int32 = 0
-    ) {
-        guard bounds.width > 0, bounds.height > 0 else { return }
+    ) -> Bool {
+        guard bounds.width > 0, bounds.height > 0 else { return false }
         let event = CanvasInputEvent(
             kind,
             x: Float(point.x / bounds.width * 2 - 1),
@@ -401,7 +437,7 @@ final class CanvasSceneInputView: OnScreenMTKView {
             key: key,
             width: Float(bounds.width),
             height: Float(bounds.height))
-        CanvasInputListeners.deliver(event, to: scene)
+        return engagement.offer(event)
     }
 }
 

@@ -12,6 +12,7 @@ final class PharoCanvasArea {
 
     private let scene: Int
     let area: ShaderEffect
+    private let engagement: CanvasEngagement
     private var themeToken: gulong = 0
     private var pressed: Int32 = 0
     private var pointer: (x: Double, y: Double) = (0, 0)
@@ -29,6 +30,7 @@ final class PharoCanvasArea {
     init(scene: Int) {
         self.scene = scene
         area = ShaderEffect(pacing: .onChange)
+        engagement = CanvasEngagement(scene: scene)
 
         let box = Box(orientation: .vertical, spacing: 0)
         box.hexpand = true
@@ -134,6 +136,13 @@ final class PharoCanvasArea {
     private func watchInput() {
         area.widget.canFocus = true
         area.widget.focusable = true
+        engagement.onChange = { [weak area] isEngaged in
+            if isEngaged {
+                area?.widget.add(cssClass: "luma-pharo-canvas-engaged")
+            } else {
+                area?.widget.remove(cssClass: "luma-pharo-canvas-engaged")
+            }
+        }
 
         let motion = EventControllerMotion()
         motion.onMotion { [weak self] _, x, y in
@@ -180,8 +189,7 @@ final class PharoCanvasArea {
             MainActor.assumeIsolated {
                 guard let self else { return false }
                 let step = controller.unit == .wheel ? 30.0 : 1.0
-                self.deliver(.scroll, x: self.pointer.x, y: self.pointer.y, dx: Float(-dx * step), dy: Float(-dy * step))
-                return true
+                return self.deliver(.scroll, x: self.pointer.x, y: self.pointer.y, dx: Float(-dx * step), dy: Float(-dy * step))
             }
         }
         area.widget.add(controller: scroll)
@@ -203,21 +211,23 @@ final class PharoCanvasArea {
         keys.onKeyPressed { [weak self] _, keyval, _, _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                let key = Self.code(for: UInt32(keyval))
-                self.report { $0.keysDown.insert(key) }
-                self.deliver(.keyDown, x: self.pointer.x, y: self.pointer.y, key: key)
+                self.deliver(.keyDown, x: self.pointer.x, y: self.pointer.y, key: Self.code(for: UInt32(keyval)))
             }
             return false
         }
         keys.onKeyReleased { [weak self] _, keyval, _, _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                let key = Self.code(for: UInt32(keyval))
-                self.report { $0.keysDown.remove(key) }
-                self.deliver(.keyUp, x: self.pointer.x, y: self.pointer.y, key: key)
+                self.deliver(.keyUp, x: self.pointer.x, y: self.pointer.y, key: Self.code(for: UInt32(keyval)))
             }
         }
         area.widget.add(controller: keys)
+
+        let focus = EventControllerFocus()
+        focus.onLeave { [weak self] _ in
+            MainActor.assumeIsolated { self?.engagement.end() }
+        }
+        area.widget.add(controller: focus)
     }
 
     /// Clip space, so what a snippet reads is in the coordinates it gave its
@@ -234,6 +244,7 @@ final class PharoCanvasArea {
         }
     }
 
+    @discardableResult
     private func deliver(
         _ kind: CanvasInputEvent.Kind,
         x: Double,
@@ -242,10 +253,10 @@ final class PharoCanvasArea {
         dy: Float = 0,
         factor: Float = 1,
         key: Int32 = 0
-    ) {
+    ) -> Bool {
         let width = Double(area.widget.width)
         let height = Double(area.widget.height)
-        guard width > 0, height > 0 else { return }
+        guard width > 0, height > 0 else { return false }
         pointer = (x, y)
         let event = CanvasInputEvent(
             kind,
@@ -258,7 +269,7 @@ final class PharoCanvasArea {
             key: key,
             width: Float(width),
             height: Float(height))
-        CanvasInputListeners.deliver(event, to: scene)
+        return engagement.offer(event)
     }
 
     private func report(_ change: (inout CanvasInput) -> Void) {

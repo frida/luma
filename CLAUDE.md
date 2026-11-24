@@ -399,7 +399,15 @@ is gitignored — it is produced at build time.
   transform and a visibility flag. `CanvasRegistry` is lock-guarded
   rather than main-actor, because the image's thread needs a handle
   back at once; changes reach the frontends through
-  `CanvasRegistry.onChange` on the main thread.
+  `CanvasRegistry.onChange` on the main thread. What the user does
+  over a canvas goes through the `CanvasEngagement` of the view
+  showing it, which both frontends feed their toolkit's events: a
+  click or touch engages the canvas, and the pointer leaving, the
+  keyboard focus leaving or the window resigning ends it. Scrolls and
+  keys reach the scene only while it is engaged, the rest always; a
+  scroll it does not take is the page's, and a key it let through is
+  released when it ends, so `isDown:` never answers a key it was not
+  sent.
 - **Audio (`Synth`, `SynthEngine`, `EventChime`)** — `SynthEngine` is
   the mixer, running on the audio device's thread. Its storage is
   allocated once and reached through unsafe pointers, and the control

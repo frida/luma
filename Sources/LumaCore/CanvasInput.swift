@@ -94,6 +94,70 @@ public struct CanvasInputEvent: Sendable, Equatable {
 }
 
 @MainActor
+public final class CanvasEngagement {
+    public private(set) var isEngaged = false {
+        didSet {
+            if isEngaged != oldValue {
+                onChange?(isEngaged)
+            }
+        }
+    }
+    public var onChange: ((Bool) -> Void)?
+
+    private let scene: Int
+    private var held: Set<Int32> = []
+    private var last = CanvasInputEvent(.leave)
+
+    public init(scene: Int) {
+        self.scene = scene
+    }
+
+    @discardableResult
+    public func offer(_ event: CanvasInputEvent) -> Bool {
+        last = event
+        switch event.kind {
+        case .down:
+            engage()
+        case .scroll, .keyDown:
+            guard isEngaged else { return false }
+        case .keyUp:
+            guard held.contains(event.key) else { return false }
+        case .leave:
+            end()
+        case .move, .up, .zoom:
+            break
+        }
+        pass(event)
+        return true
+    }
+
+    public func engage() {
+        isEngaged = true
+    }
+
+    public func end() {
+        isEngaged = false
+        for key in held {
+            pass(CanvasInputEvent(.keyUp, x: last.x, y: last.y, buttons: last.buttons, key: key, width: last.width, height: last.height))
+        }
+    }
+
+    private func pass(_ event: CanvasInputEvent) {
+        switch event.kind {
+        case .keyDown:
+            held.insert(event.key)
+            CanvasRegistry.shared.reportInput(scene) { $0.keysDown.insert(event.key) }
+        case .keyUp:
+            held.remove(event.key)
+            CanvasRegistry.shared.reportInput(scene) { $0.keysDown.remove(event.key) }
+        default:
+            break
+        }
+        CanvasInputListeners.deliver(event, to: scene)
+    }
+}
+
+@MainActor
 public enum CanvasInputListeners {
     private static var handlers: [Int: (CanvasInputEvent) -> Void] = [:]
 
