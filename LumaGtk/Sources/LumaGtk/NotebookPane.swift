@@ -499,7 +499,7 @@ final class NotebookPane {
         header.hexpand = true
 
         if !entry.editors.isEmpty {
-            header.append(child: makeEditorStack(entry.editors))
+            header.append(child: AuthorAvatarStack.make(entry.editors, size: 20))
         }
 
         if let processName = entry.processName, !processName.isEmpty {
@@ -527,63 +527,6 @@ final class NotebookPane {
         header.append(child: timestamp)
 
         return header
-    }
-
-    private func makeEditorStack(_ editors: [LumaCore.Author]) -> Widget {
-        let avatarSize = 20
-        let overlap = 8
-        let step = avatarSize - overlap
-        let totalWidth = avatarSize + (editors.count - 1) * step
-
-        let fixed = Fixed()
-        fixed.setSizeRequest(width: totalWidth, height: avatarSize)
-        fixed.halign = .start
-        fixed.valign = .center
-
-        for index in (0..<editors.count).reversed() {
-            let x = Double(index * step)
-            fixed.put(widget: makeEditorAvatar(editors[index]), x: x, y: 0)
-        }
-
-        return fixed
-    }
-
-    private func makeEditorAvatar(_ editor: LumaCore.Author) -> Button {
-        let name = editor.name.isEmpty ? "@\(editor.id)" : editor.name
-        let button = Button()
-        button.hasFrame = false
-        button.add(cssClass: "flat")
-        button.add(cssClass: "luma-avatar-button")
-        button.tooltipText = name
-
-        let avatar = Adw.Avatar(size: 20, text: name, showInitials: true)
-        avatar.add(cssClass: "luma-editor-avatar")
-        button.set(child: avatar)
-
-        if !editor.avatarURL.isEmpty,
-           let url = URL(string: "\(editor.avatarURL)&s=48") {
-            Task { @MainActor [avatar] in
-                guard let texture = await AvatarCache.shared.texture(for: url) else { return }
-                avatar.set(customImage: texture)
-            }
-        }
-
-        let profileURL = "https://github.com/\(editor.id)"
-        button.onClicked { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                let launcher = UriLauncher(uri: profileURL)
-                let parentWindow: Gtk.WindowRef?
-                if let rootPtr = self.widget.root?.ptr {
-                    parentWindow = Gtk.WindowRef(raw: rootPtr)
-                } else {
-                    parentWindow = nil
-                }
-                launcher.launch(parent: parentWindow, cancellable: nil, callback: nil, userData: nil)
-            }
-        }
-
-        return button
     }
 
     private func makeEditableBody(for entry: LumaCore.NotebookEntry) -> Box {

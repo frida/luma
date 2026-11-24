@@ -13,6 +13,8 @@ final class MissionInputBar {
     private let textView: TextView
     private let sendButton: Button
     private let interruptButton: Button
+    private let starterNote: Label
+    private let pendingNote: Label
     private let getStatus: () -> MissionStatus
 
     init(
@@ -24,13 +26,32 @@ final class MissionInputBar {
         self.missionID = missionID
         self.getStatus = getStatus
 
-        widget = Box(orientation: .horizontal, spacing: 8)
+        widget = Box(orientation: .vertical, spacing: 6)
         widget.marginStart = 16
         widget.marginEnd = 16
         widget.marginTop = 10
         widget.marginBottom = 12
         widget.hexpand = true
         widget.add(cssClass: "luma-mission-input-bar")
+
+        starterNote = Label(str: "")
+        starterNote.halign = .start
+        starterNote.xalign = 0
+        starterNote.wrap = true
+        starterNote.add(cssClass: "caption")
+        starterNote.add(cssClass: "dim-label")
+        widget.append(child: starterNote)
+
+        pendingNote = Label(str: "")
+        pendingNote.halign = .start
+        pendingNote.xalign = 0
+        pendingNote.wrap = true
+        pendingNote.add(cssClass: "caption")
+        pendingNote.add(cssClass: "dim-label")
+        widget.append(child: pendingNote)
+
+        let row = Box(orientation: .horizontal, spacing: 8)
+        widget.append(child: row)
 
         textView = TextView()
         textView.wrapMode = .word
@@ -45,7 +66,7 @@ final class MissionInputBar {
         scroll.setSizeRequest(width: -1, height: 64)
         scroll.add(cssClass: "card")
         scroll.set(child: textView)
-        widget.append(child: scroll)
+        row.append(child: scroll)
 
         sendButton = Button(label: "Send")
         sendButton.add(cssClass: "suggested-action")
@@ -71,7 +92,7 @@ final class MissionInputBar {
         buttonColumn.valign = .end
         buttonColumn.append(child: interruptButton)
         buttonColumn.append(child: sendButton)
-        widget.append(child: buttonColumn)
+        row.append(child: buttonColumn)
 
         sendButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated { self?.send(interrupt: false) }
@@ -105,12 +126,31 @@ final class MissionInputBar {
         textView.add(controller: keyController)
 
         update(status: getStatus())
+        refreshPending()
     }
 
     func update(status: MissionStatus) {
         let isRunning = status == .running
-        interruptButton.visible = isRunning
+        let starter = otherStarter
+        interruptButton.visible = isRunning && starter == nil
+        starterNote.label = starter.map { "The agent runs in \($0.name)’s Luma and reads what you send at its next step." } ?? ""
+        starterNote.visible = starter != nil
         refreshSensitivity()
+    }
+
+    func refreshPending() {
+        guard let engine, let mission = try? engine.store.fetchMission(id: missionID) else { return }
+        let mine = engine.myPendingSteering(missionID: missionID)
+        let pending = engine.isStartedByMe(mission) ? engine.pendingSteering(missionID: missionID) : mine
+        let mineIDs = Set(mine.map(\.id))
+        let lines = pending.map { "\(mineIDs.contains($0.id) ? "You" : $0.author!.name): \($0.text)" }
+        pendingNote.label = (["Not yet read by the agent"] + lines).joined(separator: "\n")
+        pendingNote.visible = !pending.isEmpty
+    }
+
+    private var otherStarter: Author? {
+        guard let engine, let mission = try? engine.store.fetchMission(id: missionID), !engine.isStartedByMe(mission) else { return nil }
+        return mission.author
     }
 
     private func refreshSensitivity() {

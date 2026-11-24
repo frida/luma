@@ -4,7 +4,8 @@ import Gtk
 import LumaCore
 
 /// Shows native desktop notifications for incoming collaboration events —
-/// a new member joining the lab, a new notebook entry, or a chat message.
+/// a new member joining the lab, a new notebook entry, or a message in the
+/// project's conversation.
 /// The matching coverage on macOS is provided by APNs via the system UI,
 /// so this class only exists on the LumaGtk side.
 ///
@@ -30,12 +31,12 @@ final class DesktopNotifier {
         )
     }
 
-    func notifyChatMessage(_ message: LumaCore.CollaborationSession.ChatMessage, labID: String?) {
-        let name = displayName(message.sender)
+    func notifyChatMessage(_ message: ObjectChatMessage, inChatTitled title: String, labID: String?) {
+        let sender = message.role == .assistant ? "Assistant" : message.author?.name ?? "Someone"
         deliver(
             kind: "chat-message",
-            title: name,
-            body: message.text,
+            title: "\(sender) in \(title)",
+            body: message.bodyMarkdown,
             labID: labID,
         )
     }

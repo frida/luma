@@ -2,6 +2,7 @@ import Adw
 import Foundation
 import Gtk
 import LumaCore
+import Observation
 import Pango
 
 @MainActor
@@ -19,6 +20,7 @@ final class MissionsListPane {
     private let newButton: Button
     private var rowsByMissionID: [UUID: ListBoxRow] = [:]
     private var orderedMissions: [Mission] = []
+    private var missionIDsWaitingForStarter: [UUID] = []
 
     init(
         engine: Engine,
@@ -105,6 +107,18 @@ final class MissionsListPane {
                 self.onSelectMission(self.orderedMissions[index].id)
             }
         }
+        followStarters()
+    }
+
+    private func followStarters() {
+        let waiting = withObservationTracking {
+            engine.map { engine in engine.missions.filter(engine.isWaitingForStarter).map(\.id) } ?? []
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.followStarters() }
+        }
+        guard waiting != missionIDsWaitingForStarter else { return }
+        missionIDsWaitingForStarter = waiting
+        rebuildMissionRows(orderedMissions)
     }
 
     func refreshExternalMCP() {
@@ -211,6 +225,16 @@ final class MissionsListPane {
         metaRow.append(child: makeMetaLabel(text: RelativeTime.string(from: mission.createdAt), icon: "alarm-symbolic"))
         column.append(child: metaRow)
 
+        if engine?.isWaitingForStarter(mission) == true, let starter = mission.author {
+            let waiting = Label(str: MissionsListPane.waitingNote(for: starter))
+            waiting.halign = .start
+            waiting.xalign = 0
+            waiting.wrap = true
+            waiting.add(cssClass: "dim-label")
+            waiting.add(cssClass: "caption")
+            column.append(child: waiting)
+        }
+
         box.append(child: column)
 
         let pill = MissionPill.makeStatus(mission.status)
@@ -219,6 +243,10 @@ final class MissionsListPane {
 
         row.set(child: box)
         return row
+    }
+
+    static func waitingNote(for starter: Author) -> String {
+        "Continues when \(starter.name), who started it, is back online"
     }
 
     private func missionRowTitle(_ mission: Mission) -> String {

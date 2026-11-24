@@ -1,7 +1,7 @@
-import Adw
 import Foundation
 import Gtk
 import LumaCore
+import Observation
 
 @MainActor
 final class MissionActionQueueView {
@@ -17,6 +17,9 @@ final class MissionActionQueueView {
 
     private var cardsByActionID: [UUID: ActionCard] = [:]
     private var inputCardsByActionID: [UUID: RequestUserInputCard] = [:]
+    private var chatCallCards: [UUID: ChatCallCard] = [:]
+
+    var onOpenChat: (UUID) -> Void = { _ in }
 
     init(engine: Engine?, parentWindow: Gtk.Window) {
         self.engine = engine
@@ -73,8 +76,8 @@ final class MissionActionQueueView {
         widget.append(child: bodyContainer)
     }
 
-    func update(actions: [MissionAction]) {
-        countLabel.label = "\(actions.count) pending"
+    func update(actions: [MissionAction], chatCalls: [ObjectChatToolCall]) {
+        countLabel.label = "\(actions.count + chatCalls.count) pending"
 
         var seen: Set<UUID> = []
         var lastWidget: Widget? = nil
@@ -133,6 +136,30 @@ final class MissionActionQueueView {
             }
         }
 
+        if let engine {
+            for call in chatCalls {
+                seen.insert(call.id)
+                let card: ChatCallCard
+                if let existing = chatCallCards[call.id] {
+                    card = existing
+                    card.update(call)
+                } else {
+                    card = ChatCallCard(call: call, engine: engine) { [weak self] chatID in self?.onOpenChat(chatID) }
+                    chatCallCards[call.id] = card
+                    if let last = lastWidget {
+                        listBox.insertChildAfter(child: card.widget, sibling: last)
+                    } else {
+                        listBox.prepend(child: card.widget)
+                    }
+                }
+                lastWidget = card.widget
+            }
+        }
+
+        for (id, card) in chatCallCards where !seen.contains(id) {
+            if card.widget.parent != nil { listBox.remove(child: card.widget) }
+            chatCallCards.removeValue(forKey: id)
+        }
         for (id, card) in cardsByActionID where !seen.contains(id) {
             if card.widget.parent != nil { listBox.remove(child: card.widget) }
             cardsByActionID.removeValue(forKey: id)
@@ -145,7 +172,7 @@ final class MissionActionQueueView {
         while let child = bodyContainer.firstChild {
             bodyContainer.remove(child: child)
         }
-        if actions.isEmpty {
+        if actions.isEmpty && chatCalls.isEmpty {
             bodyContainer.append(child: placeholder)
         } else {
             bodyContainer.append(child: listScroll)
@@ -153,44 +180,19 @@ final class MissionActionQueueView {
     }
 
     private func presentRejectDialog(actionID: UUID, toolName: String) {
-        let dialog = Adw.AlertDialog(
+        RejectionDialog.present(
             heading: "Reject action?",
-            body:
-                "Tell the agent why you rejected \(toolName). This signal can help it adjust."
-        )
-
-        let body = Box(orientation: .vertical, spacing: 8)
-        body.marginStart = 12
-        body.marginEnd = 12
-        body.marginTop = 8
-        body.marginBottom = 8
-        let entry = Entry()
-        entry.placeholderText = "Reason (optional)"
-        entry.hexpand = true
-        body.append(child: entry)
-        dialog.extraChild = WidgetRef(body)
-
-        dialog.addResponse(id: "cancel", label: "_Cancel")
-        dialog.addResponse(id: "reject", label: "Reject")
-        dialog.setResponseAppearance(response: "reject", appearance: .destructive)
-        dialog.setDefault(response: "cancel")
-        dialog.setClose(response: "cancel")
-
-        dialog.onResponse { [weak self] _, responseID in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                guard responseID == "reject" else { return }
-                let reason = (entry.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                let payload = reason.isEmpty ? nil : reason
-                Task { @MainActor in
-                    await self.engine?.rejectMissionAction(
-                        actionID: actionID,
-                        reason: payload
-                    )
-                }
+            body: "Tell the agent why you rejected \(toolName). This signal can help it adjust.",
+            parent: parentWindow
+        ) { [weak self] reason in
+            guard let self else { return }
+            Task { @MainActor in
+                await self.engine?.rejectMissionAction(
+                    actionID: actionID,
+                    reason: reason
+                )
             }
         }
-        dialog.present(parent: parentWindow)
     }
 }
 
@@ -205,11 +207,8 @@ private final class ActionCard {
     private let codeHost: Box
     private var codeEditor: CodeEditor?
     private let rationaleLabel: Label
-    private let approveButton: Button
-    private let rejectButton: Button
+    private let decision: MissionActionDecision
     private weak var engine: Engine?
-    private let onApprove: (UUID) -> Void
-    private let onReject: (UUID, String) -> Void
 
     init(
         action: MissionAction,
@@ -218,8 +217,6 @@ private final class ActionCard {
         onReject: @escaping (UUID, String) -> Void
     ) {
         self.engine = engine
-        self.onApprove = onApprove
-        self.onReject = onReject
 
         widget = Box(orientation: .vertical, spacing: 6)
         widget.add(cssClass: "card")
@@ -275,30 +272,19 @@ private final class ActionCard {
         rationaleLabel.visible = false
         inner.append(child: rationaleLabel)
 
-        let actionsRow = Box(orientation: .horizontal, spacing: 6)
-        rejectButton = Button(label: "Reject")
-        rejectButton.add(cssClass: "destructive-action")
-        rejectButton.add(cssClass: "flat")
-        actionsRow.append(child: rejectButton)
-        let spacer = Label(str: "")
-        spacer.hexpand = true
-        actionsRow.append(child: spacer)
-        approveButton = Button(label: "Approve")
-        approveButton.add(cssClass: "suggested-action")
-        actionsRow.append(child: approveButton)
-        inner.append(child: actionsRow)
-
-        approveButton.onClicked { [action] _ in
-            MainActor.assumeIsolated { onApprove(action.id) }
-        }
-        rejectButton.onClicked { [action] _ in
-            MainActor.assumeIsolated { onReject(action.id, action.toolName) }
-        }
+        decision = MissionActionDecision(
+            action: action,
+            engine: engine,
+            onApprove: { onApprove(action.id) },
+            onReject: { onReject(action.id, action.toolName) }
+        )
+        inner.append(child: decision.widget)
 
         update(action: action)
     }
 
     func update(action: MissionAction) {
+        decision.update(action: action)
         toolNameLabel.label = action.toolName
         timeLabel.label = RelativeTime.string(from: action.requestedAt)
 
@@ -337,6 +323,56 @@ private final class ActionCard {
             codeEditor = editor
         }
         codeHost.visible = true
+    }
+}
+
+@MainActor
+private final class ChatCallCard {
+    let widget: Box
+
+    private let chats: ObjectChats
+    private let titleLabel: Label
+    private let card: PharoChatToolCallCard
+    private var chatID: UUID
+
+    init(call: ObjectChatToolCall, engine: Engine, onOpenChat: @escaping (UUID) -> Void) {
+        chats = engine.objectChats
+        chatID = call.chatID
+        card = PharoChatToolCallCard(call: call, engine: engine, onSelect: { _ in })
+
+        widget = Box(orientation: .vertical, spacing: 4)
+
+        let header = Box(orientation: .horizontal, spacing: 6)
+        titleLabel = Label(str: "")
+        titleLabel.add(cssClass: "caption")
+        titleLabel.add(cssClass: "dim-label")
+        titleLabel.halign = .start
+        titleLabel.xalign = 0
+        titleLabel.hexpand = true
+        titleLabel.ellipsize = .end
+        header.append(child: titleLabel)
+
+        let open = Button(label: "Open Chat")
+        open.add(cssClass: "flat")
+        open.add(cssClass: "caption")
+        open.onClicked { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                onOpenChat(self.chatID)
+            }
+        }
+        header.append(child: open)
+        widget.append(child: header)
+
+        widget.append(child: card.widget)
+
+        update(call)
+    }
+
+    func update(_ call: ObjectChatToolCall) {
+        chatID = call.chatID
+        titleLabel.label = chats.chats.first { $0.id == call.chatID }.map(chats.displayTitle(of:)) ?? ""
+        card.update(call)
     }
 }
 
@@ -448,6 +484,83 @@ private final class RequestUserInputCard {
 
     private func parseArgs(_ json: String) -> [String: Any] {
         parsedArgs(json)
+    }
+}
+
+@MainActor
+final class MissionActionDecision {
+    let widget: Box
+
+    private weak var engine: Engine?
+    private var action: MissionAction
+    private let onApprove: () -> Void
+    private let onReject: () -> Void
+
+    init(action: MissionAction, engine: Engine?, onApprove: @escaping () -> Void, onReject: @escaping () -> Void) {
+        self.action = action
+        self.engine = engine
+        self.onApprove = onApprove
+        self.onReject = onReject
+        widget = Box(orientation: .horizontal, spacing: 6)
+        follow()
+    }
+
+    func update(action: MissionAction) {
+        self.action = action
+        render()
+    }
+
+    private func follow() {
+        withObservationTracking {
+            render()
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.follow() }
+        }
+    }
+
+    private func render() {
+        guard let engine else { return }
+        while let child = widget.firstChild {
+            widget.remove(child: child)
+        }
+        if engine.canApprove(action) {
+            widget.append(child: rejectButton())
+            let spacer = Label(str: "")
+            spacer.hexpand = true
+            widget.append(child: spacer)
+            let approve = Button(label: "Approve")
+            approve.add(cssClass: "suggested-action")
+            approve.onClicked { [onApprove] _ in
+                MainActor.assumeIsolated { onApprove() }
+            }
+            widget.append(child: approve)
+        } else {
+            let executorName = engine.executor(of: action)?.name ?? "the member who started the mission"
+            let note = Label(str: ObjectChatCallHold.note(waitingFor: executorName, hold: engine.hold(on: action)))
+            note.add(cssClass: "caption")
+            note.add(cssClass: "dim-label")
+            note.halign = .fill
+            note.xalign = 0
+            note.wrap = true
+            note.hexpand = true
+            widget.append(child: note)
+            widget.append(child: rejectButton())
+        }
+    }
+
+    private func rejectButton() -> Button {
+        let reject = Button(label: "Reject")
+        reject.add(cssClass: "destructive-action")
+        reject.add(cssClass: "flat")
+        reject.valign = .center
+        reject.onClicked { [onReject] _ in
+            MainActor.assumeIsolated { onReject() }
+        }
+        return reject
+    }
+
+    static func asksMe(_ action: MissionAction, engine: Engine) -> Bool {
+        action.toolName == MissionTools.requestUserInputToolName || engine.canApprove(action)
     }
 }
 

@@ -1,5 +1,4 @@
 import Adw
-import CGtk
 import Foundation
 import Gdk
 import Gtk
@@ -25,20 +24,11 @@ final class AddressNotePopover {
     private var renameButton: Button?
     private var deleteButton: Button?
     private var bodyHost: Box?
-    private var messagesBox: Box?
-    private var messagesScroll: ScrolledWindow?
-    private var inputView: TextView?
-    private var saveButton: Button?
-    private var askButton: Button?
-    private var askSpinner: Spinner?
-    private var askIcon: Gtk.Image?
-    private var cancelIcon: Gtk.Image?
-    private var streamingRow: Widget?
-    private var streamingBody: Box?
+    private var transcript: ConversationTranscript?
+    private var inputBar: ConversationInputBar?
+    private var streamingRow: ConversationMessageRow?
     private var streamingText: String = ""
-    private var messageRowsByID: [UUID: Box] = [:]
-    private var messageBodiesByID: [UUID: Box] = [:]
-    private var errorLabel: Label?
+    private var messageRows: [UUID: ConversationMessageRow] = [:]
 
     private var notes: [AddressNote] = []
     private var activeNoteID: UUID?
@@ -48,6 +38,7 @@ final class AddressNotePopover {
     private var pendingActions: [MissionAction] = []
     private var actionsObservation: StoreObservation?
     private var approvalsBox: Box?
+    private var approvalDecisions: [MissionActionDecision] = []
 
     init(engine: Engine, sessionID: UUID, address: UInt64) {
         self.engine = engine
@@ -118,15 +109,8 @@ final class AddressNotePopover {
         self.dialog = nil
         _ = dialog.close()
         bodyHost = nil
-        messagesBox = nil
-        messagesScroll = nil
-        inputView = nil
-        saveButton = nil
-        askButton = nil
-        askSpinner = nil
-        askIcon = nil
-        cancelIcon = nil
-        errorLabel = nil
+        transcript = nil
+        inputBar = nil
         headerTitleLabel = nil
         switchButton = nil
         renameButton = nil
@@ -246,8 +230,7 @@ final class AddressNotePopover {
         while let child = host.firstChild {
             host.remove(child: child)
         }
-        messageRowsByID.removeAll()
-        messageBodiesByID.removeAll()
+        messageRows.removeAll()
         refreshHeaderControls()
         if activeNoteID == nil {
             host.append(child: makeEmptyState())
@@ -340,24 +323,12 @@ final class AddressNotePopover {
         column.hexpand = true
         column.vexpand = true
 
-        let scroll = ScrolledWindow()
-        scroll.hexpand = true
-        scroll.vexpand = true
-        scroll.setPolicy(hscrollbarPolicy: .never, vscrollbarPolicy: .automatic)
-        messagesScroll = scroll
-
-        let list = Box(orientation: .vertical, spacing: 8)
-        list.marginStart = 12
-        list.marginEnd = 12
-        list.marginTop = 12
-        list.marginBottom = 12
-        list.valign = .end
-        messagesBox = list
-        scroll.set(child: list)
-        column.append(child: scroll)
+        let transcript = ConversationTranscript()
+        self.transcript = transcript
+        column.append(child: transcript.widget)
 
         for message in messages {
-            list.append(child: makeMessageRow(message))
+            transcript.append(makeMessageRow(message).widget)
         }
 
         let approvals = Box(orientation: .vertical, spacing: 6)
@@ -372,7 +343,7 @@ final class AddressNotePopover {
         column.append(child: Separator(orientation: .horizontal))
         column.append(child: makeInputBar())
         refreshApprovals()
-        scrollToBottom()
+        transcript.scrollToBottom()
         return column
     }
 
@@ -381,6 +352,7 @@ final class AddressNotePopover {
         while let child = container.firstChild {
             container.remove(child: child)
         }
+        approvalDecisions = []
         container.visible = !pendingActions.isEmpty
         for action in pendingActions {
             if action.toolName == MissionTools.requestUserInputToolName {
@@ -440,27 +412,20 @@ final class AddressNotePopover {
             inner.append(child: r)
         }
 
-        let buttons = Box(orientation: .horizontal, spacing: 6)
-        buttons.halign = .end
-        let rejectBtn = Button(label: "Reject")
-        rejectBtn.add(cssClass: "destructive-action")
-        rejectBtn.onClicked { [weak self] _ in
-            MainActor.assumeIsolated {
+        let decision = MissionActionDecision(
+            action: action,
+            engine: engine,
+            onApprove: { [weak self] in
+                guard let engine = self?.engine else { return }
+                Task { @MainActor in await engine.approveMissionAction(actionID: action.id) }
+            },
+            onReject: { [weak self] in
                 guard let engine = self?.engine else { return }
                 Task { @MainActor in await engine.rejectMissionAction(actionID: action.id) }
             }
-        }
-        let approveBtn = Button(label: "Approve")
-        approveBtn.add(cssClass: "suggested-action")
-        approveBtn.onClicked { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let engine = self?.engine else { return }
-                Task { @MainActor in await engine.approveMissionAction(actionID: action.id) }
-            }
-        }
-        buttons.append(child: rejectBtn)
-        buttons.append(child: approveBtn)
-        inner.append(child: buttons)
+        )
+        approvalDecisions.append(decision)
+        inner.append(child: decision.widget)
 
         return card
     }
@@ -554,264 +519,61 @@ final class AddressNotePopover {
         return obj
     }
 
-    private func makeMessageRow(_ message: AddressNoteMessage) -> Box {
-        makeMessageRowReturningBody(message).row
-    }
-
-    private func makeMessageRowReturningBody(_ message: AddressNoteMessage) -> (row: Box, body: Box) {
-        let row = Box(orientation: .vertical, spacing: 2)
-        row.halign = .fill
-        row.hexpand = true
-
-        let head = Box(orientation: .horizontal, spacing: 6)
-        let icon = Gtk.Image(iconName: roleIcon(message.role))
-        icon.pixelSize = 12
-        icon.add(cssClass: "dim-label")
-        head.append(child: icon)
-
-        let role = Label(str: roleLabel(message))
-        role.add(cssClass: "caption")
-        role.add(cssClass: "dim-label")
-        role.halign = .start
-        role.hexpand = true
-        role.xalign = 0
-        head.append(child: role)
-
-        let time = Label(str: formatTime(message.createdAt))
-        time.add(cssClass: "caption")
-        time.add(cssClass: "dim-label")
-        head.append(child: time)
-        row.append(child: head)
-
-        let body = Box(orientation: .vertical, spacing: 0)
-        body.halign = .fill
-        body.add(cssClass: "luma-address-note-body")
-        body.add(cssClass: "card")
-        body.marginTop = 2
-        renderBody(body, markdown: message.bodyMarkdown)
-        row.append(child: body)
-
-        messageRowsByID[message.id] = row
-        messageBodiesByID[message.id] = body
+    private func makeMessageRow(_ message: AddressNoteMessage) -> ConversationMessageRow {
+        let row = ConversationMessageRow(message: message)
+        messageRows[message.id] = row
         if message.role == .user {
-            installUserMessageActions(row: row, body: body, message: message)
+            let messageID = message.id
+            row.offerEditing(
+                onEdit: { [weak self] in self?.beginEditingMessage(messageID: messageID) },
+                onDelete: { [weak self] in self?.confirmDeleteMessage(messageID: messageID) })
         }
-        return (row, body)
-    }
-
-    private func renderBody(_ box: Box, markdown: String) {
-        while let child = box.firstChild {
-            box.remove(child: child)
-        }
-        box.append(child: MarkdownWidget.make(markdown: markdown, as: .conversation))
-    }
-
-    private func installUserMessageActions(row: Box, body: Box, message: AddressNoteMessage) {
-        let messageID = message.id
-        let click = GestureClick()
-        click.set(button: 3)
-        click.propagationPhase = .capture
-        click.onPressed { [weak self] _, _, x, y in
-            MainActor.assumeIsolated {
-                self?.showMessageContextMenu(anchor: body, x: x, y: y, messageID: messageID)
-            }
-        }
-        body.add(controller: click)
-    }
-
-    private func showMessageContextMenu(anchor: Widget, x: Double, y: Double, messageID: UUID) {
-        let items: [ContextMenu.Item] = [
-            .init("Edit") { [weak self] in
-                self?.beginEditingMessage(messageID: messageID)
-            },
-            .init("Delete", destructive: true) { [weak self] in
-                self?.confirmDeleteMessage(messageID: messageID)
-            },
-        ]
-        ContextMenu.present([items], at: anchor, x: x, y: y)
+        return row
     }
 
     private func confirmDeleteMessage(messageID: UUID) {
         guard let message = messages.first(where: { $0.id == messageID }),
-            let anchor = messageBodiesByID[messageID]
+            let anchor = messageRows[messageID]?.content
         else { return }
-        confirmDestructive(
+        ConfirmationPopover.present(
             heading: "Delete message?",
             destructiveLabel: "Delete",
-            anchor: anchor
+            at: anchor
         ) { [weak self] in
             self?.commitDeleteMessage(message: message)
         }
     }
 
     private func commitDeleteMessage(message: AddressNoteMessage) {
-        guard let engine, let row = messageRowsByID.removeValue(forKey: message.id) else { return }
+        guard let engine, let row = messageRows.removeValue(forKey: message.id) else { return }
         engine.deleteAddressNoteMessage(message)
-        messageBodiesByID.removeValue(forKey: message.id)
         messages.removeAll { $0.id == message.id }
-        messagesBox?.remove(child: row)
+        transcript?.remove(row.widget)
     }
 
     private func beginEditingMessage(messageID: UUID) {
         guard let message = messages.first(where: { $0.id == messageID }),
-            let row = messageRowsByID[messageID],
-            let body = messageBodiesByID[messageID]
+            let row = messageRows[messageID]
         else { return }
-        body.visible = false
-
-        let editor = TextView()
-        editor.wrapMode = .word
-        editor.topMargin = 6
-        editor.bottomMargin = 6
-        editor.leftMargin = 8
-        editor.rightMargin = 8
-        editor.acceptsTab = false
-        editor.buffer?.set(text: message.bodyMarkdown, len: Int(message.bodyMarkdown.utf8.count))
-
-        let scroll = ScrolledWindow()
-        scroll.hexpand = true
-        scroll.setSizeRequest(width: -1, height: 96)
-        scroll.add(cssClass: "card")
-        scroll.set(child: editor)
-        scroll.marginTop = 2
-        row.append(child: scroll)
-
-        let actions = Box(orientation: .horizontal, spacing: 6)
-        actions.halign = .end
-        actions.marginTop = 4
-
-        let cancelBtn = Button(label: "Cancel")
-        cancelBtn.add(cssClass: "flat")
-        cancelBtn.onClicked { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.finishEditingMessage(row: row, body: body, scroll: scroll, actions: actions)
+        row.edit(message.bodyMarkdown) { [weak self] trimmed in
+            guard let self else { return }
+            if !trimmed.isEmpty, trimmed != message.bodyMarkdown,
+                let updated = self.engine?.editUserMessage(noteID: message.noteID, messageID: message.id, body: trimmed)
+            {
+                self.messages = self.messages.map { $0.id == updated.id ? updated : $0 }
+                row.show(markdown: updated.bodyMarkdown)
             }
         }
-
-        let saveBtn = Button(label: "Save")
-        saveBtn.add(cssClass: "suggested-action")
-        saveBtn.onClicked { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                let text = self.textFrom(editor: editor)
-                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmed.isEmpty, trimmed != message.bodyMarkdown,
-                    let updated = self.engine?.editUserMessage(noteID: message.noteID, messageID: message.id, body: trimmed)
-                {
-                    self.messages = self.messages.map { $0.id == updated.id ? updated : $0 }
-                    self.renderBody(body, markdown: updated.bodyMarkdown)
-                }
-                self.finishEditingMessage(row: row, body: body, scroll: scroll, actions: actions)
-            }
-        }
-
-        actions.append(child: cancelBtn)
-        actions.append(child: saveBtn)
-        row.append(child: actions)
-
-        _ = editor.grabFocus()
-    }
-
-    private func finishEditingMessage(row: Box, body: Box, scroll: ScrolledWindow, actions: Box) {
-        row.remove(child: scroll)
-        row.remove(child: actions)
-        body.visible = true
-    }
-
-    private func textFrom(editor: TextView) -> String {
-        guard let buffer = editor.buffer else { return "" }
-        let startPtr = UnsafeMutablePointer<GtkTextIter>.allocate(capacity: 1)
-        let endPtr = UnsafeMutablePointer<GtkTextIter>.allocate(capacity: 1)
-        defer {
-            startPtr.deallocate()
-            endPtr.deallocate()
-        }
-        let start = TextIter(startPtr)
-        let end = TextIter(endPtr)
-        buffer.getStart(iter: start)
-        buffer.getEnd(iter: end)
-        return buffer.getText(start: start, end: end, includeHiddenChars: true) ?? ""
     }
 
     private func makeInputBar() -> Widget {
-        let column = Box(orientation: .vertical, spacing: 4)
-        column.marginStart = 10
-        column.marginEnd = 10
-        column.marginTop = 8
-        column.marginBottom = 10
-
-        let err = Label(str: "")
-        err.add(cssClass: "error")
-        err.add(cssClass: "caption")
-        err.halign = .start
-        err.xalign = 0
-        err.visible = false
-        errorLabel = err
-        column.append(child: err)
-
-        let row = Box(orientation: .horizontal, spacing: 6)
-        row.hexpand = true
-
-        let entry = TextView()
-        entry.wrapMode = .word
-        entry.topMargin = 6
-        entry.bottomMargin = 6
-        entry.leftMargin = 8
-        entry.rightMargin = 8
-        entry.acceptsTab = false
-        inputView = entry
-
-        let scroll = ScrolledWindow()
-        scroll.hexpand = true
-        scroll.setSizeRequest(width: -1, height: 64)
-        scroll.add(cssClass: "card")
-        scroll.set(child: entry)
-        row.append(child: scroll)
-
-        let buttonColumn = Box(orientation: .vertical, spacing: 4)
-        buttonColumn.valign = .end
-
-        let saveBtn = Button()
-        let saveIcon = Gtk.Image(iconName: "document-edit-symbolic")
-        saveIcon.pixelSize = 14
-        saveBtn.set(child: saveIcon)
-        saveBtn.add(cssClass: "flat")
-        saveBtn.tooltipText = "Save as user note"
-        saveBtn.onClicked { [weak self] _ in
-            MainActor.assumeIsolated { self?.saveNote() }
-        }
-        saveButton = saveBtn
-        buttonColumn.append(child: saveBtn)
-
-        let askBtn = Button()
-        let askIcon = Gtk.Image(iconName: "mail-send-symbolic")
-        askIcon.pixelSize = 14
-        let cancelIcon = Gtk.Image(iconName: "media-playback-stop-symbolic")
-        cancelIcon.pixelSize = 14
-        cancelIcon.visible = false
-        let spinner = makeSpinner()
-        spinner.visible = false
-        let askContent = Box(orientation: .horizontal, spacing: 0)
-        askContent.append(child: askIcon)
-        askContent.append(child: cancelIcon)
-        askContent.append(child: spinner)
-        askBtn.set(child: askContent)
-        self.askIcon = askIcon
-        self.cancelIcon = cancelIcon
-        askBtn.add(cssClass: "suggested-action")
-        askBtn.tooltipText = "Ask AI"
-        askBtn.onClicked { [weak self] _ in
-            MainActor.assumeIsolated { self?.handleAskButtonClick() }
-        }
-        askButton = askBtn
-        askSpinner = spinner
-        buttonColumn.append(child: askBtn)
-
-        row.append(child: buttonColumn)
-
-        column.append(child: row)
+        let bar = ConversationInputBar(
+            primary: .init(iconName: "mail-send-symbolic", tooltip: "Ask AI") { [weak self] in self?.askAI() },
+            secondary: .init(iconName: "document-edit-symbolic", tooltip: "Save as user note") { [weak self] in self?.saveNote() },
+            onStop: { [weak self] in self?.cancelReply() })
+        inputBar = bar
         refreshPendingUI()
-        return column
+        return bar.widget
     }
 
     private func refreshPendingUI() {
@@ -820,58 +582,19 @@ final class AddressNotePopover {
         case .sending: isSending = true
         default: isSending = false
         }
-        saveButton?.sensitive = !isSending
-        askButton?.sensitive = true
-        askButton?.tooltipText = isSending ? "Cancel reply" : "Ask AI"
-        askSpinner?.visible = isSending
-        askIcon?.visible = !isSending
-        cancelIcon?.visible = isSending
+        let failure: String?
         if case .error(let reason) = pending {
-            errorLabel?.label = reason
-            errorLabel?.visible = true
+            failure = reason
         } else {
-            errorLabel?.visible = false
+            failure = nil
         }
+        inputBar?.show(isSending: isSending, failure: failure)
     }
 
     private func appendMessageRow(_ message: AddressNoteMessage) {
         messages.append(message)
-        messagesBox?.append(child: makeMessageRow(message))
-        scrollToBottom()
-    }
-
-    private func scrollToBottom() {
-        Task { @MainActor [weak self] in
-            guard let scroll = self?.messagesScroll,
-                let box = self?.messagesBox,
-                let adj = scroll.vadjustment,
-                box.width > 0
-            else { return }
-            var natural: gint = 0
-            box.measure(orientation: .vertical, for: Int(box.width), natural: &natural)
-            adj.upper = Double(natural)
-            adj.value = max(0, adj.upper - adj.pageSize)
-        }
-    }
-
-    private func draftText() -> String {
-        guard let buffer = inputView?.buffer else { return "" }
-        let startPtr = UnsafeMutablePointer<GtkTextIter>.allocate(capacity: 1)
-        let endPtr = UnsafeMutablePointer<GtkTextIter>.allocate(capacity: 1)
-        defer {
-            startPtr.deallocate()
-            endPtr.deallocate()
-        }
-        let start = TextIter(startPtr)
-        let end = TextIter(endPtr)
-        buffer.getStart(iter: start)
-        buffer.getEnd(iter: end)
-        return (buffer.getText(start: start, end: end, includeHiddenChars: true) ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private func clearDraft() {
-        inputView?.buffer?.set(text: "", len: 0)
+        transcript?.append(makeMessageRow(message).widget)
+        transcript?.scrollToBottom()
     }
 
     private func createNote() {
@@ -881,7 +604,7 @@ final class AddressNotePopover {
         messages = []
         unusedTransientNoteIDs.insert(note.id)
         rebuildBody()
-        _ = inputView?.grabFocus()
+        inputBar?.focus()
     }
 
     private func renameActive() {
@@ -889,65 +612,9 @@ final class AddressNotePopover {
             let note = notes.first(where: { $0.id == id }),
             let anchor = renameButton
         else { return }
-        presentRenamePopover(note: note, anchor: anchor)
-    }
-
-    private func presentRenamePopover(note: AddressNote, anchor: Widget) {
-        let popover = Popover()
-        popover.autohide = true
-        popover.position = .bottom
-        popover.set(parent: anchor)
-        popover.onClosed { _ in MainActor.assumeIsolated { popover.unparent() } }
-
-        let column = Box(orientation: .vertical, spacing: 8)
-        column.marginStart = 12
-        column.marginEnd = 12
-        column.marginTop = 12
-        column.marginBottom = 12
-
-        let heading = Label(str: "Rename thread")
-        heading.add(cssClass: "heading")
-        heading.halign = .start
-        heading.xalign = 0
-        column.append(child: heading)
-
-        let entry = Entry()
-        entry.text = noteTitle(note)
-        entry.placeholderText = "Title"
-        entry.widthChars = 28
-        column.append(child: entry)
-
-        let buttonRow = Box(orientation: .horizontal, spacing: 6)
-        buttonRow.halign = .end
-
-        let cancelBtn = Button(label: "Cancel")
-        cancelBtn.add(cssClass: "flat")
-        cancelBtn.onClicked { _ in
-            MainActor.assumeIsolated { popover.popdown() }
+        RenamePopover.present(heading: "Rename thread", title: noteTitle(note), at: anchor) { [weak self] title in
+            self?.commitRename(note: note, title: title)
         }
-        buttonRow.append(child: cancelBtn)
-
-        let saveBtn = Button(label: "Save")
-        saveBtn.add(cssClass: "suggested-action")
-        saveBtn.onClicked { [weak self] _ in
-            MainActor.assumeIsolated {
-                popover.popdown()
-                self?.commitRename(note: note, title: entry.text)
-            }
-        }
-        buttonRow.append(child: saveBtn)
-
-        entry.onActivate { [weak self] _ in
-            MainActor.assumeIsolated {
-                popover.popdown()
-                self?.commitRename(note: note, title: entry.text)
-            }
-        }
-
-        column.append(child: buttonRow)
-        popover.set(child: column)
-        popover.popup()
-        _ = entry.grabFocus()
     }
 
     private func commitRename(note: AddressNote, title: String) {
@@ -967,10 +634,10 @@ final class AddressNotePopover {
             let note = notes.first(where: { $0.id == id }),
             let anchor = deleteButton
         else { return }
-        confirmDestructive(
+        ConfirmationPopover.present(
             heading: "Delete thread?",
             destructiveLabel: "Delete",
-            anchor: anchor
+            at: anchor
         ) { [weak self] in
             self?.commitDeleteActive(note: note)
         }
@@ -990,65 +657,14 @@ final class AddressNotePopover {
         rebuildBody()
     }
 
-    private func confirmDestructive(heading: String, destructiveLabel: String, anchor: Widget, action: @escaping () -> Void) {
-        let confirmation = Popover()
-        confirmation.autohide = true
-        confirmation.position = .bottom
-        confirmation.set(parent: anchor)
-        confirmation.onClosed { _ in MainActor.assumeIsolated { confirmation.unparent() } }
-
-        let column = Box(orientation: .vertical, spacing: 8)
-        column.marginStart = 12
-        column.marginEnd = 12
-        column.marginTop = 12
-        column.marginBottom = 12
-
-        let headingLabel = Label(str: heading)
-        headingLabel.halign = .start
-        headingLabel.xalign = 0
-        headingLabel.add(cssClass: "heading")
-        column.append(child: headingLabel)
-
-        let buttonRow = Box(orientation: .horizontal, spacing: 6)
-        buttonRow.halign = .end
-
-        let cancelBtn = Button(label: "Cancel")
-        cancelBtn.add(cssClass: "flat")
-        cancelBtn.onClicked { _ in
-            MainActor.assumeIsolated { confirmation.popdown() }
-        }
-        buttonRow.append(child: cancelBtn)
-
-        let confirmBtn = Button(label: destructiveLabel)
-        confirmBtn.add(cssClass: "destructive-action")
-        confirmBtn.onClicked { _ in
-            MainActor.assumeIsolated {
-                confirmation.popdown()
-                action()
-            }
-        }
-        buttonRow.append(child: confirmBtn)
-        column.append(child: buttonRow)
-
-        confirmation.set(child: column)
-        confirmation.popup()
-    }
-
     private func saveNote() {
         guard let engine, let id = activeNoteID else { return }
-        let body = draftText()
+        guard let inputBar else { return }
+        let body = inputBar.draft
         guard !body.isEmpty, let message = engine.appendUserMessage(noteID: id, body: body) else { return }
         appendMessageRow(message)
         unusedTransientNoteIDs.remove(id)
-        clearDraft()
-    }
-
-    private func handleAskButtonClick() {
-        if case .sending = pending {
-            cancelReply()
-        } else {
-            askAI()
-        }
+        inputBar.clearDraft()
     }
 
     private func cancelReply() {
@@ -1059,13 +675,13 @@ final class AddressNotePopover {
     }
 
     private func askAI() {
-        guard let engine, let id = activeNoteID else { return }
-        let body = draftText()
+        guard let engine, let id = activeNoteID, let inputBar else { return }
+        let body = inputBar.draft
         guard !body.isEmpty else { return }
         guard let userMessage = engine.appendUserMessage(noteID: id, body: body) else { return }
         appendMessageRow(userMessage)
         unusedTransientNoteIDs.remove(id)
-        clearDraft()
+        inputBar.clearDraft()
         pending = .sending
         refreshPendingUI()
         startStreamingPlaceholder(modelID: LumaAppState.shared.missionDefaults.modelID)
@@ -1097,27 +713,23 @@ final class AddressNotePopover {
             bodyMarkdown: "",
             modelID: modelID
         )
-        let (row, body) = makeMessageRowReturningBody(placeholder)
+        let row = ConversationMessageRow(message: placeholder)
         streamingRow = row
-        streamingBody = body
-        messagesBox?.append(child: row)
-        scrollToBottom()
+        transcript?.append(row.widget)
+        transcript?.scrollToBottom()
     }
 
     private func appendStreamingDelta(_ delta: String) {
         streamingText += delta
-        if let streamingBody {
-            renderBody(streamingBody, markdown: streamingText)
-        }
-        scrollToBottom()
+        streamingRow?.show(markdown: streamingText)
+        transcript?.scrollToBottom()
     }
 
     private func removeStreamingPlaceholder() {
         if let row = streamingRow {
-            messagesBox?.remove(child: row)
+            transcript?.remove(row.widget)
         }
         streamingRow = nil
-        streamingBody = nil
         streamingText = ""
     }
 
@@ -1138,31 +750,5 @@ final class AddressNotePopover {
         formatter.dateStyle = .short
         formatter.timeStyle = .short
         return "Thread from \(formatter.string(from: note.createdAt))"
-    }
-
-    private func formatTime(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-        return formatter.string(from: date)
-    }
-
-    private func roleIcon(_ role: AddressNoteMessage.Role) -> String {
-        switch role {
-        case .user: return "avatar-default-symbolic"
-        case .assistant: return "starred-symbolic"
-        case .system: return "preferences-system-symbolic"
-        }
-    }
-
-    private func roleLabel(_ message: AddressNoteMessage) -> String {
-        switch message.role {
-        case .user: return message.author?.name ?? "You"
-        case .assistant:
-            if let modelID = message.modelID, !modelID.isEmpty, modelID != "default" {
-                return modelID
-            }
-            return "Assistant"
-        case .system: return "System"
-        }
     }
 }

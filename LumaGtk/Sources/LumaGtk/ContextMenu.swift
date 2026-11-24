@@ -6,15 +6,28 @@ import Gtk
 enum ContextMenu {
     struct Item {
         let label: String
+        let detail: String?
         let isDestructive: Bool
         let isEnabled: Bool
         let handler: () -> Void
+        let children: [Item]
 
-        init(_ label: String, destructive: Bool = false, enabled: Bool = true, handler: @escaping () -> Void) {
+        init(_ label: String, detail: String? = nil, destructive: Bool = false, enabled: Bool = true, handler: @escaping () -> Void) {
             self.label = label
+            self.detail = detail
             self.isDestructive = destructive
             self.isEnabled = enabled
             self.handler = handler
+            self.children = []
+        }
+
+        init(_ label: String, children: [Item]) {
+            self.label = label
+            self.detail = nil
+            self.isDestructive = false
+            self.isEnabled = true
+            self.handler = {}
+            self.children = children
         }
     }
 
@@ -34,6 +47,27 @@ enum ContextMenu {
         popover.hasArrow = false
         popover.add(cssClass: "luma-context-menu")
 
+        let scroller = ScrolledWindow()
+        scroller.setPolicy(hscrollbarPolicy: .never, vscrollbarPolicy: .automatic)
+        scroller.propagateNaturalWidth = true
+        scroller.propagateNaturalHeight = true
+        scroller.maxContentHeight = root.height - windowMargin * 2
+        let pages = Stack()
+        pages.transitionType = .slideLeftRight
+        let main = page(sections, popover: popover, pages: pages)
+        _ = pages.add(child: main)
+        pages.visibleChild = WidgetRef(main)
+        scroller.set(child: pages)
+
+        popover.set(child: scroller)
+        popover.set(parent: root)
+        popover.onClosed { closed in
+            MainActor.assumeIsolated { closed.unparent() }
+        }
+        popover.presentPointing(at: px, y: py)
+    }
+
+    private static func page(_ sections: [[Item]], popover: Popover, pages: Stack) -> Box {
         let box = Box(orientation: .vertical, spacing: 0)
         box.marginTop = 4
         box.marginBottom = 4
@@ -47,39 +81,56 @@ enum ContextMenu {
             }
             firstSection = false
             for item in items {
-                box.append(child: makeButton(item, popover: popover))
+                box.append(child: makeButton(item, popover: popover, pages: pages, returningTo: box))
             }
         }
-
-        let scroller = ScrolledWindow()
-        scroller.setPolicy(hscrollbarPolicy: .never, vscrollbarPolicy: .automatic)
-        scroller.propagateNaturalWidth = true
-        scroller.propagateNaturalHeight = true
-        scroller.maxContentHeight = root.height - windowMargin * 2
-        scroller.set(child: box)
-
-        popover.set(child: scroller)
-        popover.set(parent: root)
-        popover.onClosed { closed in
-            MainActor.assumeIsolated { closed.unparent() }
-        }
-        popover.presentPointing(at: px, y: py)
+        return box
     }
 
-    private static func makeButton(_ item: Item, popover: Popover) -> Button {
+    private static func makeButton(_ item: Item, popover: Popover, pages: Stack, returningTo page: Box) -> Button {
         let label = Label(str: item.label)
         label.halign = .start
         label.xalign = 0
         label.hexpand = true
 
+        let content = Box(orientation: .horizontal, spacing: 6)
+        if let detail = item.detail {
+            let caption = Label(str: detail)
+            caption.add(cssClass: "caption")
+            caption.add(cssClass: "dim-label")
+            caption.halign = .start
+            caption.xalign = 0
+            caption.wrap = true
+            caption.maxWidthChars = 36
+            let lines = Box(orientation: .vertical, spacing: 2)
+            lines.hexpand = true
+            lines.append(child: label)
+            lines.append(child: caption)
+            content.append(child: lines)
+        } else {
+            content.append(child: label)
+        }
+
         let button = Button()
-        button.set(child: label)
+        button.set(child: content)
         button.add(cssClass: "flat")
         button.add(cssClass: "luma-menu-item")
         if item.isDestructive {
             button.add(cssClass: "luma-menu-destructive")
         }
         button.sensitive = item.isEnabled
+
+        if !item.children.isEmpty {
+            content.append(child: Gtk.Image(iconName: "go-next-symbolic"))
+            let submenu = submenuPage(item, popover: popover, pages: pages, returningTo: page)
+            button.onClicked { _ in
+                MainActor.assumeIsolated {
+                    pages.visibleChild = WidgetRef(submenu)
+                    _ = submenu.firstChild?.grabFocus()
+                }
+            }
+            return button
+        }
 
         let handler = item.handler
         let menu = PopoverRef(raw: popover.ptr)
@@ -90,6 +141,33 @@ enum ContextMenu {
             }
         }
         return button
+    }
+
+    private static func submenuPage(_ item: Item, popover: Popover, pages: Stack, returningTo parent: Box) -> Box {
+        let title = Label(str: item.label)
+        title.add(cssClass: "heading")
+        title.hexpand = true
+
+        let backContent = Box(orientation: .horizontal, spacing: 6)
+        backContent.append(child: Gtk.Image(iconName: "go-previous-symbolic"))
+        backContent.append(child: title)
+
+        let back = Button()
+        back.set(child: backContent)
+        back.add(cssClass: "flat")
+        back.add(cssClass: "luma-menu-item")
+        back.onClicked { _ in
+            MainActor.assumeIsolated {
+                pages.visibleChild = WidgetRef(parent)
+                _ = parent.firstChild?.grabFocus()
+            }
+        }
+
+        let submenu = page([item.children], popover: popover, pages: pages)
+        submenu.prepend(child: Separator(orientation: .horizontal))
+        submenu.prepend(child: back)
+        _ = pages.add(child: submenu)
+        return submenu
     }
 }
 

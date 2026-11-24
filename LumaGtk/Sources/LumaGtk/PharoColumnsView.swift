@@ -21,12 +21,15 @@ final class PharoColumnsView {
     /// show or hide this pane.
     var onChanged: (() -> Void)?
 
-    /// Called with the pane blown up to fill, or nothing when none is, so the
-    /// page can lay it over the whole playground rather than only this side.
-    var onMaximizeChanged: ((Widget?) -> Void)?
+    var chatOrigin: () -> PharoChatOrigin? = { nil }
+    private var foundChatOrigins: [Int: PharoChatOrigin] = [:]
+    private var chatOriginSearch: Task<Void, Never>?
 
     private var maximizedView: PharoColumnView?
+    private let maximizedOverlay: Overlay
+    private var maximizedPanel: Box?
 
+    private weak var engine: Engine?
     private let runtime: PharoRuntime
     private let highlight: (GtkSource.Buffer) -> Void
     private let state = PharoColumnState()
@@ -52,8 +55,12 @@ final class PharoColumnsView {
     private var scrollScheduled = false
     private var autoScrolling = false
 
-    init(runtime: PharoRuntime, highlight: @escaping (GtkSource.Buffer) -> Void) {
+    init(
+        engine: Engine, runtime: PharoRuntime, maximizingOver maximizedOverlay: Overlay, highlight: @escaping (GtkSource.Buffer) -> Void
+    ) {
+        self.engine = engine
         self.runtime = runtime
+        self.maximizedOverlay = maximizedOverlay
         self.highlight = highlight
 
         // A fixed arrow down the left edge points from the snippet that opened
@@ -145,6 +152,28 @@ final class PharoColumnsView {
         ctx.fill()
     }
 
+    /// The strip stands over the whole page: a square for the page, then one
+    /// per inspector column, with the current one drawn brightest.
+    func drive(_ bar: PharoOverviewBar, naming pageName: String) {
+        bar.slotCount = { [weak self] in 1 + (self?.columnCount ?? 0) }
+        bar.isCurrent = { [weak self] slot in
+            guard let self else { return false }
+            return slot == 0 ? self.shownDepth == nil : self.shownDepth == slot - 1
+        }
+        bar.tooltip = { [weak self] slot in
+            guard let self else { return "" }
+            return slot == 0 ? pageName : self.printString(at: slot - 1)
+        }
+        bar.activate = { [weak self] slot in
+            guard let self else { return }
+            if slot == 0 { self.focusPage() } else { self.reveal(depth: slot - 1) }
+        }
+        bar.adjustment = { [weak self] in self?.contentAdjustment }
+        contentAdjustment?.onValueChanged { _ in
+            MainActor.assumeIsolated { bar.refresh() }
+        }
+    }
+
     var isEmpty: Bool { state.objects.isEmpty }
     var columnCount: Int { state.objects.count }
     var shownDepth: Int? { state.shown }
@@ -223,7 +252,7 @@ final class PharoColumnsView {
         let target: Double?
         switch scrollGoal {
         case .none: target = nil
-        case .newest: target = max(adjustment.upper - adjustment.pageSize, adjustment.lower)
+        case .newest: target = leadingColumnOffset(showingNewestIn: adjustment)
         case .origin: target = adjustment.lower
         case .column(let depth): target = columnOffset(depth)
         }
@@ -232,6 +261,14 @@ final class PharoColumnsView {
         adjustment.value = target
         autoScrolling = false
         if case .newest = scrollGoal {} else { scrollGoal = .none }
+    }
+
+    private func leadingColumnOffset(showingNewestIn adjustment: AdjustmentRef) -> Double {
+        let padding = Double(columns.marginEnd - columnsInset)
+        let end = max(adjustment.upper - padding - adjustment.pageSize, adjustment.lower)
+        guard let leading = columnAnchors.compactMap({ columnOffset($0.depth) }).filter({ $0 >= end }).min() else { return end }
+        columns.marginEnd = columnsInset + Int((leading - end).rounded(.up))
+        return leading
     }
 
     private func columnOffset(_ depth: Int) -> Double? {
@@ -245,6 +282,7 @@ final class PharoColumnsView {
 
     private func render() {
         clear(columns)
+        columns.marginEnd = columnsInset
         columnViews.removeAll()
         columnAnchors.removeAll()
         leadingStack = nil
@@ -253,7 +291,7 @@ final class PharoColumnsView {
             pointingFromY = nil
             arrowArea.visible = false
             maximizedView = nil
-            onMaximizeChanged?(nil)
+            presentMaximized(nil)
         }
 
         if !state.objects.isEmpty {
@@ -263,10 +301,10 @@ final class PharoColumnsView {
                 // only this side.
                 let view = maximizedColumn(at: depth, handle: handle)
                 maximizedView = view
-                onMaximizeChanged?(view.widget)
+                presentMaximized(view.widget)
             } else {
                 maximizedView = nil
-                onMaximizeChanged?(nil)
+                presentMaximized(nil)
                 var depth = 0
                 var previousWasExpanded = false
                 while depth < state.objects.count {
@@ -293,7 +331,35 @@ final class PharoColumnsView {
             }
         }
         positionLeadingConnector()
+        findChatOrigins()
         onChanged?()
+    }
+
+    /// A blown-up pane covers the page and the columns both, floating over the
+    /// paned rather than filling only the inspector side.
+    private func presentMaximized(_ content: Widget?) {
+        if let existing = maximizedPanel {
+            maximizedOverlay.removeOverlay(widget: existing)
+            maximizedPanel = nil
+        }
+        guard let content else { return }
+
+        let panel = Box(orientation: .vertical, spacing: 0)
+        panel.add(cssClass: "luma-pharo-maximized")
+        panel.hexpand = true
+        panel.vexpand = true
+        panel.halign = .fill
+        panel.valign = .fill
+        panel.marginTop = 8
+        panel.marginBottom = 8
+        panel.marginStart = 8
+        panel.marginEnd = 8
+        content.hexpand = true
+        content.vexpand = true
+        panel.append(child: content)
+
+        maximizedOverlay.addOverlay(widget: panel)
+        maximizedPanel = panel
     }
 
     /// The triangle between two expanded columns, drawn the same size and given
@@ -326,7 +392,8 @@ final class PharoColumnsView {
     /// maximized pane hands back to its carousel.
     private func maximizedColumn(at depth: Int, handle: Int) -> PharoColumnView {
         let object = state.objects[depth]
-        let view = PharoColumnView(runtime: runtime, object: object, isMaximized: true, highlight: highlight)
+        let view = PharoColumnView(engine: engine, runtime: runtime, object: object, isMaximized: true, highlight: highlight)
+        view.chatOrigin = { [weak self] in self?.chatOriginOfColumn(at: depth) }
         view.onDrill = { [weak self] element in
             guard let self else { return }
             self.state.toggleMaximized(handle)
@@ -350,7 +417,8 @@ final class PharoColumnsView {
 
     private func column(at depth: Int) -> PharoColumnView {
         let object = state.objects[depth]
-        let view = PharoColumnView(runtime: runtime, object: object, isMaximized: false, highlight: highlight)
+        let view = PharoColumnView(engine: engine, runtime: runtime, object: object, isMaximized: false, highlight: highlight)
+        view.chatOrigin = { [weak self] in self?.chatOriginOfColumn(at: depth) }
         columnViews.append(view)
         view.onDrill = { [weak self] element in
             guard let self else { return }
@@ -371,6 +439,33 @@ final class PharoColumnsView {
             self?.render()
         }
         return view
+    }
+
+    private func chatOriginOfColumn(at depth: Int) -> PharoChatOrigin? {
+        let host = chatOrigin()
+        return foundChatOrigins[depth] ?? (depth == 0 ? host : host?.reached())
+    }
+
+    private func findChatOrigins() {
+        chatOriginSearch?.cancel()
+        foundChatOrigins = [:]
+        guard let chats = engine?.objectChats else { return }
+        let objects = state.objects
+        chatOriginSearch = Task { [weak self] in
+            var located: [PharoChatOrigin?] = []
+            for object in objects {
+                let location = try? await chats.location(of: object)
+                guard !Task.isCancelled else { return }
+                located.append(location.map { PharoChatOrigin.of($0.objectID, in: $0.chatID, chats: chats) })
+            }
+            var found: [Int: PharoChatOrigin] = [:]
+            for depth in located.indices {
+                if let opener = located[...depth].lastIndex(where: { $0 != nil }), let origin = located[opener] {
+                    found[depth] = opener == depth ? origin : origin.reached()
+                }
+            }
+            self?.foundChatOrigins = found
+        }
     }
 
     private func collapsedStack(from start: Int, to end: Int, hasFollowingExpanded: Bool) -> Box {

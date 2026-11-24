@@ -211,6 +211,10 @@ final class PatternsListPane {
         text.append(child: path)
         box.append(child: text)
 
+        if MainWindow.keptFromLab(.pattern, source.id, in: engine) != nil {
+            box.append(child: MainWindow.makeKeptFromLabMark())
+        }
+
         let kind = Label(str: source.kind.title)
         kind.add(cssClass: "caption")
         kind.add(cssClass: "dim-label")
@@ -225,6 +229,7 @@ final class PatternsListPane {
     private func observeSources() {
         withObservationTracking {
             _ = engine.patterns.sources
+            _ = engine.subjectsKeptFromLab
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }

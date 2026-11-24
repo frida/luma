@@ -2,6 +2,7 @@ import Adw
 import Foundation
 import Gtk
 import LumaCore
+import Observation
 
 @MainActor
 final class GlobalActionQueuePopover {
@@ -16,7 +17,10 @@ final class GlobalActionQueuePopover {
 
     private var queue: MissionActionQueueView?
     private var observation: StoreObservation?
-    private var hadPending = false
+    private var actions: [MissionAction] = []
+    private var chatCalls: [ObjectChatToolCall] = []
+    private var hadForeground = false
+    private var hadWaiting = false
 
     init(parentWindow: Gtk.Window) {
         self.parentWindow = parentWindow
@@ -50,6 +54,7 @@ final class GlobalActionQueuePopover {
     func attach(engine: Engine) {
         self.engine = engine
         let queue = MissionActionQueueView(engine: engine, parentWindow: parentWindow)
+        queue.onOpenChat = { [weak self] chatID in self?.openChat(chatID) }
         self.queue = queue
         popoverContent.append(child: queue.widget)
 
@@ -57,29 +62,58 @@ final class GlobalActionQueuePopover {
         observation = engine.store.observeAllPendingMissionActions { [weak self] rows in
             Task { @MainActor in self?.apply(actions: rows) }
         }
+        followChatCalls()
     }
 
     private func apply(actions allActions: [MissionAction]) {
-        let actions = allActions.filter { engine?.isAmbientMission($0.missionID) != true }
-        queue?.update(actions: actions)
-        let hasPending = !actions.isEmpty
-        if hasPending {
-            icon.set(name: "mail-mark-important-symbolic")
+        actions = allActions.filter { engine?.isAmbientMission($0.missionID) != true }
+        refresh()
+        let hasForeground = actions.contains(where: asksMe)
+        if hasForeground, !hadForeground, !popover.visible {
+            popover.popup()
+        }
+        hadForeground = hasForeground
+    }
+
+    private func refresh() {
+        queue?.update(actions: actions, chatCalls: chatCalls)
+        let waitingCount = actions.filter(asksMe).count + chatCalls.count
+        if waitingCount > 0 {
+            icon.setFrom(iconName: "mail-mark-important-symbolic")
             icon.add(cssClass: "warning")
-            badgeLabel.label = "\(actions.count)"
+            badgeLabel.label = "\(waitingCount)"
             badgeLabel.visible = true
-            if !hadPending, !popover.visible {
-                popover.popup()
-            }
         } else {
-            icon.set(name: "mail-unread-symbolic")
+            icon.setFrom(iconName: "mail-unread-symbolic")
             icon.remove(cssClass: "warning")
             badgeLabel.label = ""
             badgeLabel.visible = false
-            if hadPending, popover.visible {
+            if hadWaiting, popover.visible {
                 popover.popdown()
             }
         }
-        hadPending = hasPending
+        hadWaiting = waitingCount > 0
+    }
+
+    private func asksMe(_ action: MissionAction) -> Bool {
+        engine.map { MissionActionDecision.asksMe(action, engine: $0) } == true
+    }
+
+    private func followChatCalls() {
+        guard let chats = engine?.objectChats else { return }
+        chatCalls = withObservationTracking {
+            chats.callsWaitingForMe
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.followChatCalls() }
+        }
+        refresh()
+    }
+
+    private func openChat(_ chatID: UUID) {
+        guard let engine else { return }
+        popover.popdown()
+        PharoInspectorDialog.present(engine: engine, parent: parentWindow) {
+            try await engine.objectChats.column(of: chatID)
+        }
     }
 }

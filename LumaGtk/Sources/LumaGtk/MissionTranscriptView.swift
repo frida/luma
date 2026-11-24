@@ -12,6 +12,7 @@ final class MissionTranscriptView {
     private let scroll: ScrolledWindow
     private let scroller: BottomScroller
     private let placeholder: Adw.StatusPage
+    private let starterName: String?
 
     private var turnIDOrder: [UUID] = []
     private var cardsByTurnID: [UUID: TurnCard] = [:]
@@ -20,7 +21,8 @@ final class MissionTranscriptView {
     private var actionsByToolUseID: [String: MissionAction] = [:]
     private var actionsByTurnID: [UUID: [MissionAction]] = [:]
 
-    init() {
+    init(starterName: String?) {
+        self.starterName = starterName
         widget = Box(orientation: .vertical, spacing: 0)
         widget.hexpand = true
         widget.vexpand = true
@@ -76,7 +78,7 @@ final class MissionTranscriptView {
                     card.update(turn: turn, actions: turnActions)
                     listBox.append(child: card.widget)
                 } else {
-                    let card = TurnCard(turn: turn, actions: turnActions)
+                    let card = TurnCard(turn: turn, actions: turnActions, starterName: starterName)
                     cardsByTurnID[turn.id] = card
                     listBox.append(child: card.widget)
                 }
@@ -179,8 +181,10 @@ private final class TurnCard {
     private var lastBlocksJSON: String = ""
     private var blockEntries: [TurnBlockEntry] = []
     private var currentRoleClass: String = ""
+    private let starterName: String?
 
-    init(turn: MissionTurn, actions: [MissionAction]) {
+    init(turn: MissionTurn, actions: [MissionAction], starterName: String?) {
+        self.starterName = starterName
         widget = Box(orientation: .vertical, spacing: 0)
         widget.add(cssClass: "card")
         widget.add(cssClass: "luma-mission-card")
@@ -237,7 +241,7 @@ private final class TurnCard {
             widget.add(cssClass: roleClass)
             currentRoleClass = roleClass
         }
-        titleLabel.label = roleTitle(role: turn.role, isToolResults: isToolResults)
+        titleLabel.label = roleTitle(role: turn.role, isToolResults: isToolResults, starterName: starterName)
         titleIcon.set(name: roleIcon(role: turn.role, isToolResults: isToolResults))
 
         if turn.outputTokens > 0 {
@@ -282,10 +286,10 @@ private final class TurnCard {
 }
 
 @MainActor
-private func roleTitle(role: MissionTurnRole, isToolResults: Bool) -> String {
+private func roleTitle(role: MissionTurnRole, isToolResults: Bool, starterName: String?) -> String {
     switch role {
     case .assistant: return "Assistant"
-    case .user: return isToolResults ? "Tool results" : "You"
+    case .user: return isToolResults ? "Tool results" : starterName ?? "You"
     case .tool: return "Tool"
     }
 }

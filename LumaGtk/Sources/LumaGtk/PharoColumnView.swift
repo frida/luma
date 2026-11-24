@@ -17,11 +17,13 @@ final class PharoColumnView {
     var onClose: () -> Void = {}
     var onCollapse: () -> Void = {}
     var onMaximize: () -> Void = {}
+    var chatOrigin: () -> PharoChatOrigin? = { nil }
 
     /// A column embedded inline has no carousel to shrink into or fill, so it
     /// offers only to reload or close rather than collapse and maximize.
     var offersLayoutActions = true
 
+    private weak var engine: Engine?
     private let runtime: PharoRuntime
     private let object: PharoObject
     private let isMaximized: Bool
@@ -29,12 +31,14 @@ final class PharoColumnView {
     private let registerEditor: (GtkSource.View) -> Void
 
     init(
+        engine: Engine? = nil,
         runtime: PharoRuntime,
         object: PharoObject,
         isMaximized: Bool,
         highlight: @escaping (GtkSource.Buffer) -> Void,
         registerEditor: @escaping (GtkSource.View) -> Void = { _ in }
     ) {
+        self.engine = engine
         self.runtime = runtime
         self.object = object
         self.isMaximized = isMaximized
@@ -64,9 +68,18 @@ final class PharoColumnView {
                 let before = self.seenGeneration
                 self.observeChanges()
                 if self.seenGeneration != before {
+                    self.redescribe()
                     self.reload()
                 }
             }
+        }
+    }
+
+    private func redescribe() {
+        Task { @MainActor in
+            guard let fresh = try? await runtime.evaluate("SwpBridge current session objectAt: \(object.handle)") else { return }
+            titleLabel.label = title(of: fresh).split(whereSeparator: \.isWhitespace).joined(separator: " ")
+            try? await runtime.release(fresh)
         }
     }
 
@@ -80,8 +93,14 @@ final class PharoColumnView {
         return browser.widget
     }
 
+    private lazy var titleLabel = PharoSnapshotView.title(title(of: object))
+
+    private func title(of object: PharoObject) -> String {
+        "\(article(object.className)) \(object.className) \(object.display)"
+    }
+
     private func header() -> Box {
-        let title = PharoSnapshotView.title("\(article(object.className)) \(object.className) \(object.display)")
+        let title = titleLabel
         title.hexpand = true
         title.marginStart = 8
         title.marginTop = 6
@@ -184,11 +203,23 @@ final class PharoColumnView {
         }
         actions.append(ContextMenu.Item("Update pane tool") { [weak self] in self?.reload() })
         let close = ContextMenu.Item("Close pane", destructive: true) { [weak self] in self?.onClose() }
-        ContextMenu.present([actions, [close]], at: anchor, x: 0, y: Double(anchor.height))
+        ContextMenu.present([actions, chatItems(), [close]], at: anchor, x: 0, y: Double(anchor.height))
+    }
+
+    private func chatItems() -> [ContextMenu.Item] {
+        guard let engine, !object.isClass else { return [] }
+        return PharoChatPaneItems(
+            object: object,
+            chats: engine.objectChats,
+            origin: chatOrigin(),
+            alertParent: widget,
+            onSelect: { [weak self] in self?.onDrill($0) }
+        ).items
     }
 
     private var notebook = Notebook()
     private var pages: PharoViewPages?
+    private var selectors: [String] = []
 
     private func tabs() -> Notebook {
         notebook.hexpand = true
@@ -198,13 +229,30 @@ final class PharoColumnView {
         return notebook
     }
 
+    private func reload() {
+        guard let pages else { return rebuild() }
+        Task { @MainActor in
+            let views = try? await runtime.views(of: object).sorted(by: { $0.priority < $1.priority }).filter { $0.title != "Meta" }
+            guard self.pages === pages else { return }
+            guard let views, views.map(\.methodSelector) == selectors else { return rebuild() }
+            for (index, view) in views.enumerated() {
+                let (page, replacing) = pages.refreshed(view)
+                guard replacing != nil else { continue }
+                let current = notebook.currentPage
+                notebook.removePage(pageNum: index)
+                _ = notebook.insertPage(child: page, tabLabel: tabLabel(view.title), position: index)
+                notebook.currentPage = current
+            }
+        }
+    }
+
     /// The object's own views first, in priority order, then Print, then Meta
     /// at the very end -- the order the SwiftUI inspector lays its tabs in.
-    private func reload() {
+    private func rebuild() {
         while notebook.getNPages() > 0 {
             notebook.removePage(pageNum: notebook.getNPages() - 1)
         }
-        let pages = PharoViewPages(source: PharoObjectViews(runtime: runtime, object: object)) { [weak self] element in
+        let pages = PharoViewPages(source: PharoObjectViews(runtime: runtime, object: object), engine: engine) { [weak self] element in
             self?.onDrill(element)
         }
         self.pages = pages
@@ -216,7 +264,9 @@ final class PharoColumnView {
                 _ = notebook.appendPage(child: PharoViewPages.failurePage(error.localizedDescription), tabLabel: tabLabel("Error"))
                 return
             }
-            for view in views where view.title != "Meta" {
+            let shownViews = views.filter { $0.title != "Meta" }
+            selectors = shownViews.map(\.methodSelector)
+            for view in shownViews {
                 _ = notebook.appendPage(child: pages.page(for: view), tabLabel: tabLabel(view.title))
             }
             _ = notebook.appendPage(child: PharoViewPages.textPage(object.printString), tabLabel: tabLabel("Print"))

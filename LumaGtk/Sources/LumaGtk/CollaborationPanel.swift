@@ -8,10 +8,13 @@ import GdkPixBuf
 import Gtk
 import LumaCore
 import Observation
+import SwiftyPharo
 
 @MainActor
 final class CollaborationPanel {
     let widget: Box
+    let toggleContent: Box
+    var onShow: (LabSubject) -> Void = { _ in }
 
     private weak var engine: Engine?
     private weak var desktopNotifier: DesktopNotifier?
@@ -22,26 +25,19 @@ final class CollaborationPanel {
     private let participantsStrip: Box
     private let participantsScroll: ScrolledWindow
     private let notificationsButton: Button
-    private let chatListBox: ListBox
-    private let chatScroll: ScrolledWindow
-    private let chatScroller: BottomScroller
-    private let chatEntry: Entry
-    private let chatSendButton: Button
-
-    private let chatTimeFormatter: DateFormatter
+    private let conversationHost: Box
+    private let unreadBadge: Label
+    private let problemNotices: Box
+    private var conversation: PharoObjectChatPage?
+    private var isShown = false
 
     private var participantWidgets: [String: Widget] = [:]
     private var copiedToastLabel: Label?
     private var copiedToastResetTask: Task<Void, Never>?
-    private var lastChatCount = 0
     private var isEditingLabTitle: Bool = false
-    private var chatRows: [UUID: ListBoxRow] = [:]
-    private var chatTimestamps: [UUID: (label: Label, date: Date)] = [:]
-    private var tickerTask: Task<Void, Never>?
 
     private static let headerAvatarSize: Int = 24
     private static let participantAvatarSize: Int = 28
-    private static let chatAvatarSize: Int = 20
 
     init(engine: Engine, desktopNotifier: DesktopNotifier, onClose: @escaping () -> Void) {
         self.engine = engine
@@ -57,8 +53,13 @@ final class CollaborationPanel {
         widget.vexpand = true
         widget.setSizeRequest(width: 280, height: -1)
 
-        chatTimeFormatter = DateFormatter()
-        chatTimeFormatter.dateFormat = "HH:mm"
+        toggleContent = Box(orientation: .horizontal, spacing: 4)
+        toggleContent.append(child: Gtk.Image(iconName: "system-users-symbolic"))
+        unreadBadge = Label(str: "")
+        unreadBadge.add(cssClass: "caption")
+        unreadBadge.add(cssClass: "error")
+        unreadBadge.visible = false
+        toggleContent.append(child: unreadBadge)
 
         headerAvatarHost = Box(orientation: .horizontal, spacing: 0)
         widget.append(child: SidePanelHeader.make(title: "Collaboration", accessory: headerAvatarHost, onClose: onClose))
@@ -77,7 +78,6 @@ final class CollaborationPanel {
         body.append(child: labSection)
 
         activeCollaboration = Box(orientation: .vertical, spacing: 8)
-        activeCollaboration.vexpand = true
         activeCollaboration.visible = false
         body.append(child: activeCollaboration)
 
@@ -110,45 +110,34 @@ final class CollaborationPanel {
 
         activeCollaboration.append(child: participantsSection)
 
-        activeCollaboration.append(child: Separator(orientation: .horizontal))
+        problemNotices = Box(orientation: .vertical, spacing: 6)
+        problemNotices.visible = false
+        body.append(child: problemNotices)
+        body.append(child: Separator(orientation: .horizontal))
 
         let chatSection = Box(orientation: .vertical, spacing: 6)
         chatSection.vexpand = true
-        let chatHeader = Label(str: "Chat")
+        let chatHeader = Label(str: "Project Chat")
         chatHeader.halign = .start
         chatHeader.add(cssClass: "heading")
         chatSection.append(child: chatHeader)
 
-        chatListBox = ListBox()
-        chatListBox.selectionMode = .none
-        chatScroll = ScrolledWindow()
-        chatScroll.hexpand = true
-        chatScroll.vexpand = true
-        chatScroll.setSizeRequest(width: -1, height: 80)
-        chatScroll.set(child: chatListBox)
-        chatScroller = BottomScroller(chatScroll)
-        chatSection.append(child: chatScroll)
+        conversationHost = Box(orientation: .vertical, spacing: 0)
+        conversationHost.vexpand = true
+        conversationHost.setSizeRequest(width: -1, height: 240)
+        chatSection.append(child: conversationHost)
 
-        let inputRow = Box(orientation: .horizontal, spacing: 6)
-        chatEntry = Entry()
-        chatEntry.hexpand = true
-        chatEntry.placeholderText = "Message\u{2026}"
-        inputRow.append(child: chatEntry)
-        chatSendButton = Button(label: "Send")
-        inputRow.append(child: chatSendButton)
-        chatSection.append(child: inputRow)
+        body.append(child: chatSection)
 
-        activeCollaboration.append(child: chatSection)
-
-        chatEntry.onActivate { [weak self] _ in
+        widget.onMap { [weak self] _ in
             MainActor.assumeIsolated {
-                self?.sendChat()
+                guard let self else { return }
+                self.isShown = true
+                self.refreshConversation()
             }
         }
-        chatSendButton.onClicked { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.sendChat()
-            }
+        widget.onUnmap { [weak self] _ in
+            MainActor.assumeIsolated { self?.isShown = false }
         }
 
         notificationsButton.onClicked { [weak self] _ in
@@ -160,31 +149,14 @@ final class CollaborationPanel {
         refreshIdentity()
         refreshLab()
         refreshParticipants()
-        refreshChat()
+        refreshConversation()
         refreshNotificationsButton()
         observeIdentity()
         observeLab()
         observeParticipants()
-        observeChat()
-        startRelativeTimeTicker()
-    }
-
-    deinit {
-        tickerTask?.cancel()
-    }
-
-    private func startRelativeTimeTicker() {
-        tickerTask?.cancel()
-        tickerTask = Task { @MainActor [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 60_000_000_000)
-                guard let self, !Task.isCancelled else { return }
-                let now = Date()
-                for entry in self.chatTimestamps.values {
-                    entry.label.label = RelativeTime.string(from: entry.date, now: now)
-                }
-            }
-        }
+        observeConversation()
+        followUnread()
+        followProblems()
     }
 
     private func refreshNotificationsButton() {
@@ -227,8 +199,7 @@ final class CollaborationPanel {
                 guard let self else { return }
                 self.refreshLab()
                 self.refreshParticipants()
-                self.refreshChat()
-                self.refreshChatInputState()
+                self.refreshConversation()
                 self.refreshNotificationsButton()
                 self.observeLab()
             }
@@ -460,15 +431,52 @@ final class CollaborationPanel {
         }
     }
 
-    private func observeChat() {
+    private func observeConversation() {
         guard let engine else { return }
-        engine.collaboration.onChatMessageChange = { [weak self] change in
-            self?.applyChatChange(change)
+        engine.objectChats.onMessageArrived = { [weak self] chat, message in
+            guard let self, let engine = self.engine, chat.id == engine.objectChats.conversationID else { return }
+            self.desktopNotifier?.notifyChatMessage(
+                message, inChatTitled: engine.objectChats.displayTitle(of: chat), labID: engine.collaboration.labID)
         }
-        engine.collaboration.onChatMessageReceived = { [weak self] message in
-            guard let self, !message.isLocal, let engine = self.engine else { return }
-            self.desktopNotifier?.notifyChatMessage(message, labID: engine.collaboration.labID)
+    }
+
+    private func followUnread() {
+        guard let engine else { return }
+        let chats = engine.objectChats
+        withObservationTracking {
+            _ = chats.unreadCount(in: chats.conversationID)
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.followUnread() }
         }
+        showUnread()
+    }
+
+    private func showUnread() {
+        guard let engine else { return }
+        let unread = engine.objectChats.unreadCount(in: engine.objectChats.conversationID)
+        unreadBadge.label = "\(unread)"
+        unreadBadge.visible = unread > 0
+    }
+
+    private func followProblems() {
+        guard let engine else { return }
+        withObservationTracking {
+            _ = engine.labProblems
+            _ = engine.subjectsKeptFromLab
+            _ = engine.missions
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.followProblems() }
+        }
+        showProblems()
+    }
+
+    private func showProblems() {
+        guard let engine else { return }
+        clearChildren(of: problemNotices)
+        for problem in engine.labProblems {
+            problemNotices.append(child: ObjectChatProblemNotice.make(problem, engine: engine) { [weak self] in self?.onShow($0) })
+        }
+        problemNotices.visible = !engine.labProblems.isEmpty
     }
 
     // MARK: - Refreshers
@@ -622,7 +630,8 @@ final class CollaborationPanel {
                 info.add(cssClass: "dim-label")
                 labSection.append(child: info)
 
-                let explanation = Label(str: "Enable collaboration to share this project's state with teammates, including chat and presence.")
+                let explanation = Label(
+                    str: "Enable collaboration to share this project's state with teammates, including the project chat and presence.")
                 explanation.halign = .start
                 explanation.wrap = true
                 explanation.xalign = 0
@@ -908,118 +917,23 @@ final class CollaborationPanel {
         return engine.collaboration.members.reduce(0) { $0 + ($1.role == .owner ? 1 : 0) }
     }
 
-    private func applyChatChange(_ change: LumaCore.CollaborationSession.ChatMessageChange) {
-        switch change {
-        case .reset:
-            refreshChat()
-        case .appended(let message):
-            appendChatRow(for: message)
-            lastChatCount += 1
-            refreshChatInputState()
-        case .replaced(let id, let message):
-            replaceChatRow(id: id, with: message)
-        case .removed(let id):
-            removeChatRow(id: id)
-            lastChatCount = max(0, lastChatCount - 1)
-            refreshChatInputState()
+    private func refreshConversation() {
+        guard isShown, let engine else { return }
+        let chats = engine.objectChats
+        guard conversation?.chatID != chats.conversationID else { return }
+        let chat = chats.openConversation()
+        clearChildren(of: conversationHost)
+        let page = PharoObjectChatPage(engine: engine, chatID: chat.id, form: .panel) { [weak self] object in
+            self?.inspect(object)
         }
+        conversation = page
+        conversationHost.append(child: page.widget)
+        showUnread()
     }
 
-    private func refreshChat() {
+    private func inspect(_ object: PharoObject) {
         guard let engine else { return }
-        chatListBox.removeAll()
-        chatRows.removeAll()
-        chatTimestamps.removeAll()
-        for message in engine.collaboration.chatMessages {
-            appendChatRow(for: message)
-        }
-        lastChatCount = engine.collaboration.chatMessages.count
-        refreshChatInputState()
-    }
-
-    private func appendChatRow(for message: LumaCore.CollaborationSession.ChatMessage) {
-        let row = buildChatRow(for: message)
-        chatRows[message.id] = row
-        chatListBox.append(child: row)
-    }
-
-    private func replaceChatRow(id: UUID, with message: LumaCore.CollaborationSession.ChatMessage) {
-        guard let old = chatRows[id] else { return }
-        let position = Int(old.index)
-        chatListBox.remove(child: old)
-        chatTimestamps.removeValue(forKey: id)
-        let row = buildChatRow(for: message)
-        chatRows[id] = row
-        chatListBox.insert(child: row, position: position)
-    }
-
-    private func removeChatRow(id: UUID) {
-        guard let row = chatRows.removeValue(forKey: id) else { return }
-        chatListBox.remove(child: row)
-        chatTimestamps.removeValue(forKey: id)
-    }
-
-    private func buildChatRow(for message: LumaCore.CollaborationSession.ChatMessage) -> ListBoxRow {
-        let row = ListBoxRow()
-        row.selectable = false
-        row.activatable = false
-
-        let outer = Box(orientation: .horizontal, spacing: 0)
-        outer.marginStart = 4
-        outer.marginEnd = 4
-        outer.marginTop = 2
-        outer.marginBottom = 2
-
-        let bubble = Box(orientation: .vertical, spacing: 2)
-        bubble.add(cssClass: message.isLocal ? "luma-chat-bubble-local" : "luma-chat-bubble-remote")
-        bubble.hexpand = false
-        bubble.halign = message.isLocal ? .end : .start
-
-        let header = Box(orientation: .horizontal, spacing: 6)
-
-        let avatar = makeAvatarButton(for: message.sender, size: Self.chatAvatarSize)
-        header.append(child: avatar)
-
-        let senderName = message.isLocal
-            ? "You"
-            : "@\(message.sender.id)"
-        let senderLabel = Label(str: senderName)
-        senderLabel.halign = .start
-        senderLabel.hexpand = true
-        senderLabel.add(cssClass: "caption")
-        senderLabel.add(cssClass: "dim-label")
-        header.append(child: senderLabel)
-
-        let timeLabel = Label(str: RelativeTime.string(from: message.timestamp))
-        timeLabel.tooltipText = chatTimeFormatter.string(from: message.timestamp)
-        timeLabel.halign = .end
-        timeLabel.add(cssClass: "caption")
-        timeLabel.add(cssClass: "dim-label")
-        chatTimestamps[message.id] = (label: timeLabel, date: message.timestamp)
-        header.append(child: timeLabel)
-        bubble.append(child: header)
-
-        let body = Label(str: message.text)
-        body.halign = .start
-        body.wrap = true
-        body.xalign = 0
-        body.add(cssClass: "caption")
-        bubble.append(child: body)
-
-        if message.isLocal {
-            let spacer = Box(orientation: .horizontal, spacing: 0)
-            spacer.hexpand = true
-            outer.append(child: spacer)
-            outer.append(child: bubble)
-        } else {
-            outer.append(child: bubble)
-            let spacer = Box(orientation: .horizontal, spacing: 0)
-            spacer.hexpand = true
-            outer.append(child: spacer)
-        }
-
-        row.set(child: outer)
-        return row
+        PharoInspectorDialog.present(engine: engine, parent: widget) { object }
     }
 
     // MARK: - Avatars
@@ -1115,29 +1029,6 @@ final class CollaborationPanel {
             guard let self else { return }
             if self.copiedToastLabel === toast {
                 toast?.visible = false
-            }
-        }
-    }
-
-    private func refreshChatInputState() {
-        guard let engine else { return }
-        let isJoined: Bool
-        if case .joined = engine.collaboration.status { isJoined = true } else { isJoined = false }
-        chatEntry.sensitive = isJoined
-        chatSendButton.sensitive = isJoined
-    }
-
-    private func sendChat() {
-        guard let engine else { return }
-        let text = (chatEntry.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
-        guard case .joined = engine.collaboration.status else { return }
-        chatEntry.text = ""
-        Task { [weak self, collaboration = engine.collaboration] in
-            do {
-                try await collaboration.sendChat(text)
-            } catch {
-                self?.chatEntry.text = text
             }
         }
     }

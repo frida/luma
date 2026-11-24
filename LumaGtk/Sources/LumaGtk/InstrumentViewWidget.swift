@@ -12,30 +12,90 @@ final class InstrumentViewWidget {
 
     private weak var engine: Engine?
     private let key: InstrumentViews.Key
+    private let page: Box
+    private let inspector: PharoColumnsView
+    private let overviewBar = PharoOverviewBar()
+    private let overviewSeparator = Separator(orientation: .horizontal)
     private var shown: InstrumentViews.Phase?
     private var pages: PharoViewPages?
-    private var inspectors: [ObjectIdentifier: PharoColumnView] = [:]
+    private var selectors: [String] = []
+    private var notebook: Notebook?
+    private var keptTab: String?
+    private var spawnedInspections: Task<Void, Never>?
+    private let drilledPageWidth = 420
 
-    init(engine: Engine, key: InstrumentViews.Key, config: InstrumentWidget.ViewConfig) {
+    init(engine: Engine, key: InstrumentViews.Key, sessionID: UUID, name: String, config: InstrumentWidget.ViewConfig) {
         self.engine = engine
         self.key = key
 
         widget = Box(orientation: .vertical, spacing: 0)
         widget.hexpand = true
-        widget.setSizeRequest(width: -1, height: config.height)
+
+        page = Box(orientation: .vertical, spacing: 0)
+        page.hexpand = true
+        page.vexpand = true
+
+        let overlay = Overlay()
+        overlay.vexpand = true
+        overlay.setSizeRequest(width: -1, height: config.height)
+        inspector = PharoColumnsView(
+            engine: engine, runtime: PharoRuntime.shared, maximizingOver: overlay, highlight: PharoHighlighting.apply)
+        inspector.widget.visible = false
+        inspector.chatOrigin = {
+            PharoChatOrigin(
+                origin: .instrumentView(instanceID: key.instanceID, widget: key.widget, sessionID: sessionID),
+                label: "the \(name) view of an instrument",
+                source: nil)
+        }
+
+        let paned = Paned(orientation: .horizontal)
+        paned.resizeStartChild = false
+        paned.resizeEndChild = true
+        paned.shrinkStartChild = false
+        paned.shrinkEndChild = false
+        paned.position = drilledPageWidth
+        paned.startChild = WidgetRef(page)
+        paned.endChild = WidgetRef(inspector.widget)
+        overlay.set(child: paned)
+        overviewBar.widget.visible = false
+        overviewSeparator.visible = false
+        widget.append(child: overviewBar.widget)
+        widget.append(child: overviewSeparator)
+        widget.append(child: overlay)
+
+        inspector.drive(overviewBar, naming: name)
+        inspector.onChanged = { [weak self] in
+            guard let self else { return }
+            let isDrilling = !self.inspector.isEmpty
+            self.inspector.widget.visible = isDrilling
+            self.overviewBar.widget.visible = isDrilling
+            self.overviewSeparator.visible = isDrilling
+            self.overviewBar.reload()
+        }
         widget.onMap { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.engine?.instrumentViews.show(self.key)
+                self.inspectSpawned()
             }
         }
         widget.onUnmap { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.engine?.instrumentViews.hide(self.key)
+                self.spawnedInspections?.cancel()
             }
         }
         follow()
+    }
+
+    private func inspectSpawned() {
+        guard let spawned = engine?.instrumentViews.spawns(of: key) else { return }
+        spawnedInspections = Task { @MainActor [weak self] in
+            for await object in spawned {
+                self?.inspect(object)
+            }
+        }
     }
 
     private func follow() {
@@ -51,8 +111,11 @@ final class InstrumentViewWidget {
     }
 
     private func show(_ phase: InstrumentViews.Phase) {
-        while let child = widget.firstChild {
-            widget.remove(child: child)
+        if case .running = phase, let pages {
+            return refresh(pages)
+        }
+        while let child = page.firstChild {
+            page.remove(child: child)
         }
         pages = nil
         switch phase {
@@ -61,14 +124,52 @@ final class InstrumentViewWidget {
             spinner.halign = .center
             spinner.valign = .center
             spinner.vexpand = true
-            widget.append(child: spinner)
+            page.append(child: spinner)
         case .awaitingApproval(let origin):
-            widget.append(child: approval(origin))
+            page.append(child: approval(origin))
         case .failed(let message):
-            widget.append(child: stopped(message))
+            page.append(child: stopped(message))
         case .running:
             load()
         }
+    }
+
+    private func refresh(_ pages: PharoViewPages) {
+        guard let engine else { return }
+        let source = InstrumentViewSource(instrumentViews: engine.instrumentViews, key: key)
+        Task { @MainActor [weak self] in
+            let declarations = try? await source.views()
+            guard let self, self.pages === pages else { return }
+            guard let declarations, declarations.map(\.methodSelector) == self.selectors else {
+                return self.rebuild()
+            }
+            for (index, declaration) in declarations.enumerated() {
+                let (page, replacing) = pages.refreshed(declaration)
+                guard let replacing else { continue }
+                page.vexpand = true
+                self.swap(replacing, for: page, at: index, titled: declaration.title)
+            }
+        }
+    }
+
+    private func rebuild() {
+        keptTab = notebook.map { selectors[$0.currentPage] }
+        pages = nil
+        if let shown {
+            show(shown)
+        }
+    }
+
+    private func swap(_ old: Widget, for new: Widget, at index: Int, titled title: String) {
+        guard let notebook else {
+            page.remove(child: old)
+            page.append(child: new)
+            return
+        }
+        let current = notebook.currentPage
+        notebook.removePage(pageNum: index)
+        _ = notebook.insertPage(child: new, tabLabel: Label(str: title), position: index)
+        notebook.currentPage = current
     }
 
     private func approval(_ origin: HostCodeOrigin) -> Widget {
@@ -122,9 +223,9 @@ final class InstrumentViewWidget {
     }
 
     private func load() {
-        guard let views = engine?.instrumentViews else { return }
-        let source = InstrumentViewSource(instrumentViews: views, key: key)
-        let pages = PharoViewPages(source: source) { [weak self] object in
+        guard let engine else { return }
+        let source = InstrumentViewSource(instrumentViews: engine.instrumentViews, key: key)
+        let pages = PharoViewPages(source: source, engine: engine) { [weak self] object in
             self?.inspect(object)
         }
         self.pages = pages
@@ -133,15 +234,17 @@ final class InstrumentViewWidget {
             do {
                 declarations = try await source.views()
             } catch {
-                self?.widget.append(child: PharoViewPages.failurePage(error.localizedDescription))
+                self?.page.append(child: PharoViewPages.failurePage(error.localizedDescription))
                 return
             }
             guard let self, self.pages === pages else { return }
+            self.selectors = declarations.map(\.methodSelector)
+            self.notebook = nil
             guard declarations.count > 1 else {
                 if let only = declarations.first {
                     let page = pages.page(for: only)
                     page.vexpand = true
-                    self.widget.append(child: page)
+                    self.page.append(child: page)
                 }
                 return
             }
@@ -151,37 +254,17 @@ final class InstrumentViewWidget {
             for declaration in declarations {
                 _ = notebook.appendPage(child: pages.page(for: declaration), tabLabel: Label(str: declaration.title))
             }
-            self.widget.append(child: notebook)
+            if let kept = declarations.firstIndex(where: { $0.methodSelector == self.keptTab }) {
+                notebook.currentPage = kept
+            }
+            self.keptTab = nil
+            self.notebook = notebook
+            self.page.append(child: notebook)
         }
     }
 
     private func inspect(_ object: PharoObject) {
-        let column = PharoColumnView(
-            runtime: PharoRuntime.shared, object: object, isMaximized: true, highlight: PharoHighlighting.apply)
-        column.offersLayoutActions = false
-
-        let window = Adw.Window()
-        window.title = object.className
-        window.setDefaultSize(width: 520, height: 480)
-        window.destroyWithParent = true
-        if let rootPtr = widget.root?.ptr {
-            window.setTransientFor(parent: Gtk.WindowRef(raw: rootPtr))
-        }
-        let toolbarView = Adw.ToolbarView()
-        toolbarView.addTopBar(widget: Adw.HeaderBar())
-        toolbarView.set(content: column.widget)
-        window.set(content: toolbarView)
-        column.onDrill = { [weak self] element in self?.inspect(element) }
-        column.onClose = { window.close() }
-        let id = ObjectIdentifier(window)
-        inspectors[id] = column
-        window.onCloseRequest { [weak self] _ in
-            MainActor.assumeIsolated {
-                _ = self?.inspectors.removeValue(forKey: id)
-            }
-            return false
-        }
-        installEscapeShortcut(on: window)
-        window.present()
+        inspector.present(object)
+        inspector.pointArrow(fromCenterOf: WidgetRef(page))
     }
 }

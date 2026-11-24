@@ -18,8 +18,8 @@ final class PharoGraphArea {
     let widget: Box
     var onDrill: ((Int) -> Void)?
 
-    private let graph: PharoGraph
-    private let solution: PharoGraphLayout.Solution
+    private var graph: PharoGraph
+    private var solution: PharoGraphLayout.Solution
     private let area: DrawingArea
     private var selected: Int?
     private var hovered: Int?
@@ -43,11 +43,7 @@ final class PharoGraphArea {
 
     init(graph: PharoGraph) {
         self.graph = graph
-        solution = PharoGraphLayout(
-            nodeCount: graph.nodes.count,
-            edges: graph.edges.map { .init(from: $0.from, to: $0.to) },
-            kind: .init(graph.layout)
-        ).solve()
+        solution = Self.solve(graph)
 
         area = DrawingArea()
         area.hexpand = true
@@ -83,6 +79,25 @@ final class PharoGraphArea {
         }
         installGestures()
         themeToken = ThemeWatcher.subscribe(owner: self) { $0.area.queueDraw() }
+    }
+
+    func show(_ next: PharoGraph) {
+        if next.nodes.count != graph.nodes.count || next.edges != graph.edges || next.layout != graph.layout {
+            solution = Self.solve(next)
+        }
+        needsFit = needsFit || next.layout != graph.layout
+        graph = next
+        selected = selected.flatMap { $0 < next.nodes.count ? $0 : nil }
+        hovered = nil
+        area.queueDraw()
+    }
+
+    private static func solve(_ graph: PharoGraph) -> PharoGraphLayout.Solution {
+        PharoGraphLayout(
+            nodeCount: graph.nodes.count,
+            edges: graph.edges.map { .init(from: $0.from, to: $0.to) },
+            kind: .init(graph.layout)
+        ).solve()
     }
 
     private func zoomButton(_ icon: String, _ tip: String, _ action: @escaping () -> Void) -> Button {

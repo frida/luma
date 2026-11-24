@@ -534,7 +534,9 @@ final class MainWindow: InstrumentUIHost {
 
     private func handlePendingActionsChange(_ rows: [MissionAction]) {
         let currentIDs = Set(rows.map(\.id))
-        let arrivals = rows.filter { !seenPendingActionIDs.contains($0.id) }
+        let arrivals = rows.filter { action in
+            !seenPendingActionIDs.contains(action.id) && engine.map { MissionActionDecision.asksMe(action, engine: $0) } == true
+        }
         seenPendingActionIDs = currentIDs
         guard let newest = arrivals.max(by: { $0.requestedAt < $1.requestedAt }) else { return }
         desktopNotifier.notifyActionAwaitingApproval(newest, additionalPending: arrivals.count - 1)
@@ -631,6 +633,7 @@ final class MainWindow: InstrumentUIHost {
             self?.refreshCustomInstrumentDefPane()
         }
         renderCustomInstruments()
+        followKeptFromLab()
         _ = NotificationCenter.default.addObserver(
             forName: .lumaSelectCustomInstrumentDef,
             object: nil,
@@ -678,7 +681,9 @@ final class MainWindow: InstrumentUIHost {
                 self?.setCollaborationVisible(false)
             }
         )
+        panel.onShow = { [weak self] subject in self?.show(subject) }
         collaborationPanel = panel
+        collaborationButton.set(child: panel.toggleContent)
 
         let machines = VirtualMachinePanel(
             engine: engine,
@@ -693,6 +698,17 @@ final class MainWindow: InstrumentUIHost {
         pharoPane = PharoPlaygroundPane(engine: engine)
         if case .notebook = selection {
             renderDetail()
+        }
+    }
+
+    private func show(_ subject: LabSubject) {
+        switch subject.family {
+        case .mission:
+            select(.mission(subject.id))
+        case .pattern:
+            select(.patterns(.source(subject.id.uuidString)))
+        default:
+            select(selectionForCustomInstrument(defID: subject.id))
         }
     }
 
@@ -1163,18 +1179,33 @@ final class MainWindow: InstrumentUIHost {
     ) {
         var sections: [[ContextMenu.Item]] = []
         if mission.status.isLive {
+            let canStop = engine?.canStop(mission) ?? false
             sections.append([
-                .init("Stop Mission") { [weak self] in
+                .init(
+                    "Stop Mission",
+                    detail: canStop ? nil : "Only the member who started this mission, or a lab owner, can stop it",
+                    enabled: canStop
+                ) { [weak self] in
                     self?.engine?.cancelMission(missionID: mission.id)
                 }
             ])
         }
         sections.append([
-            .init("Delete Mission", destructive: true) { [weak self] in
-                self?.confirmDeleteMission(mission)
-            }
+            deleteMissionItem(mission)
         ])
         ContextMenu.present(sections, at: anchor, x: x, y: y)
+    }
+
+    private func deleteMissionItem(_ mission: Mission) -> ContextMenu.Item {
+        let canDelete = engine?.canDelete(missionID: mission.id) ?? false
+        return ContextMenu.Item(
+            "Delete Mission",
+            detail: canDelete ? nil : "Only the member who started this mission, or a lab owner, can delete it",
+            destructive: true,
+            enabled: canDelete
+        ) { [weak self] in
+            self?.confirmDeleteMission(mission)
+        }
     }
 
     private func confirmDeleteMission(_ mission: Mission) {
@@ -1402,6 +1433,18 @@ final class MainWindow: InstrumentUIHost {
         }
     }
 
+    private func followKeptFromLab() {
+        guard let engine else { return }
+        withObservationTracking {
+            _ = engine.subjectsKeptFromLab
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                self?.renderCustomInstruments()
+                self?.followKeptFromLab()
+            }
+        }
+    }
+
     private func makeCustomInstrumentDefRow(
         def: LumaCore.CustomInstrumentDef,
         hasAuxiliaryFiles: Bool,
@@ -1435,6 +1478,11 @@ final class MainWindow: InstrumentUIHost {
         let label = Label(str: def.name)
         label.halign = .start
         box.append(child: label)
+        if MainWindow.keptFromLab(.definition, def.id.uuidString, in: engine!) != nil {
+            let keptMark = MainWindow.makeKeptFromLabMark()
+            keptMark.marginStart = MainWindow.sidebarIconToLabelSpacing
+            box.append(child: keptMark)
+        }
         let updateMark = StoreUpdateMark(storefront: engine!.storefront, defID: def.id)
         updateMark.widget.marginStart = MainWindow.sidebarIconToLabelSpacing
         box.append(child: updateMark.widget)
@@ -1448,6 +1496,20 @@ final class MainWindow: InstrumentUIHost {
         row.set(child: box)
         attachCustomInstrumentContextMenu(row: row, anchor: box, def: def)
         return row
+    }
+
+    static func keptFromLab(_ family: LabSubject.Family, _ id: String, in engine: Engine) -> LabSubject? {
+        guard engine.collaboration.isCollaborative else { return nil }
+        return engine.subjectsKeptFromLab.first { $0.family == family && $0.id.uuidString == id }
+    }
+
+    static func makeKeptFromLabMark() -> Label {
+        let mark = Label(str: "Not in the lab")
+        mark.add(cssClass: "caption")
+        mark.add(cssClass: "dim-label")
+        mark.tooltipText =
+            "A member deleted it in the lab after you changed it, so your version is kept only here. Add it to the lab again, or delete it."
+        return mark
     }
 
     private func makeFolderDriftButton(def: LumaCore.CustomInstrumentDef, drift: InstrumentFolderDrift) -> Button {
@@ -1686,7 +1748,7 @@ final class MainWindow: InstrumentUIHost {
                     self.presentRenameEntrypointFileDialog(def: def)
                 },
             ],
-            customInstrumentFolderMenuItems(def: def),
+            customInstrumentFolderMenuItems(def: def) + MainWindow.addToLabMenuItems(.definition, def.id.uuidString, engine: engine!),
             [.init("Delete Custom Instrument", destructive: true) { [weak self] in
                 self?.confirmDeleteCustomInstrument(def: def)
             }],
@@ -1702,6 +1764,11 @@ final class MainWindow: InstrumentUIHost {
         let publish = ContextMenu.Item("Publish to Store\u{2026}") { [weak self] in self?.presentStorePublishDialog(def: def) }
         let folderItems = engine.instrumentFolderDrifts[def.id] == .diverged ? [reload, write, unlink, export] : [reload, unlink, export]
         return folderItems + [publish]
+    }
+
+    static func addToLabMenuItems(_ family: LabSubject.Family, _ id: String, engine: Engine) -> [ContextMenu.Item] {
+        guard let subject = keptFromLab(family, id, in: engine) else { return [] }
+        return [.init("Add to Lab") { engine.addToLab(subject) }]
     }
 
     private func reloadCustomInstrumentFromFolder(def: LumaCore.CustomInstrumentDef) {

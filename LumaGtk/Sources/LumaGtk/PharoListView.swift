@@ -90,6 +90,11 @@ final class PharoListView {
         reload()
     }
 
+    func refresh() {
+        reloadToken += 1
+        loadPage(from: 1, count: max(loaded, pageSize), replacing: true)
+    }
+
     private func scroller() -> ScrolledWindow {
         let inner = Box(orientation: .vertical, spacing: 0)
         if titles.count > 1 {
@@ -136,11 +141,19 @@ final class PharoListView {
     }
 
     private func loadNextPage() {
+        loadPage(from: loaded + 1, count: pageSize, replacing: false)
+    }
+
+    private func loadPage(from first: Int, count: Int, replacing: Bool) {
         let token = reloadToken
         Task { @MainActor in
             do {
-                let page = try await source.items(view: selector, from: loaded + 1, count: pageSize, filter: filter)
+                let page = try await source.items(view: selector, from: first, count: count, filter: filter)
                 guard token == self.reloadToken else { return }
+                if replacing {
+                    clearRows()
+                    loaded = 0
+                }
                 for cells in page.items {
                     rows.append(child: itemRow(cells))
                 }

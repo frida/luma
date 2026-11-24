@@ -12,7 +12,7 @@ final class PharoChartArea {
     let widget: Box
     var onDrill: ((Int) -> Void)?
 
-    private let chart: PharoChart
+    private var chart: PharoChart
     private let area: DrawingArea
     private var selected: Int?
     private var hovered: Int?
@@ -71,6 +71,13 @@ final class PharoChartArea {
         gtk_widget_set_cursor_from_name(area.widget_ptr, "pointer")
         installGestures()
         themeToken = ThemeWatcher.subscribe(owner: self) { $0.area.queueDraw() }
+    }
+
+    func show(_ next: PharoChart) {
+        chart = next
+        selected = selected.flatMap { $0 < flatCount ? $0 : nil }
+        hovered = nil
+        area.queueDraw()
     }
 
     private func zoomButton(_ icon: String, _ tip: String, _ action: @escaping () -> Void) -> Button {

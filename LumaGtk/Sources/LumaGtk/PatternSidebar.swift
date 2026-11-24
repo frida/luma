@@ -292,6 +292,11 @@ final class PatternSidebar {
         label.halign = .start
         label.ellipsize = .end
         box.append(child: label)
+        if MainWindow.keptFromLab(.pattern, source.id, in: engine) != nil {
+            let keptMark = MainWindow.makeKeptFromLabMark()
+            keptMark.marginStart = 6
+            box.append(child: keptMark)
+        }
 
         let row = ListBoxRow()
         row.set(child: box)
@@ -338,7 +343,8 @@ final class PatternSidebar {
         switch source.origin {
         case .project:
             return [
-                [.init("Rename…") { [weak self] in self?.presentRename(source) }],
+                [.init("Rename…") { [weak self] in self?.presentRename(source) }]
+                    + MainWindow.addToLabMenuItems(.pattern, source.id, engine: engine),
                 [.init("Delete", destructive: true) { [weak self] in self?.confirmDelete(source) }],
             ]
         case .package, .instrument:
@@ -424,6 +430,7 @@ final class PatternSidebar {
     private func observeSources() {
         withObservationTracking {
             _ = engine.patterns.sources
+            _ = engine.subjectsKeptFromLab
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }

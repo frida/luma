@@ -234,7 +234,9 @@ private final class WidgetCanvas {
             column.append(child: view.widget)
         case .view(let cfg):
             if let instance {
-                let view = InstrumentViewWidget(engine: engine, key: .init(instanceID: instance.id, widget: definition.id), config: cfg)
+                let view = InstrumentViewWidget(
+                    engine: engine, key: .init(instanceID: instance.id, widget: definition.id), sessionID: instance.sessionID,
+                    name: definition.label, config: cfg)
                 viewWidget = view
                 column.append(child: view.widget)
             }

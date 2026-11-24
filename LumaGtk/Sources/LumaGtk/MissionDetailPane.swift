@@ -2,6 +2,7 @@ import Adw
 import Foundation
 import Gtk
 import LumaCore
+import Observation
 import Pango
 
 @MainActor
@@ -44,9 +45,10 @@ final class MissionDetailPane {
             mission: mission,
             onStop: { [weak engine, missionID = mission.id] in
                 engine?.cancelMission(missionID: missionID)
-            }
+            },
+            canStop: { [weak engine] mission in engine?.canStop(mission) == true }
         )
-        transcript = MissionTranscriptView()
+        transcript = MissionTranscriptView(starterName: engine.isStartedByMe(mission) ? nil : mission.author?.name)
         findings = MissionFindingsView(
             engine: engine,
             missionID: mission.id,
@@ -82,6 +84,18 @@ final class MissionDetailPane {
         widget.append(child: split)
         widget.append(child: Separator(orientation: .horizontal))
         widget.append(child: inputBar.widget)
+        followStarter()
+    }
+
+    private func followStarter() {
+        let starter = withObservationTracking {
+            engine.flatMap { engine in
+                engine.missions.first { $0.id == missionID }.flatMap { engine.isWaitingForStarter($0) ? $0.author : nil }
+            }
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.followStarter() }
+        }
+        header.show(waitingFor: starter)
     }
 
     func start() {
@@ -121,6 +135,10 @@ final class MissionDetailPane {
                     self.lastActionsCache = rows
                     self.transcript.applyActions(rows)
                 }
+            })
+        observations.append(
+            store.observeMissionSteering(missionID: id) { [weak self] _ in
+                Task { @MainActor in self?.inputBar.refreshPending() }
             })
         observations.append(
             store.observeMissionFindings(missionID: id) { [weak self] rows in
@@ -175,14 +193,17 @@ private final class MissionHeaderBar {
     private let inputTokensCell: MetaCell
     private let outputTokensCell: MetaCell
     private let cacheTokensCell: MetaCell
+    private let starterWaitLabel: Label
     private let runningSpinner: Gtk.Spinner
     private let stopButton: Button
     private let onStop: () -> Void
+    private let canStop: (Mission) -> Bool
     private var currentMission: Mission
 
-    init(mission: Mission, onStop: @escaping () -> Void) {
+    init(mission: Mission, onStop: @escaping () -> Void, canStop: @escaping (Mission) -> Bool) {
         self.currentMission = mission
         self.onStop = onStop
+        self.canStop = canStop
 
         widget = Box(orientation: .horizontal, spacing: 12)
         widget.marginStart = 24
@@ -230,6 +251,15 @@ private final class MissionHeaderBar {
         }
 
         textColumn.append(child: metaRow)
+
+        starterWaitLabel = Label(str: "")
+        starterWaitLabel.halign = .start
+        starterWaitLabel.xalign = 0
+        starterWaitLabel.wrap = true
+        starterWaitLabel.add(cssClass: "dim-label")
+        starterWaitLabel.add(cssClass: "caption")
+        starterWaitLabel.visible = false
+        textColumn.append(child: starterWaitLabel)
         widget.append(child: textColumn)
 
         stopButton = Button()
@@ -241,8 +271,6 @@ private final class MissionHeaderBar {
         stopContent.append(child: stopLabel)
         stopButton.set(child: stopContent)
         stopButton.add(cssClass: "destructive-action")
-        stopButton.tooltipText =
-            "Cancel this mission. Pending tool calls won't be approved or run."
         stopButton.valign = .start
         stopButton.onClicked { _ in
             MainActor.assumeIsolated { onStop() }
@@ -280,6 +308,16 @@ private final class MissionHeaderBar {
         }
 
         stopButton.visible = mission.status.isLive
+        stopButton.sensitive = canStop(mission)
+        stopButton.tooltipText =
+            canStop(mission)
+            ? "Cancel this mission. Pending tool calls won't be approved or run."
+            : "Only the member who started this mission, or a lab owner, can stop it"
+    }
+
+    func show(waitingFor starter: Author?) {
+        starterWaitLabel.label = starter.map(MissionsListPane.waitingNote(for:)) ?? ""
+        starterWaitLabel.visible = starter != nil
     }
 
     private func rebuildStatusPill(_ status: MissionStatus) {
