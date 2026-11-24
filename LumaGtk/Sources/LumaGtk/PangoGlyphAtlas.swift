@@ -28,10 +28,10 @@ enum PangoGlyphAtlas {
         }
         let lineHeight = codes.map { size(of: $0, layout: layout).height }.max() ?? pixelSize
 
-        // A guard texel each side, so a cell is never sampled into its
-        // neighbor, and whole texels so it is sampled on its own grid.
-        let cellWidth = Int((advances.max() ?? Float(pixelSize)).rounded(.up)) + 2
-        let cellHeight = lineHeight + 2
+        // Blank around the ink and cells on the mipmap levels' own grid, so a
+        // cell is never sampled into its neighbor, minified or not.
+        let cellWidth = GlyphAtlas.cellLength(holding: Int((advances.max() ?? Float(pixelSize)).rounded(.up)))
+        let cellHeight = GlyphAtlas.cellLength(holding: lineHeight)
         let columns = 16
         let rows = (codes.count + columns - 1) / columns
         let width = cellWidth * columns

@@ -467,6 +467,7 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
         let smooth = MTLSamplerDescriptor()
         smooth.minFilter = .linear
         smooth.magFilter = .linear
+        smooth.mipFilter = .linear
         smooth.sAddressMode = .clampToEdge
         smooth.tAddressMode = .clampToEdge
         acrossPicture = view.device?.makeSamplerState(descriptor: smooth)
@@ -513,7 +514,7 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
         var drawn: [CanvasGeometry] = []
         for handle in scene.order {
             guard let subject = scene.drawables[handle], subject.isVisible,
-                  let record = record(for: handle, subject, device: device),
+                  let record = record(for: handle, subject, queue: commandQueue),
                   let buffers = record.buffers
             else { continue }
 
@@ -576,7 +577,8 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
 
     /// Compiles a drawable's stages only when they actually differ, and
     /// re-uploads its vertices only when those do.
-    private func record(for handle: Int, _ subject: CanvasDrawable, device: MTLDevice) -> Built? {
+    private func record(for handle: Int, _ subject: CanvasDrawable, queue: MTLCommandQueue) -> Built? {
+        let device = queue.device
         if var existing = built[handle],
            existing.vertexMetal == subject.vertexMetal,
            existing.fragmentMetal == subject.fragmentMetal {
@@ -587,7 +589,7 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
             }
             if existing.stamps != Self.stamps(of: subject) {
                 existing.stamps = Self.stamps(of: subject)
-                existing.textures = Self.textures(for: subject, device: device)
+                existing.textures = Self.textures(for: subject, queue: queue)
                 built[handle] = existing
             }
             return existing
@@ -625,7 +627,7 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
             geometry: subject.geometry,
             buffers: CanvasGeometryBuffers(subject.geometry, from: gpuBuffers!),
             stamps: Self.stamps(of: subject),
-            textures: Self.textures(for: subject, device: device))
+            textures: Self.textures(for: subject, queue: queue))
         built[handle] = record
         return record
     }
@@ -650,9 +652,9 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
 
     /// The drawable's samplers in the order the preamble declares them: its
     /// runs of values first, then its pictures.
-    private static func textures(for subject: CanvasDrawable, device: MTLDevice) -> [MTLTexture] {
-        subject.buffers.compactMap { sheet(for: $0, device: device) }
-            + subject.images.compactMap { picture(for: $0, device: device) }
+    private static func textures(for subject: CanvasDrawable, queue: MTLCommandQueue) -> [MTLTexture] {
+        subject.buffers.compactMap { sheet(for: $0, device: queue.device) }
+            + subject.images.compactMap { picture(for: $0, queue: queue) }
     }
 
     private static func sheet(for buffer: CanvasBuffer, device: MTLDevice) -> MTLTexture? {
@@ -671,11 +673,12 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
         return texture
     }
 
-    private static func picture(for image: CanvasImage, device: MTLDevice) -> MTLTexture? {
+    private static func picture(for image: CanvasImage, queue: MTLCommandQueue) -> MTLTexture? {
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .bgra8Unorm, width: image.width, height: image.height, mipmapped: false)
+            pixelFormat: .bgra8Unorm, width: image.width, height: image.height, mipmapped: true)
+        descriptor.mipmapLevelCount = min(descriptor.mipmapLevelCount, GlyphAtlas.mipmapLevels + 1)
         descriptor.usage = [.shaderRead]
-        guard let texture = device.makeTexture(descriptor: descriptor) else { return nil }
+        guard let texture = queue.device.makeTexture(descriptor: descriptor) else { return nil }
 
         image.pixels.withUnsafeBytes { bytes in
             texture.replace(
@@ -683,6 +686,11 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
                 mipmapLevel: 0,
                 withBytes: bytes.baseAddress!,
                 bytesPerRow: image.width * MemoryLayout<UInt32>.stride)
+        }
+        if let buffer = queue.makeCommandBuffer(), let blit = buffer.makeBlitCommandEncoder() {
+            blit.generateMipmaps(for: texture)
+            blit.endEncoding()
+            buffer.commit()
         }
         return texture
     }

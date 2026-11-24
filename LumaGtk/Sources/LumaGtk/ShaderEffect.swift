@@ -625,10 +625,11 @@ private struct Picture {
         epoxy_glActiveTexture(GLenum(GL_TEXTURE0 + Int32(unit)))
         epoxy_glBindTexture(GLenum(GL_TEXTURE_2D), texture)
         if isDirty {
-            texture.clampSmooth()
+            texture.clampMipmapped()
             epoxy_glTexImage2D(
                 GLenum(GL_TEXTURE_2D), 0, GL_RGBA8, GLsizei(width), GLsizei(height), 0,
                 GLenum(GL_BGRA), GLenum(GL_UNSIGNED_BYTE), pixels)
+            epoxy_glGenerateMipmap(GLenum(GL_TEXTURE_2D))
             isDirty = false
         }
         epoxy_glUniform1i(location, GLint(unit))
@@ -1054,6 +1055,12 @@ extension GLuint {
 
     func clampSmooth() {
         clamp(filter: GL_LINEAR)
+    }
+
+    func clampMipmapped() {
+        clampSmooth()
+        epoxy_glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_MIN_FILTER), GL_LINEAR_MIPMAP_LINEAR)
+        epoxy_glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_MAX_LEVEL), GLint(GlyphAtlas.mipmapLevels))
     }
 
     private func clamp(filter: Int32) {

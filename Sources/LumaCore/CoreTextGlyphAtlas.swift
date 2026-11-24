@@ -22,11 +22,11 @@ public enum CoreTextGlyphAtlas {
 
         let ascent = CTFontGetAscent(font)
         let descent = CTFontGetDescent(font)
-        // A guard texel each side, so a cell is never sampled into its
-        // neighbor, and whole texels so it is sampled on its own grid.
+        // Blank around the ink and cells on the mipmap levels' own grid, so a
+        // cell is never sampled into its neighbor, minified or not.
         let widest = advances.max() ?? Float(pixelSize)
-        let cellWidth = Int(widest.rounded(.up)) + 2
-        let cellHeight = Int((ascent + descent).rounded(.up)) + 2
+        let cellWidth = GlyphAtlas.cellLength(holding: Int(widest.rounded(.up)))
+        let cellHeight = GlyphAtlas.cellLength(holding: Int((ascent + descent).rounded(.up)))
         let columns = 16
         let rows = (codes.count + columns - 1) / columns
 

@@ -23,6 +23,12 @@ public struct GlyphAtlas: Sendable {
 
     public static let first = 32
     public static let last = 126
+    public static let mipmapLevels = 3
+
+    public static func cellLength(holding ink: Int) -> Int {
+        let block = 1 << mipmapLevels
+        return (ink + 2 * block) / block * block
+    }
 
     public init(
         pixels: [UInt32],
