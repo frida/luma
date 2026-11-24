@@ -18,7 +18,7 @@ public enum PharoLumaBindings {
     /// the line it would have printed.
     private static let source = """
         | record event records sessions entries events hostError host runOwner run subscription view project definitions
-          classDefinition methodDefinition journal synth voice tune canvas drawable label |
+          classDefinition methodDefinition journal synth voice tune canvas drawable label glyphs |
         record := Object << #LumaRecord slots: { #fields. #icon }; package: 'Luma'; install.
         record compile: 'setFields: aDictionary icon: anIcon
             fields := aDictionary.
@@ -739,7 +739,7 @@ public enum PharoLumaBindings {
                 return: TFBasicType void
                 with: { scene. handle. 1 }'.
 
-        label := Object << #LumaText slots: { #drawable. #points. #padding. #atlas }; package: 'Luma'; install.
+        label := Object << #LumaText slots: { #drawable. #points. #padding. #glyphs }; package: 'Luma'; install.
         label class compile: 'on: aDrawable
             ^ self on: aDrawable pointSize: 22'.
         label class compile: 'on: aDrawable pointSize: aSize
@@ -757,54 +757,15 @@ public enum PharoLumaBindings {
             points := aSize.
             padding := 16 @ 16'.
         label compile: 'buildAtlas
-            "Drawn at as many pixels as it will cover, so a texel lands on a
-             pixel. Two until a view says what one is worth."
-            | scale |
-            scale := drawable scale > 0 ifTrue: [ drawable scale ] ifFalse: [ 2 ].
-            atlas ifNotNil: [ LumaHost invoke: ''luma_glyphs_discard''
-                parameters: { TFBasicType sint } return: TFBasicType void with: { atlas } ].
-            atlas := LumaHost invoke: ''luma_glyphs_make''
-                parameters: { TFBasicType sint }
-                return: TFBasicType sint
-                with: { (points * scale) rounded }.
-            self toFinalizeSend: #discardAtlas: to: LumaText with: atlas.
-            LumaHost invoke: ''luma_glyphs_apply''
-                parameters: { TFBasicType sint. TFBasicType sint. TFBasicType sint. TFBasicType pointer }
-                return: TFBasicType void
-                with: { atlas. drawable scene. drawable handle. ''glyphs'' }'.
-        label class compile: 'count
-            "How many atlases the host is holding."
-            ^ LumaHost invoke: ''luma_glyphs_count''
-                parameters: #() return: TFBasicType sint with: #()'.
-        label class compile: 'discardAtlas: anAtlas
-            ^ LumaHost invoke: ''luma_glyphs_discard''
-                parameters: { TFBasicType sint } return: TFBasicType void with: { anAtlas }'.
-        label compile: 'metric: anIndex
-            ^ LumaHost invoke: ''luma_glyphs_metric''
-                parameters: { TFBasicType sint. TFBasicType sint }
-                return: TFBasicType float
-                with: { atlas. anIndex }'.
-        label compile: 'sheetWidth ^ self metric: 0'.
-        label compile: 'sheetHeight ^ self metric: 1'.
-        label compile: 'cellWidth ^ self metric: 2'.
-        label compile: 'cellHeight ^ self metric: 3'.
-        label compile: 'columns ^ (self metric: 4) rounded'.
-        label compile: 'inkTop ^ self metric: 5'.
-        label compile: 'inkBottom ^ self metric: 6'.
-        label compile: 'advanceOf: aCharacter
-            ^ LumaHost invoke: ''luma_glyphs_advance''
-                parameters: { TFBasicType sint. TFBasicType sint }
-                return: TFBasicType float
-                with: { atlas. aCharacter asInteger }'.
-        label compile: 'first ^ 32'.
-        label compile: 'last ^ 126'.
+            glyphs := LumaGlyphs pointSize: points for: drawable.
+            glyphs applyTo: drawable'.
         label compile: 'buildStages
             drawable
                 attribute: ''p'' components: 2;
                 attribute: ''glyph'' components: 2;
                 varying: ''uv'' components: 2;
                 uniform: ''pad'' value: self padInPixels;
-                uniform: ''size'' value: self cellHeight;
+                uniform: ''size'' value: glyphs cellHeight;
                 uniform: ''tint'' value: #(1 1 1);
                 vertexSource: ''void main() {
                     uv = glyph;
@@ -830,37 +791,91 @@ public enum PharoLumaBindings {
             | scale |
             scale := drawable scale > 0 ifTrue: [ drawable scale ] ifFalse: [ 2 ].
             ^ { padding x * scale. padding y * scale }'.
-        label compile: 'cellOrigin: aCode
-            | index |
-            index := aCode - self first.
-            ^ (index \\\\ self columns * self cellWidth) @ (index // self columns * self cellHeight)'.
         label compile: 'show: aString
             "Two triangles a letter, over the cell it was drawn in, laid out
              along the baseline in cells."
             | corners pen band cell |
             corners := OrderedCollection new.
             pen := 0.0.
-            cell := self cellHeight.
-            band := self inkBottom - self inkTop.
+            cell := glyphs cellHeight.
+            band := glyphs inkBottom - glyphs inkTop.
             aString do: [ :each |
                 | code origin wide high |
                 code := each asInteger.
-                (code between: self first and: self last)
+                (code between: glyphs first and: glyphs last)
                     ifTrue: [
-                        origin := self cellOrigin: code.
-                        wide := self cellWidth / cell.
+                        origin := glyphs cellOrigin: code.
+                        wide := glyphs cellWidth / cell.
                         high := band / cell.
                         #(#(0 0) #(1 0) #(0 1) #(1 0) #(1 1) #(0 1)) do: [ :corner |
                             | cx cy |
                             cx := corner at: 1. cy := corner at: 2.
                             corners
                                 add: pen + (cx * wide); add: (cy - 1) * high;
-                                add: (origin x + (cx * self cellWidth)) / self sheetWidth;
-                                add: (origin y + self inkTop + ((1 - cy) * band)) / self sheetHeight ].
-                        pen := pen + ((self advanceOf: each) / cell) ]
-                    ifFalse: [ pen := pen + 0.5 ] ].
+                                add: (origin x + (cx * glyphs cellWidth)) / glyphs sheetWidth;
+                                add: (origin y + glyphs inkTop + ((1 - cy) * band)) / glyphs sheetHeight ] ].
+                pen := pen + ((glyphs advanceOf: each) / cell) ].
             ^ drawable remesh: corners primitive: #triangles'.
+        label compile: 'widthOf: aString
+            ^ (aString inject: 0 into: [ :sum :each | sum + (self advanceOf: each) ]) * points / glyphs pixelSize'.
+        label compile: 'advanceOf: aCharacter
+            ^ glyphs advanceOf: aCharacter'.
         label compile: 'drawable ^ drawable'.
+        label compile: 'glyphs ^ glyphs'.
+
+        glyphs := Object << #LumaGlyphs slots: { #handle. #pixelSize }; package: 'Luma'; install.
+        glyphs class compile: 'pointSize: aSize for: aDrawable
+            ^ self pixelSize: (aSize * (aDrawable scale > 0 ifTrue: [ aDrawable scale ] ifFalse: [ 2 ])) rounded'.
+        glyphs class compile: 'pixelSize: aSize
+            | made |
+            made := self basicNew
+                setHandle: (LumaHost invoke: ''luma_glyphs_make''
+                    parameters: { TFBasicType sint } return: TFBasicType sint with: { aSize })
+                pixelSize: aSize.
+            made toFinalizeSend: #discard: to: self with: made handle.
+            ^ made'.
+        glyphs class compile: 'discard: aHandle
+            ^ LumaHost invoke: ''luma_glyphs_discard''
+                parameters: { TFBasicType sint } return: TFBasicType void with: { aHandle }'.
+        glyphs class compile: 'count
+            ^ LumaHost invoke: ''luma_glyphs_count''
+                parameters: #() return: TFBasicType sint with: #()'.
+        glyphs compile: 'setHandle: aHandle pixelSize: aSize
+            handle := aHandle.
+            pixelSize := aSize'.
+        glyphs compile: 'handle ^ handle'.
+        glyphs compile: 'pixelSize ^ pixelSize'.
+        glyphs compile: 'printOn: aStream
+            aStream nextPutAll: ''LumaGlyphs(''; print: pixelSize; nextPutAll: '' pixels)'''.
+        glyphs compile: 'applyTo: aDrawable
+            LumaHost invoke: ''luma_glyphs_apply''
+                parameters: { TFBasicType sint. TFBasicType sint. TFBasicType sint. TFBasicType pointer }
+                return: TFBasicType void
+                with: { handle. aDrawable scene. aDrawable handle. ''glyphs'' }.
+            ^ aDrawable'.
+        glyphs compile: 'metric: anIndex
+            ^ LumaHost invoke: ''luma_glyphs_metric''
+                parameters: { TFBasicType sint. TFBasicType sint }
+                return: TFBasicType float
+                with: { handle. anIndex }'.
+        glyphs compile: 'sheetWidth ^ self metric: 0'.
+        glyphs compile: 'sheetHeight ^ self metric: 1'.
+        glyphs compile: 'cellWidth ^ self metric: 2'.
+        glyphs compile: 'cellHeight ^ self metric: 3'.
+        glyphs compile: 'columns ^ (self metric: 4) rounded'.
+        glyphs compile: 'inkTop ^ self metric: 5'.
+        glyphs compile: 'inkBottom ^ self metric: 6'.
+        glyphs compile: 'advanceOf: aCharacter
+            ^ LumaHost invoke: ''luma_glyphs_advance''
+                parameters: { TFBasicType sint. TFBasicType sint }
+                return: TFBasicType float
+                with: { handle. aCharacter asInteger }'.
+        glyphs compile: 'first ^ 32'.
+        glyphs compile: 'last ^ 126'.
+        glyphs compile: 'cellOrigin: aCode
+            | index |
+            index := aCode - self first.
+            ^ (index \\\\ self columns * self cellWidth) @ (index // self columns * self cellHeight)'.
 
         view := SwpTextView << #LumaView slots: { #kindName }; package: 'Luma'; install.
         view compile: 'kindName: aString

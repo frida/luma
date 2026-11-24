@@ -511,6 +511,14 @@ carries how many physical pixels a logical one is worth, so the quads
 land on whole pixels instead of being scaled, which is what would
 make the lettering soft.
 
+The atlas is a `LumaGlyphs` of its own, which `LumaText` is only one
+user of: `applyTo:` hands its picture to any drawable as the sampler
+`glyphs`, and its measures are what an author lays glyph quads out
+with, so a view can letter thousands of labels in one drawable of its
+own. Such vertices are built in a `ByteArray` and handed over through
+`LumaBytes holding:`, one copy, rather than through `mesh:`, which
+crosses into the host a float at a time.
+
 Keep `gl_Position.z` within 0..1. OpenGL's clip space runs -1..1 and
 Metal's runs 0..1, so a negative depth draws on GTK and is clipped
 away on macOS -- which no compiler will catch either. `LumaDrawable`'s

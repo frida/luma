@@ -119,7 +119,7 @@ enum RenderTests {
     /// examples actually do, through the bindings, the bridge and the
     /// canvas view.
     private static func fromTheImage(writingTo directory: String) -> Int32 {
-        let probes = [("pharo-lettering", letteringSnippet)] + projectionProbes + meshProbes
+        let probes = [("pharo-lettering", letteringSnippet), ("pharo-glyphs", glyphsSnippet)] + projectionProbes + meshProbes
             + [("pharo-arrays", arraysSnippet)]
         let scenes = scenesFromTheImage(evaluating: probes.map(\.1))
         var failures: Int32 = 0
@@ -279,6 +279,51 @@ enum RenderTests {
         canvas := LumaCanvas new.
         sign := LumaText on: canvas addDrawable pointSize: 34.
         sign pad: #(20 18) tint: #(0.2 0.95 0.75); show: 'GTK'.
+        canvas
+        """
+
+    private static let glyphsSnippet = """
+        | canvas labels glyphs scales text bytes at put held top |
+        canvas := LumaCanvas new.
+        labels := canvas addDrawable.
+        glyphs := LumaGlyphs pointSize: 18 for: labels.
+        glyphs applyTo: labels.
+        labels
+            attribute: 'p' components: 2;
+            attribute: 'glyph' components: 2;
+            attribute: 'shade' components: 1;
+            varying: 'uv' components: 2;
+            varying: 'tone' components: 1;
+            vertexSource: 'void main() {
+                uv = glyph;
+                tone = shade;
+                gl_Position = vec4(p.x / u_resolution.x * 2.0 - 1.0, 1.0 - p.y / u_resolution.y * 2.0, 0.5, 1.0); }'
+            fragmentSource: 'void main() {
+                float ink = texture(glyphs, uv).a;
+                if (ink < 0.02) discard;
+                frag_color = vec4(mix(vec3(0.95, 0.55, 0.2), vec3(0.3, 0.8, 0.95), tone) * ink, ink); }';
+            commit.
+        scales := { 1. 1 / 2. 1 / 4. 1 / 6 }.
+        text := 'videotestsrc0 ! capsfilter0 ! autovideosink0'.
+        bytes := ByteArray new: scales size * text size * 6 * 5 * 4.
+        at := 0.
+        put := [ :value | bytes float32AtOffset: at put: value asFloat. at := at + 4 ].
+        top := 8.
+        scales doWithIndex: [ :scale :row | | pen |
+            pen := 16.
+            text do: [ :each | | origin |
+                origin := glyphs cellOrigin: each asInteger.
+                #(#(0 0) #(1 0) #(0 1) #(1 0) #(1 1) #(0 1)) do: [ :corner |
+                    put value: pen + (corner first * glyphs cellWidth * scale).
+                    put value: top + (corner last * (glyphs inkBottom - glyphs inkTop) * scale).
+                    put value: origin x + (corner first * glyphs cellWidth) / glyphs sheetWidth.
+                    put value: origin y + glyphs inkTop + (corner last * (glyphs inkBottom - glyphs inkTop)) / glyphs sheetHeight.
+                    put value: row - 1 / 3 ].
+                pen := pen + ((glyphs advanceOf: each) * scale) ].
+            top := top + ((glyphs inkBottom - glyphs inkTop) * scale) + 8 ].
+        held := LumaBytes holding: bytes.
+        labels vertices: held primitive: #triangles.
+        held release.
         canvas
         """
 
