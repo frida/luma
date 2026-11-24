@@ -427,6 +427,7 @@ private func fetchFunctionEnd(hex: String) async -> UInt64? {
             await r2.config.set("asm.os", string: processInfo.platform)
             await r2.config.set("asm.arch", string: Self.r2Arch(fromFridaArch: processInfo.arch))
             await r2.config.set("asm.bits", int: processInfo.pointerSize * 8)
+            await Self.keepESILFromSearchingForAStack(in: r2)
 
             await r2.cmd("on frida-mem://0x0 0 rx")
             await r2.cmd("=!")
@@ -436,6 +437,11 @@ private func fetchFunctionEnd(hex: String) async -> UInt64? {
 
         openTask = task
         await task.value
+    }
+
+    private static func keepESILFromSearchingForAStack(in r2: R2Core) async {
+        await r2.config.set("esil.stack.addr", int: 0)
+        await r2.config.set("io.mapinc", int: 0)
     }
 
     private func applyUserInsightNames() async {
