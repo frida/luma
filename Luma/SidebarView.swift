@@ -829,9 +829,7 @@ private struct SidebarInstrumentRow: View {
                 }
             } label: {
                 Label(
-                    instance.state == .enabled
-                        ? "Disable \"\(descriptor.displayName)\""
-                        : "Enable \"\(descriptor.displayName)\"",
+                    instance.state == .enabled ? "Disable" : "Enable",
                     systemImage: instance.state == .enabled ? "pause.circle" : "play.circle"
                 )
             }
@@ -845,16 +843,16 @@ private struct SidebarInstrumentRow: View {
             }
         }
         .confirmationDialog(
-            "Delete Instrument?",
+            "Delete \"\(descriptor.displayName)\"?",
             isPresented: $isShowingDeleteConfirm,
             titleVisibility: .visible
         ) {
-            Button("Delete Instrument", role: .destructive) {
+            Button("Delete", role: .destructive) {
                 deleteInstrument()
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This will remove \"\(descriptor.displayName)\" from this session.")
+            Text("This removes the instrument from this session.")
         }
     }
 

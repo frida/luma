@@ -465,7 +465,7 @@ struct AddInstrumentSheet: View {
                 .font(.system(size: 32))
             Text("Create a Custom Instrument")
                 .font(.headline)
-            Text("Custom instruments are TypeScript snippets you write inline. They are saved with the project, can be added to multiple sessions, and synchronized when collaboration is enabled. After creating one you can rename it, choose an icon, and define toggleable features from the sidebar.")
+            Text("Custom instruments are TypeScript snippets you write inline. They are saved with the project, can be added to multiple sessions, and synchronized when collaboration is enabled. After creating one you can rename it, choose an icon, and define toggleable settings from the sidebar.")
                 .foregroundStyle(.secondary)
             Spacer()
         }

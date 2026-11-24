@@ -9,10 +9,7 @@ struct CustomInstrumentCompatibilityPopover: View {
     @State private var draftPlatforms: Set<String> = []
     @State private var draftOSIDs: Set<String> = []
     @State private var draftArchs: Set<String> = []
-
-    private static let knownPlatforms = ["windows", "darwin", "linux", "freebsd", "qnx", "barebone"]
-    private static let knownOSIDs = ["windows", "macos", "linux", "ios", "watchos", "tvos", "visionos", "android", "freebsd", "qnx"]
-    private static let knownArchs = ["ia32", "x64", "arm", "arm64", "mips"]
+    @State private var isCancelled = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -22,19 +19,42 @@ struct CustomInstrumentCompatibilityPopover: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            axisSection("Platforms", known: Self.knownPlatforms, displayName: InstrumentCompatibility.platformDisplayName, selection: $draftPlatforms)
-            axisSection("Operating Systems", known: Self.knownOSIDs, displayName: InstrumentCompatibility.osDisplayName, selection: $draftOSIDs)
-            axisSection("Architectures", known: Self.knownArchs, displayName: InstrumentCompatibility.archDisplayName, selection: $draftArchs)
+            axisSection(
+                "Platforms",
+                known: InstrumentCompatibility.knownPlatforms,
+                displayName: InstrumentCompatibility.platformDisplayName,
+                selection: $draftPlatforms
+            )
+            axisSection(
+                "Operating Systems",
+                known: InstrumentCompatibility.knownOSIDs,
+                displayName: InstrumentCompatibility.osDisplayName,
+                selection: $draftOSIDs
+            )
+            axisSection(
+                "Architectures",
+                known: InstrumentCompatibility.knownArchs,
+                displayName: InstrumentCompatibility.archDisplayName,
+                selection: $draftArchs
+            )
 
             HStack {
                 Spacer()
-                Button("Done") { commit() }
+                Button("Cancel") {
+                    isCancelled = true
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+                Button("Save") { dismiss() }
                     .keyboardShortcut(.defaultAction)
             }
         }
         .padding(12)
         .popoverFormSheet(width: 480)
         .onAppear { syncDraft() }
+        .onDisappear {
+            if !isCancelled { commit() }
+        }
     }
 
     private func axisSection(
@@ -98,15 +118,7 @@ struct CustomInstrumentCompatibilityPopover: View {
     }
 
     private func commit() {
-        var updated = def
-        updated.compatibility = InstrumentCompatibility(
-            platforms: draftPlatforms,
-            osIDs: draftOSIDs,
-            archs: draftArchs
-        )
-        Task { @MainActor in
-            engine.updateCustomInstrument(updated)
-            dismiss()
-        }
+        let compatibility = InstrumentCompatibility(platforms: draftPlatforms, osIDs: draftOSIDs, archs: draftArchs)
+        engine.updateCustomInstrument(def.id) { $0.compatibility = compatibility }
     }
 }

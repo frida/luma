@@ -13,12 +13,13 @@ struct CustomInstrumentWidgetsPopover: View {
     @State private var isAdding: Bool = false
     @State private var nameAutoFilled: Bool = true
     @State private var expandedID: String? = nil
+    @State private var isCancelled = false
     @FocusState private var draftFocus: NewWidgetField?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Widgets").font(.headline)
-            Text("Live UI elements rendered alongside the feature controls. Graphs receive points your agent code pushes via `ctx.widget(id).push(...)`. Lists hold items the agent maintains; per-item action buttons post events back to your `onAction` handler.")
+            Text("Live UI elements rendered alongside the settings. Graphs receive points your agent code pushes via `ctx.widget(id).push(...)`. Lists hold items the agent maintains; per-item action buttons post events back to your `onAction` handler.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -27,6 +28,10 @@ struct CustomInstrumentWidgetsPopover: View {
 
             if isAdding {
                 addRow
+            }
+
+            if let countProblem = InstrumentWidget.countProblem(draftWidgets.count) {
+                ProblemLine(text: "widgets: \(countProblem)")
             }
 
             HStack {
@@ -39,13 +44,22 @@ struct CustomInstrumentWidgetsPopover: View {
                     )
                 }
                 Spacer()
-                Button("Done") { commit() }
+                Button("Cancel") {
+                    isCancelled = true
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+                Button("Save") { dismiss() }
                     .keyboardShortcut(.defaultAction)
+                    .disabled(hasProblem)
             }
         }
         .padding(12)
         .popoverFormSheet(width: 520)
         .onAppear { draftWidgets = def.widgets }
+        .onDisappear {
+            if !isCancelled { commit() }
+        }
     }
 
     private var addRow: some View {
@@ -57,7 +71,7 @@ struct CustomInstrumentWidgetsPopover: View {
                     applyIDChange(newValue)
                 }
                 .onSubmit(addWidget)
-            TextField("Name", text: $draftName)
+            TextField("Name (leave empty for no title)", text: $draftName)
                 .focused($draftFocus, equals: .name)
                 .onChange(of: draftName) { _, newValue in
                     if newValue != CamelCase.humanized(draftID) {
@@ -113,6 +127,10 @@ struct CustomInstrumentWidgetsPopover: View {
         }
     }
 
+    private var hasProblem: Bool {
+        InstrumentWidget.countProblem(draftWidgets.count) != nil || draftWidgets.contains { $0.problem != nil }
+    }
+
     private func flushDraft() {
         addWidget()
         resetDraft()
@@ -126,9 +144,7 @@ struct CustomInstrumentWidgetsPopover: View {
     }
 
     private var addDisabled: Bool {
-        let id = draftID.trimmingCharacters(in: .whitespaces)
-        let name = draftName.trimmingCharacters(in: .whitespaces)
-        return id.isEmpty || name.isEmpty
+        draftID.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     private func applyIDChange(_ newValue: String) {
@@ -145,23 +161,20 @@ struct CustomInstrumentWidgetsPopover: View {
     private func addWidget() {
         let id = draftID.trimmingCharacters(in: .whitespaces)
         let name = draftName.trimmingCharacters(in: .whitespaces)
-        guard !id.isEmpty, !name.isEmpty, !draftWidgets.contains(where: { $0.id == id }) else { return }
-        draftWidgets.append(InstrumentWidget(id: id, name: name, kind: draftKind.defaultKind()))
+        guard !id.isEmpty, !draftWidgets.contains(where: { $0.id == id }) else { return }
+        draftWidgets.append(InstrumentWidget(id: id, name: name.isEmpty ? nil : name, kind: draftKind.defaultKind()))
         draftID = ""
         draftName = ""
         nameAutoFilled = true
+        draftKind = .graph
         expandedID = id
         isAdding = false
     }
 
     private func commit() {
         if isAdding { flushDraft() }
-        var updated = def
-        updated.widgets = draftWidgets
-        Task { @MainActor in
-            engine.updateCustomInstrument(updated)
-            dismiss()
-        }
+        let widgets = draftWidgets
+        engine.updateCustomInstrument(def.id) { $0.widgets = widgets }
     }
 }
 
@@ -229,8 +242,10 @@ private struct WidgetRow: View {
                 }
                 .buttonStyle(.borderless)
                 Text(widget.id).font(.system(.caption, design: .monospaced))
-                Text("—").foregroundStyle(.secondary)
-                Text(widget.name)
+                if let title = widget.title {
+                    Text("—").foregroundStyle(.secondary)
+                    Text(title)
+                }
                 Spacer()
                 Picker("", selection: kindBinding) {
                     ForEach(WidgetKindChoice.allCases) { k in
@@ -249,11 +264,16 @@ private struct WidgetRow: View {
             }
             if isExpanded {
                 VStack(alignment: .leading, spacing: 8) {
+                    titleField
                     persistencePicker
                     kindEditor
+                    WidgetActionsEditor(title: "Actions", actions: $widget.actions)
                 }
                 .padding(.leading, 20)
                 .padding(.top, 4)
+            }
+            if let problem = widget.problem {
+                ProblemLine(text: problem.described)
             }
         }
         .padding(.horizontal, 8)
@@ -264,7 +284,22 @@ private struct WidgetRow: View {
     private var kindBinding: Binding<WidgetKindChoice> {
         Binding(
             get: { WidgetKindChoice(from: widget.kind) },
-            set: { widget.kind = $0.defaultKind() }
+            set: { if $0 != WidgetKindChoice(from: widget.kind) { widget.kind = $0.defaultKind() } }
+        )
+    }
+
+    private var titleField: some View {
+        HStack(spacing: 8) {
+            Text("Name").font(.subheadline).frame(width: 96, alignment: .leading)
+            TextField("Leave empty for no title", text: titleBinding)
+                .textFieldStyle(.roundedBorder)
+        }
+    }
+
+    private var titleBinding: Binding<String> {
+        Binding(
+            get: { widget.title ?? "" },
+            set: { widget.name = $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
         )
     }
 
@@ -310,13 +345,13 @@ private struct WidgetRow: View {
         case .list:
             VStack(alignment: .leading, spacing: 8) {
                 capRow(label: "Max items", binding: listMaxItemsBinding)
-                ListActionsEditor(actions: listActionsBinding)
+                WidgetActionsEditor(title: "Row actions", actions: listActionsBinding)
             }
         case .table:
             VStack(alignment: .leading, spacing: 8) {
                 capRow(label: "Max rows", binding: tableMaxRowsBinding)
                 TableColumnsEditor(columns: tableColumnsBinding)
-                ListActionsEditor(actions: tableActionsBinding)
+                WidgetActionsEditor(title: "Row actions", actions: tableActionsBinding)
             }
         case .hex:
             capRow(label: "Max bytes", binding: hexMaxBytesBinding)
@@ -391,7 +426,12 @@ private struct WidgetRow: View {
                 if case .graph(let cfg) = widget.kind { return cfg.series }
                 return []
             },
-            set: { widget.kind = .graph(InstrumentWidget.GraphConfig(series: $0)) }
+            set: { newValue in
+                if case .graph(var cfg) = widget.kind {
+                    cfg.series = newValue
+                    widget.kind = .graph(cfg)
+                }
+            }
         )
     }
 
@@ -413,10 +453,15 @@ private struct WidgetRow: View {
     private var listActionsBinding: Binding<[InstrumentWidget.Action]> {
         Binding(
             get: {
-                if case .list(let cfg) = widget.kind { return cfg.actions }
+                if case .list(let cfg) = widget.kind { return cfg.rowActions }
                 return []
             },
-            set: { widget.kind = .list(InstrumentWidget.ListConfig(actions: $0)) }
+            set: { newValue in
+                if case .list(var cfg) = widget.kind {
+                    cfg.rowActions = newValue
+                    widget.kind = .list(cfg)
+                }
+            }
         )
     }
 
@@ -453,12 +498,12 @@ private struct WidgetRow: View {
     private var tableActionsBinding: Binding<[InstrumentWidget.Action]> {
         Binding(
             get: {
-                if case .table(let cfg) = widget.kind { return cfg.actions }
+                if case .table(let cfg) = widget.kind { return cfg.rowActions }
                 return []
             },
             set: { newValue in
                 if case .table(var cfg) = widget.kind {
-                    cfg.actions = newValue
+                    cfg.rowActions = newValue
                     widget.kind = .table(cfg)
                 }
             }
@@ -760,7 +805,8 @@ private struct TableColumnsEditor: View {
     }
 }
 
-private struct ListActionsEditor: View {
+private struct WidgetActionsEditor: View {
+    let title: String
     @Binding var actions: [InstrumentWidget.Action]
     @State private var draftID: String = ""
     @State private var draftName: String = ""
@@ -769,7 +815,7 @@ private struct ListActionsEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Actions").font(.caption).foregroundStyle(.secondary)
+            Text(title).font(.caption).foregroundStyle(.secondary)
             ForEach(actions.indices, id: \.self) { i in
                 HStack(spacing: 6) {
                     TextField("id", text: idBinding(at: i))
@@ -857,3 +903,26 @@ private let capFormatter: NumberFormatter = {
     f.minimum = 1
     return f
 }()
+
+private struct ProblemLine: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(.red)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+extension InstrumentWidget.Problem {
+    fileprivate var described: String {
+        let place = path.enumerated().map { offset, step in
+            switch step {
+            case .key(let key): offset == 0 ? key : ".\(key)"
+            case .index(let index): "[\(index)]"
+            }
+        }.joined()
+        return "\(place): \(text)"
+    }
+}

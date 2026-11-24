@@ -49,7 +49,7 @@ struct StorePublishSheet: View {
 
     private var desktopLayout: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Publish to the Store")
+            Text("Publish to Store")
                 .font(.title2.bold())
                 .padding(.horizontal)
                 .padding(.top)
@@ -89,7 +89,7 @@ struct StorePublishSheet: View {
                         .background(.bar)
                 }
             }
-            .navigationTitle("Publish to the Store")
+            .navigationTitle("Publish to Store")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -112,12 +112,12 @@ struct StorePublishSheet: View {
             ContentUnavailableView(
                 "Can\u{2019}t Publish",
                 systemImage: "storefront",
-                description: Text("This account may not publish to the store.")
+                description: Text(StorefrontError.notPublisher.localizedDescription)
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .failed(let message):
             ContentUnavailableView(
-                "Can\u{2019}t Reach the Store",
+                "Can\u{2019}t Publish",
                 systemImage: "exclamationmark.triangle",
                 description: Text(message)
             )
@@ -289,8 +289,8 @@ struct StorePublishSheet: View {
                 stage = .notPublisher
                 return
             }
-            try await storefront.loadCategories()
             let draft = try storefront.publishDraft(forCustomInstrument: defID)
+            try await storefront.loadCategories()
             fields = ReleaseFields(draft: draft, categories: storefront.categories)
             stage = .ready(publisherHandle: publisher.handle, slug: draft.slug, hasReadme: draft.description != nil)
         } catch StorefrontError.signInCancelled {

@@ -568,6 +568,7 @@ struct ObjectFieldsEditor: View {
         if kindHasChildren {
             expandedFieldID = id
             isAddingField = false
+            draftKind = .boolean
         } else {
             expandedFieldID = nil
             draftFocus = .id
@@ -598,7 +599,7 @@ private struct ObjectFieldRow: View {
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                 }
                 .buttonStyle(.borderless)
-                TextField("id", text: $field.id)
+                TextField("id", text: idBinding)
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 110)
                 TextField("Name", text: $field.name)
@@ -634,6 +635,16 @@ private struct ObjectFieldRow: View {
             }
             expandedID = field.id
         }
+    }
+
+    private var idBinding: Binding<String> {
+        Binding(
+            get: { field.id },
+            set: { newID in
+                if expandedID == field.id { expandedID = newID }
+                field.id = newID
+            }
+        )
     }
 }
 

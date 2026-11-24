@@ -74,8 +74,6 @@ struct CustomInstrumentPackagesPopover: View {
     }
 
     private func setDependency(name: String, versionSpec: String?) {
-        guard var updated = engine.customInstruments.def(withId: def.id) else { return }
-        updated.dependencies[name] = versionSpec
-        engine.updateCustomInstrument(updated)
+        engine.updateCustomInstrument(def.id) { $0.dependencies[name] = versionSpec }
     }
 }

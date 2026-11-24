@@ -62,16 +62,7 @@ struct SidebarCustomInstrumentDefRow: View {
     var isExpanded: Bool = false
     var onToggleExpansion: () -> Void = {}
 
-    @State private var isShowingRename = false
-    @State private var isShowingCompatibility = false
-    @State private var isShowingFeatures = false
-    @State private var isShowingWidgets = false
-    @State private var isShowingPackages = false
-    @State private var isShowingDeleteConfirm = false
-    @State private var addFilePrompt = AddFilePromptState()
-    @State private var renameEntrypointPrompt = RenamePromptState()
-    @State private var exportBundle: InstrumentFolderExportBundle?
-    @State private var exportErrorMessage: String?
+    @State private var presentation = CustomInstrumentMenuPresentation()
 
     var body: some View {
         HStack(spacing: 0) {
@@ -95,152 +86,9 @@ struct SidebarCustomInstrumentDefRow: View {
         .padding(.vertical, 2)
         .accessibilityIdentifier("sidebar.customInstrument.\(def.id.uuidString)")
         .contextMenu {
-            Button {
-                isShowingRename = true
-            } label: {
-                Label("Rename & Icon\u{2026}", systemImage: "pencil")
-            }
-            Button {
-                isShowingCompatibility = true
-            } label: {
-                Label("Compatibility\u{2026}", systemImage: "checkmark.shield")
-            }
-            Button {
-                isShowingFeatures = true
-            } label: {
-                Label("Features\u{2026}", systemImage: "switch.2")
-            }
-            Button {
-                isShowingWidgets = true
-            } label: {
-                Label("Widgets\u{2026}", systemImage: "chart.xyaxis.line")
-            }
-            Button {
-                isShowingPackages = true
-            } label: {
-                Label("Packages\u{2026}", systemImage: "shippingbox")
-            }
-            Divider()
-            Button {
-                addFilePrompt.present()
-            } label: {
-                Label("Add File\u{2026}", systemImage: "plus")
-            }
-            Button {
-                renameEntrypointPrompt.present(current: def.entrypoint)
-            } label: {
-                Label("Rename Entrypoint File\u{2026}", systemImage: "pencil")
-            }
-            Divider()
-            if engine.instrumentFolderLinks[def.id] != nil {
-                Button(action: reloadFromFolder) {
-                    Label("Reload from Folder", systemImage: "arrow.down.doc")
-                }
-                if engine.instrumentFolderDrifts[def.id] == .diverged {
-                    Button(action: writeToFolder) {
-                        Label("Write to Folder", systemImage: "arrow.up.doc")
-                    }
-                }
-                Button {
-                    engine.unlinkInstrumentFolder(defID: def.id)
-                } label: {
-                    Label("Unlink Folder", systemImage: "minus.circle")
-                }
-            }
-            Button {
-                presentExportPicker()
-            } label: {
-                Label("Export to Folder\u{2026}", systemImage: "square.and.arrow.up")
-            }
-            Button(role: .destructive) {
-                isShowingDeleteConfirm = true
-            } label: {
-                Label("Delete Custom Instrument", systemImage: "trash")
-            }
+            CustomInstrumentMenuItems(def: def, engine: engine, presentation: $presentation)
         }
-        .alert("Add File", isPresented: $addFilePrompt.isPresented) {
-            TextField("path/to/file.ts", text: $addFilePrompt.draft)
-                .disableAutocorrection(true)
-            Button("Add") { commitAddFile() }
-                .disabled(!addFilePrompt.canCommit)
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Relative path inside this instrument. Subdirectories allowed. Use .hexpat for a pattern, .pat for a pattern library.")
-        }
-        .alert("Rename Entrypoint File", isPresented: $renameEntrypointPrompt.isPresented) {
-            TextField("path/to/file.ts", text: $renameEntrypointPrompt.draft)
-                .disableAutocorrection(true)
-            Button("Rename") { commitRenameEntrypoint() }
-                .disabled(!renameEntrypointPrompt.canCommit(originalPath: def.entrypoint))
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Renames the entrypoint file and updates the entrypoint automatically.")
-        }
-        .popover(isPresented: $isShowingRename, arrowEdge: .trailing) {
-            CustomInstrumentRenamePopover(
-                def: def,
-                engine: engine
-            )
-        }
-        .popover(isPresented: $isShowingCompatibility, arrowEdge: .trailing) {
-            CustomInstrumentCompatibilityPopover(
-                def: def,
-                engine: engine
-            )
-        }
-        .popover(isPresented: $isShowingFeatures, arrowEdge: .trailing) {
-            CustomInstrumentFeaturesPopover(
-                def: def,
-                engine: engine
-            )
-        }
-        .popover(isPresented: $isShowingWidgets, arrowEdge: .trailing) {
-            CustomInstrumentWidgetsPopover(
-                def: def,
-                engine: engine
-            )
-        }
-        .popover(isPresented: $isShowingPackages, arrowEdge: .trailing) {
-            CustomInstrumentPackagesPopover(
-                def: def,
-                engine: engine,
-                selection: $selection
-            )
-        }
-        .confirmationDialog(
-            "Delete \"\(def.name)\"?",
-            isPresented: $isShowingDeleteConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                let defID = def.id
-                Task { @MainActor in
-                    await engine.deleteCustomInstrument(defID)
-                    if selection?.belongsTo(defID: defID) ?? false {
-                        selection = .notebook
-                    }
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This removes the custom instrument from the project and from any sessions where it is loaded.")
-        }
-        .fileExporter(
-            isPresented: exportPickerBinding,
-            document: exportBundle.map(InstrumentFolderExportDocument.init),
-            contentType: .folder,
-            defaultFilename: InstrumentFolderExportDocument.suggestedFilename(for: def.name)
-        ) { result in
-            if case .failure(let error) = result {
-                exportErrorMessage = error.localizedDescription
-            }
-            exportBundle = nil
-        }
-        .alert("Custom instrument error", isPresented: exportErrorBinding, presenting: exportErrorMessage) { _ in
-            Button("OK") { exportErrorMessage = nil }
-        } message: { message in
-            Text(message)
-        }
+        .customInstrumentMenuPresentations(def: def, engine: engine, selection: $selection, presentation: $presentation)
     }
 
     @ViewBuilder
@@ -289,75 +137,12 @@ struct SidebarCustomInstrumentDefRow: View {
         }
     }
 
-    private var exportPickerBinding: Binding<Bool> {
-        Binding(
-            get: { exportBundle != nil },
-            set: { if !$0 { exportBundle = nil } }
-        )
-    }
-
-    private var exportErrorBinding: Binding<Bool> {
-        Binding(
-            get: { exportErrorMessage != nil },
-            set: { if !$0 { exportErrorMessage = nil } }
-        )
-    }
-
-    private func presentExportPicker() {
-        do {
-            exportBundle = InstrumentFolderExportBundle(files: try engine.exportedFiles(forCustomInstrument: def.id))
-        } catch {
-            exportErrorMessage = error.localizedDescription
-        }
-    }
-
     private func reloadFromFolder() {
-        do {
-            try engine.reloadCustomInstrumentFromFolder(defID: def.id)
-        } catch {
-            exportErrorMessage = error.localizedDescription
-        }
+        presentation.reloadFromFolder(def.id, engine: engine)
     }
 
     private func writeToFolder() {
-        do {
-            try engine.writeCustomInstrumentToFolder(defID: def.id)
-        } catch {
-            exportErrorMessage = error.localizedDescription
-        }
-    }
-
-    private func commitAddFile() {
-        let trimmed = addFilePrompt.normalizedPath
-        guard !trimmed.isEmpty else { return }
-        let defID = def.id
-        Task { @MainActor in
-            do {
-                let path = try engine.addCustomInstrumentFile(defID: defID, path: trimmed)
-                selection = .customInstrumentFile(defID, path)
-            } catch {
-                exportErrorMessage = error.localizedDescription
-            }
-        }
-        addFilePrompt.reset()
-    }
-
-    private func commitRenameEntrypoint() {
-        let from = def.entrypoint
-        let to = renameEntrypointPrompt.normalizedPath
-        guard !to.isEmpty, to != from else { return }
-        let defID = def.id
-        Task { @MainActor in
-            do {
-                let renamedPath = try engine.renameCustomInstrumentFile(defID: defID, from: from, to: to)
-                if selection == .customInstrumentFile(defID, from) {
-                    selection = .customInstrumentFile(defID, renamedPath)
-                }
-            } catch {
-                exportErrorMessage = error.localizedDescription
-            }
-        }
-        renameEntrypointPrompt.reset()
+        presentation.writeToFolder(def.id, engine: engine)
     }
 }
 
@@ -378,8 +163,15 @@ struct AddFilePromptState {
     var isPresented = false
     var draft = ""
 
-    var canCommit: Bool { !normalizedPath.isEmpty }
     var normalizedPath: String { draft.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    func canCommit(defID: UUID, engine: Engine) -> Bool {
+        !normalizedPath.isEmpty && problem(defID: defID, engine: engine) == nil
+    }
+
+    func problem(defID: UUID, engine: Engine) -> String? {
+        normalizedPath.isEmpty ? nil : engine.customInstrumentFileProblem(defID: defID, path: normalizedPath)
+    }
 
     mutating func present() {
         draft = ""
@@ -403,7 +195,6 @@ struct SidebarCustomInstrumentFileRow: View {
     @State private var errorMessage: String?
 
     private var isEntrypoint: Bool { file.path == def.entrypoint }
-    private var canDelete: Bool { !isEntrypoint }
 
     var body: some View {
         HStack(spacing: 6) {
@@ -426,28 +217,31 @@ struct SidebarCustomInstrumentFileRow: View {
                 } label: {
                     Label("Set as Entrypoint", systemImage: "play.circle")
                 }
-                Divider()
             }
             Button {
                 renamePrompt.present(current: file.path)
             } label: {
                 Label("Rename\u{2026}", systemImage: "pencil")
             }
-            Button(role: .destructive) {
-                isShowingDeleteConfirm = true
-            } label: {
-                Label("Delete", systemImage: "trash")
+            if !isEntrypoint {
+                Divider()
+                Button(role: .destructive) {
+                    isShowingDeleteConfirm = true
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
             }
-            .disabled(!canDelete)
         }
-        .alert("Rename File", isPresented: $renamePrompt.isPresented) {
-            TextField("path/to/file.ts", text: $renamePrompt.draft)
-                .disableAutocorrection(true)
-            Button("Rename") { commitRename() }
-                .disabled(!renamePrompt.canCommit(originalPath: file.path))
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(isEntrypoint ? "Renaming the entrypoint updates the entrypoint automatically." : "Relative path inside this instrument.")
+        .popover(isPresented: $renamePrompt.isPresented, arrowEdge: .trailing) {
+            CustomInstrumentFilePathPopover(
+                title: "Rename File",
+                hint: isEntrypoint
+                    ? "Renaming the entrypoint updates the entrypoint automatically." : "Relative path inside this instrument.",
+                commitLabel: "Rename",
+                draft: $renamePrompt.draft,
+                problem: renamePrompt.problem(originalPath: file.path, defID: def.id, engine: engine),
+                canCommit: renamePrompt.canCommit(originalPath: file.path, defID: def.id, engine: engine),
+                onCommit: commitRename)
         }
         .confirmationDialog(
             "Delete \"\(file.path)\"?",
@@ -526,9 +320,14 @@ struct RenamePromptState {
 
     var normalizedPath: String { draft.trimmingCharacters(in: .whitespacesAndNewlines) }
 
-    func canCommit(originalPath: String) -> Bool {
-        let trimmed = normalizedPath
-        return !trimmed.isEmpty && trimmed != originalPath
+    func canCommit(originalPath: String, defID: UUID, engine: Engine) -> Bool {
+        !normalizedPath.isEmpty && normalizedPath != originalPath
+            && problem(originalPath: originalPath, defID: defID, engine: engine) == nil
+    }
+
+    func problem(originalPath: String, defID: UUID, engine: Engine) -> String? {
+        guard !normalizedPath.isEmpty, normalizedPath != originalPath else { return nil }
+        return engine.customInstrumentFileProblem(defID: defID, path: normalizedPath)
     }
 
     mutating func present(current: String) {
@@ -605,10 +404,11 @@ struct CustomInstrumentRenamePopover: View {
     @State private var draftName: String = ""
     @State private var draftIcon: InstrumentIcon = .symbolic(InstrumentIconCatalog.default.id)
     @State private var isPickingFile = false
+    @State private var isCancelled = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Rename Instrument").font(.headline)
+            Text("Rename & Icon").font(.headline)
             TextField("Name", text: $draftName)
                 .textFieldStyle(.roundedBorder)
                 .accessibilityIdentifier("customInstrument.rename.name")
@@ -617,10 +417,14 @@ struct CustomInstrumentRenamePopover: View {
             customBitmapRow
             HStack {
                 Spacer()
-                Button("Cancel") { dismiss() }
-                Button("Save") { commit() }
+                Button("Cancel") {
+                    isCancelled = true
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+                Button("Save") { dismiss() }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(draftName.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(trimmedName.isEmpty)
             }
         }
         .padding(12)
@@ -628,6 +432,9 @@ struct CustomInstrumentRenamePopover: View {
         .onAppear {
             draftName = def.name
             draftIcon = def.icon
+        }
+        .onDisappear {
+            if !isCancelled { commit() }
         }
         .fileImporter(
             isPresented: $isPickingFile,
@@ -642,7 +449,7 @@ struct CustomInstrumentRenamePopover: View {
 
     private var iconGrid: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.fixed(32)), count: 8), spacing: 8) {
-            ForEach(InstrumentIconCatalog.userPickable, id: \.id) { concept in
+            ForEach(InstrumentIconCatalog.all, id: \.id) { concept in
                 Button {
                     draftIcon = .symbolic(concept.id)
                 } label: {
@@ -689,13 +496,17 @@ struct CustomInstrumentRenamePopover: View {
         draftIcon = .pixels(normalized)
     }
 
+    private var trimmedName: String {
+        draftName.trimmingCharacters(in: .whitespaces)
+    }
+
     private func commit() {
-        var updated = def
-        updated.name = draftName.trimmingCharacters(in: .whitespaces)
-        updated.icon = draftIcon
-        Task { @MainActor in
-            engine.updateCustomInstrument(updated)
-            dismiss()
+        guard !trimmedName.isEmpty else { return }
+        let name = trimmedName
+        let icon = draftIcon
+        engine.updateCustomInstrument(def.id) {
+            $0.name = name
+            $0.icon = icon
         }
     }
 }

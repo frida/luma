@@ -244,12 +244,13 @@ struct CustomInstrumentFeaturesPopover: View {
     @State private var isAddingFeature: Bool = false
     @State private var nameAutoFilled: Bool = true
     @State private var expandedFeatureID: String? = nil
+    @State private var isCancelled = false
     @FocusState private var draftFocus: NewFeatureField?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Features").font(.headline)
-            Text("Per-session knobs the user can configure. Each has a typed schema (boolean, number, string, regex, combo, object, array, …). Agent code reads `config.features.<id>` directly; optional features may be undefined when the user has disabled them.")
+            Text("Settings").font(.headline)
+            Text("Per-session knobs the user can configure. Each has a typed schema (boolean, number, string, regex, combo, object, array, …). Agent code reads `config.settings.<id>` directly; optional settings may be undefined when the user has disabled them.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -291,18 +292,26 @@ struct CustomInstrumentFeaturesPopover: View {
                     toggleAdding()
                 } label: {
                     Label(
-                        isAddingFeature ? "Done Adding" : "Add Feature",
+                        isAddingFeature ? "Done Adding" : "Add Setting",
                         systemImage: isAddingFeature ? "checkmark" : "plus"
                     )
                 }
                 Spacer()
-                Button("Done") { commit() }
+                Button("Cancel") {
+                    isCancelled = true
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+                Button("Save") { dismiss() }
                     .keyboardShortcut(.defaultAction)
             }
         }
         .padding(12)
         .popoverFormSheet(width: 520)
         .onAppear { draftFeatures = def.features }
+        .onDisappear {
+            if !isCancelled { commit() }
+        }
     }
 
     private func toggleAdding() {
@@ -349,7 +358,7 @@ struct CustomInstrumentFeaturesPopover: View {
     private var featureList: some View {
         let content = VStack(alignment: .leading, spacing: 8) {
             if draftFeatures.isEmpty {
-                Text("No features defined.").font(.caption).foregroundStyle(.secondary)
+                Text("No settings defined.").font(.caption).foregroundStyle(.secondary)
             } else {
                 ForEach($draftFeatures) { $feature in
                     FeatureRow(feature: $feature, expandedID: $expandedFeatureID) {
@@ -388,6 +397,7 @@ struct CustomInstrumentFeaturesPopover: View {
         if kindHasChildren {
             expandedFeatureID = id
             isAddingFeature = false
+            newFeatureKind = .boolean
         } else {
             expandedFeatureID = nil
             draftFocus = .id
@@ -398,12 +408,8 @@ struct CustomInstrumentFeaturesPopover: View {
         if isAddingFeature {
             flushDraft()
         }
-        var updated = def
-        updated.features = draftFeatures
-        Task { @MainActor in
-            engine.updateCustomInstrument(updated)
-            dismiss()
-        }
+        let features = draftFeatures
+        engine.updateCustomInstrument(def.id) { $0.features = features }
     }
 }
 
