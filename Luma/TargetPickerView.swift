@@ -1020,6 +1020,9 @@ struct TargetPickerView: View {
         .padding(.vertical, 2)
         .contentShape(Rectangle())
         .tag(proc.pid)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { attach(to: device, process: proc) }
         .accessibilityIdentifier("targetPicker.process.\(proc.name)")
         .onTapGesture {
             attach(to: device, process: proc)
