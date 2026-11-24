@@ -453,8 +453,8 @@ final class ShaderEffect {
             surface,
             "notify::state",
             unsafeBitCast(Self.toplevelStateChanged, to: GCallback.self),
-            Unmanaged.passUnretained(self).toOpaque(),
-            nil,
+            Unmanaged.passRetained(TickTarget(effect: self)).toOpaque(),
+            { target, _ in Unmanaged<TickTarget>.fromOpaque(target!).release() },
             GConnectFlags(rawValue: 0))
         toplevel = (surface, handler)
         followToplevel()
@@ -465,10 +465,10 @@ final class ShaderEffect {
             UnsafeMutableRawPointer,
             UnsafeMutableRawPointer?,
             UnsafeMutableRawPointer?
-        ) -> Void = { _, _, owner in
-            let address = UInt(bitPattern: owner)
+        ) -> Void = { _, _, target in
+            let address = UInt(bitPattern: target)
             MainActor.assumeIsolated {
-                Unmanaged<ShaderEffect>.fromOpaque(UnsafeRawPointer(bitPattern: address)!).takeUnretainedValue().followToplevel()
+                Unmanaged<TickTarget>.fromOpaque(UnsafeRawPointer(bitPattern: address)!).takeUnretainedValue().effect?.followToplevel()
             }
         }
 
