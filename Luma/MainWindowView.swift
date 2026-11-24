@@ -356,23 +356,26 @@ private struct ProjectContentView: View {
     }
 
     private var eventStreamResizeHandle: some View {
-        Rectangle()
-            .fill(.clear)
-            .frame(height: 11)
-            .overlay { Divider() }
-            .contentShape(Rectangle())
-            .platformPointer(.rowResize)
-            .gesture(
-                DragGesture(coordinateSpace: .global)
-                    .onChanged { value in
-                        let start = dragStartHeight ?? engine.projectUIState.eventStreamBottomHeight
-                        dragStartHeight = start
-                        let maxHeight = max(Self.minEventStreamHeight, Double(availableHeight - Self.minMainContentHeight))
-                        let proposed = start - Double(value.translation.height)
-                        engine.setEventStreamBottomHeight(min(max(proposed, Self.minEventStreamHeight), maxHeight))
-                    }
-                    .onEnded { _ in dragStartHeight = nil }
-            )
+        Divider()
+            .overlay {
+                Rectangle()
+                    .fill(.clear)
+                    .frame(height: 11)
+                    .contentShape(Rectangle())
+                    .platformPointer(.rowResize)
+                    .gesture(
+                        DragGesture(coordinateSpace: .global)
+                            .onChanged { value in
+                                let start = dragStartHeight ?? engine.projectUIState.eventStreamBottomHeight
+                                dragStartHeight = start
+                                let maxHeight = max(Self.minEventStreamHeight, Double(availableHeight - Self.minMainContentHeight))
+                                let proposed = start - Double(value.translation.height)
+                                engine.setEventStreamBottomHeight(min(max(proposed, Self.minEventStreamHeight), maxHeight))
+                            }
+                            .onEnded { _ in dragStartHeight = nil }
+                    )
+            }
+            .zIndex(1)
     }
 }
 
