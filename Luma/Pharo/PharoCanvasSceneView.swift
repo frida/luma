@@ -12,7 +12,16 @@ import SwiftUI
 /// A scene drawn inside an object's views. The image holds the scene and
 /// changes it; this follows, rebuilding only what differs so moving a
 /// drawable does not recompile its shaders.
-struct PharoCanvasSceneView: PlatformViewRepresentable {
+struct PharoCanvasSceneView: View {
+    let scene: Int
+
+    var body: some View {
+        CanvasSceneRepresentable(scene: scene)
+            .id(scene)
+    }
+}
+
+private struct CanvasSceneRepresentable: PlatformViewRepresentable {
     let scene: Int
 
     func makeCoordinator() -> CanvasSceneRenderer {
