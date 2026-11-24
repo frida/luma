@@ -26,13 +26,13 @@ private final class CodeShareDetailUI: InstrumentDetailUI {
         self.engine = engine
         self.instrument = instrument
 
-        let column = Box(orientation: .vertical, spacing: 8)
+        let column = Box(orientation: .vertical, spacing: 12)
         column.hexpand = true
         column.vexpand = true
-        column.marginStart = 24
-        column.marginEnd = 24
+        column.marginStart = 8
+        column.marginEnd = 8
         column.marginTop = 8
-        column.marginBottom = 12
+        column.marginBottom = 8
         self.column = column
         widget = column
 

@@ -12,8 +12,13 @@ final class CustomInstrumentDefPane {
     private(set) var file: CustomInstrumentFile
 
     var onRevertNavigation: ((String) -> Void)?
+    var onPresentMenu: ((Button) -> Void)?
 
     private weak var engine: Engine?
+    private let headerIconHost = Box(orientation: .horizontal, spacing: 0)
+    private let headerNameLabel = Label(str: "")
+    private let headerPathLabel = Label(str: "")
+    private let menuButton = Button()
     private let sourceEditor: CodeEditor
     private let saveBar: SaveBar
     private let updateBanner: StoreUpdateBanner
@@ -72,6 +77,7 @@ final class CustomInstrumentDefPane {
         let takesStoredContent = pathChanged || (storedContentChanged && !isDirty())
         self.def = def
         self.file = file
+        refreshHeader()
         let packages = (try? engine?.store.fetchPackagesState().packages) ?? []
         sourceEditor.setProfile(currentProfile(def: def, file: file, packages: packages))
         if takesStoredContent {
@@ -150,7 +156,48 @@ final class CustomInstrumentDefPane {
         overlay.set(child: container)
         overlay.addOverlay(widget: saveBar.widget)
         widget.append(child: updateBanner.widget)
+        widget.append(child: makeHeader())
         widget.append(child: overlay)
+    }
+
+    private func makeHeader() -> Box {
+        let header = Box(orientation: .horizontal, spacing: 8)
+        header.marginStart = 12
+        header.marginEnd = 8
+        header.marginTop = 6
+        header.marginBottom = 6
+        headerIconHost.valign = .center
+        header.append(child: headerIconHost)
+        headerNameLabel.add(cssClass: "heading")
+        headerNameLabel.ellipsize = .end
+        header.append(child: headerNameLabel)
+        headerPathLabel.add(cssClass: "caption")
+        headerPathLabel.add(cssClass: "dim-label")
+        headerPathLabel.ellipsize = .middle
+        headerPathLabel.halign = .start
+        headerPathLabel.hexpand = true
+        header.append(child: headerPathLabel)
+        menuButton.set(iconName: "view-more-symbolic")
+        menuButton.add(cssClass: "flat")
+        menuButton.tooltipText = "Custom instrument actions"
+        menuButton.onClicked { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.onPresentMenu?(self.menuButton)
+            }
+        }
+        header.append(child: menuButton)
+        refreshHeader()
+        return header
+    }
+
+    private func refreshHeader() {
+        if let icon = headerIconHost.firstChild {
+            headerIconHost.remove(child: icon)
+        }
+        headerIconHost.append(child: InstrumentIconView.makeImage(for: def.icon, pixelSize: 16))
+        headerNameLabel.label = def.name
+        headerPathLabel.label = file.path
     }
 
     private func commit() {

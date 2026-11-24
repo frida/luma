@@ -31,6 +31,8 @@ final class ConsoleView {
     private let cellsScroll: ScrolledWindow
     private let scroller: BottomScroller
     private let contentSlot: Box
+    private let separator: Separator
+    private let inputRow: Box
     private let prompt: Label
     private let inputEntry: Entry
     private let runButton: Button
@@ -81,9 +83,10 @@ final class ConsoleView {
         contentSlot.append(child: emptyState)
         widget.append(child: contentSlot)
 
-        widget.append(child: Separator(orientation: .horizontal))
+        separator = Separator(orientation: .horizontal)
+        widget.append(child: separator)
 
-        let inputRow = Box(orientation: .horizontal, spacing: 8)
+        inputRow = Box(orientation: .horizontal, spacing: 8)
         inputRow.marginStart = 12
         inputRow.marginEnd = 12
         inputRow.marginTop = 6
@@ -108,6 +111,27 @@ final class ConsoleView {
 
         installInputHandlers()
         installBackgroundContextMenu()
+    }
+
+    func fitLogToContent(minHeight: Int, maxHeight: Int) {
+        widget.vexpand = false
+        contentSlot.vexpand = false
+        cellsScroll.vexpand = false
+        cellsScroll.remove(cssClass: "view")
+        cellsScroll.propagateNaturalHeight = true
+        cellsScroll.minContentHeight = minHeight
+        cellsScroll.maxContentHeight = maxHeight
+        cellsBox.spacing = 2
+        cellsBox.marginStart = 0
+        cellsBox.marginEnd = 0
+        cellsBox.marginTop = 0
+        cellsBox.marginBottom = 0
+        separator.visible = false
+        inputRow.spacing = 6
+        inputRow.marginStart = 0
+        inputRow.marginEnd = 0
+        inputRow.marginBottom = 0
+        prompt.add(cssClass: "luma-console-prompt")
     }
 
     func appendEntry(_ child: Widget) {

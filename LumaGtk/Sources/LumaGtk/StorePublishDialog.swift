@@ -15,9 +15,10 @@ final class StorePublishDialog {
     private let publishSpinner: Spinner
     private let failureLabel: Label
     private let scroll: ScrolledWindow
-    private let packageRow: Adw.ActionRow
-    private let descriptionRow: Adw.ActionRow
+    private let publishesAsLabel: Label
+    private let readmeLabel: Label
     private let versionRow: Adw.EntryRow
+    private let versionHint: Label
     private let summaryRow: Adw.EntryRow
     private let summaryLengthLabel: Label
     private let categoryRow: Adw.ComboRow
@@ -80,16 +81,15 @@ final class StorePublishDialog {
         failureLabel.marginTop = 12
         failureLabel.visible = false
 
-        packageRow = Adw.ActionRow()
-        packageRow.title = "Package"
-        packageRow.add(cssClass: "property")
-
-        descriptionRow = Adw.ActionRow()
-        descriptionRow.title = "Description"
-        descriptionRow.add(cssClass: "property")
+        publishesAsLabel = Self.makeNote()
+        readmeLabel = Self.makeNote()
 
         versionRow = Adw.EntryRow()
-        versionRow.title = "Version (MAJOR.MINOR.PATCH)"
+        versionRow.title = "Version"
+        versionHint = Self.makeNote()
+        versionHint.label = "Use MAJOR.MINOR.PATCH, such as 1.2.0."
+        versionHint.add(cssClass: "error")
+        versionHint.visible = false
 
         summaryRow = Adw.EntryRow()
         summaryRow.title = "Summary"
@@ -103,12 +103,12 @@ final class StorePublishDialog {
         categoryRow.title = "Category"
 
         accessRow = Adw.ComboRow()
-        accessRow.title = "Available To"
+        accessRow.title = "Access"
         accessRow.set(model: makeStringList(AccessChoice.allCases.map(\.label)))
 
         minimumRow = Adw.SpinRow(range: 1, max: 10_000, step: 1)
-        minimumRow.title = "Minimum Sponsorship"
-        minimumRow.subtitle = "US dollars per month"
+        minimumRow.title = "Minimum per Month"
+        minimumRow.subtitle = "US dollars"
 
         notesView = TextView()
         notesView.wrapMode = .word
@@ -157,10 +157,20 @@ final class StorePublishDialog {
         page.marginTop = 48
         page.marginBottom = 48
         page.append(child: makeSpinner())
-        let label = Label(str: "Connecting to the store\u{2026}")
+        let label = Label(str: "Connecting to the Store\u{2026}")
         label.add(cssClass: "dim-label")
         page.append(child: label)
         return page
+    }
+
+    private static func makeNote() -> Label {
+        let label = Label(str: "")
+        label.add(cssClass: "caption")
+        label.add(cssClass: "dim-label")
+        label.wrap = true
+        label.xalign = 0
+        label.marginTop = 6
+        return label
     }
 
     private func close() {
@@ -183,7 +193,6 @@ final class StorePublishDialog {
                 )
                 close()
                 return
-            } catch StorefrontError.signInCancelled {
             } catch {
                 showFailure(error.localizedDescription)
             }
@@ -194,18 +203,17 @@ final class StorePublishDialog {
 
     private func connect() async {
         do {
-            let account = try await storefront.requireAccount()
-            guard account.publisher != nil else {
-                showRefusal(title: "Publishing Not Available", message: StorefrontError.notPublisher.localizedDescription)
+            guard let publisher = try await storefront.requireAccount().publisher else {
+                showRefusal(title: "Can\u{2019}t Publish", message: StorefrontError.notPublisher.localizedDescription)
                 return
             }
             let draft = try storefront.publishDraft(forCustomInstrument: def.id)
             try await storefront.loadCategories()
-            showForm(draft: draft)
+            showForm(draft: draft, publisherHandle: publisher.handle)
         } catch StorefrontError.signInCancelled {
             close()
         } catch {
-            showRefusal(title: "Cannot Publish", message: error.localizedDescription)
+            showRefusal(title: "Can\u{2019}t Publish", message: error.localizedDescription)
         }
     }
 
@@ -216,38 +224,41 @@ final class StorePublishDialog {
         fitHeightToContent()
     }
 
-    private func showForm(draft: StorePublishDraft) {
-        let instrumentGroup = Adw.PreferencesGroup()
-        instrumentGroup.title = def.name
-        instrumentGroup.add(child: packageRow)
-        instrumentGroup.add(child: descriptionRow)
-
-        let listingGroup = Adw.PreferencesGroup()
-        listingGroup.title = "Listing"
-        listingGroup.add(child: versionRow)
-        listingGroup.add(child: summaryRow)
-        listingGroup.add(child: categoryRow)
-        listingGroup.add(child: accessRow)
-        listingGroup.add(child: minimumRow)
-
+    private func showForm(draft: StorePublishDraft, publisherHandle: String) {
         let notesScroll = ScrolledWindow()
         notesScroll.setSizeRequest(width: -1, height: 120)
         notesScroll.add(cssClass: "card")
         notesScroll.set(child: notesView)
 
-        let notesGroup = Adw.PreferencesGroup()
-        notesGroup.title = "What\u{2019}s New"
-        notesGroup.description = "Becomes this version\u{2019}s entry in the item\u{2019}s version history."
-        notesGroup.add(child: notesScroll)
+        let notesTitle = Label(str: "What\u{2019}s New")
+        notesTitle.halign = .start
+        notesTitle.marginTop = 12
+        notesTitle.add(cssClass: "heading")
+
+        let releaseGroup = Adw.PreferencesGroup()
+        releaseGroup.title = "Release"
+        releaseGroup.add(child: versionRow)
+        releaseGroup.add(child: versionHint)
+        releaseGroup.add(child: notesTitle)
+        releaseGroup.add(child: notesScroll)
+        releaseGroup.add(child: publishesAsLabel)
+        publishesAsLabel.label = "Publishes as \(publisherHandle)/\(draft.slug)."
+
+        let listingGroup = Adw.PreferencesGroup()
+        listingGroup.title = "Listing"
+        listingGroup.add(child: summaryRow)
+        listingGroup.add(child: categoryRow)
+        listingGroup.add(child: accessRow)
+        listingGroup.add(child: minimumRow)
+        listingGroup.add(child: readmeLabel)
 
         let form = Box(orientation: .vertical, spacing: 18)
         form.marginStart = 18
         form.marginEnd = 18
         form.marginTop = 12
         form.marginBottom = 18
-        form.append(child: instrumentGroup)
+        form.append(child: releaseGroup)
         form.append(child: listingGroup)
-        form.append(child: notesGroup)
         scroll.set(child: form)
 
         fill(from: draft)
@@ -273,11 +284,10 @@ final class StorePublishDialog {
     }
 
     private func fill(from draft: StorePublishDraft) {
-        packageRow.subtitle = draft.slug
-        descriptionRow.subtitle =
+        readmeLabel.label =
             draft.description == nil
-            ? "No README.md found, so the listing has no description"
-            : "The folder\u{2019}s README.md"
+            ? "The folder has no README.md, so the listing will have no description."
+            : "The folder\u{2019}s README.md becomes the description."
         versionRow.text = draft.version?.description ?? ""
         summaryRow.text = draft.listing.summary
         fillCategory(from: draft)
@@ -300,9 +310,11 @@ final class StorePublishDialog {
 
     private func refreshValidity() {
         let versionText = enteredVersionText
-        markInvalid(versionRow, !versionText.isEmpty && StoreVersion(versionText) == nil)
+        let versionIsInvalid = !versionText.isEmpty && StoreVersion(versionText) == nil
+        markInvalid(versionRow, versionIsInvalid)
+        versionHint.visible = versionIsInvalid
         let summaryLength = enteredSummary.count
-        summaryLengthLabel.label = "\(summaryLength)/\(Self.summaryLimit)"
+        summaryLengthLabel.label = "\(summaryLength) of \(Self.summaryLimit) characters"
         markInvalid(summaryRow, summaryLength > Self.summaryLimit)
         minimumRow.visible = accessChoice == .sponsors
         publishButton.sensitive = phase == .editing && submission != nil

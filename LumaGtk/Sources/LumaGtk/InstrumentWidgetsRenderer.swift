@@ -1,4 +1,5 @@
 import Cairo
+import CGraphene
 import CGtk
 import Foundation
 import Gdk
@@ -12,31 +13,37 @@ final class InstrumentWidgetsRenderer {
     let widget: Box
 
     private weak var engine: Engine?
-    private let instance: LumaCore.InstrumentInstance
+    private let instance: LumaCore.InstrumentInstance?
     private var canvases: [WidgetCanvas] = []
     private var subscriber: Task<Void, Never>?
-    private var live = false
+    private let actionGate: WidgetActionGate
 
-    init(engine: Engine, instance: LumaCore.InstrumentInstance, widgets: [InstrumentWidget]) {
+    init(engine: Engine, instance: LumaCore.InstrumentInstance?, widgets: [InstrumentWidget]) {
         self.engine = engine
         self.instance = instance
+        actionGate = WidgetActionGate { [weak engine] action, widget in
+            guard let engine, let instance else { return false }
+            return action.map { engine.canChoose($0, of: widget, instance: instance) } ?? engine.canChooseWidgetActions(of: instance)
+        }
 
         widget = Box(orientation: .vertical, spacing: 12)
         widget.hexpand = true
-        widget.marginTop = 8
+
+        let updates = instance.map { _ in engine.widgetUpdates }
 
         for definition in widgets {
-            let snapshot = engine.widgetState(instanceID: instance.id, widget: definition.id)
+            let snapshot = instance.map { engine.widgetState(instanceID: $0.id, widget: definition.id) } ?? WidgetState()
             let canvas = WidgetCanvas(
                 definition: definition,
                 snapshot: snapshot,
                 engine: engine,
                 instance: instance,
+                actionGate: actionGate,
+                onWidgetAction: { [weak self] action in
+                    self?.invoke(widget: definition.id, action: action)
+                },
                 onAction: { [weak self] action, item in
                     self?.invoke(widget: definition.id, action: action, item: item)
-                },
-                onClear: { [weak self] in
-                    self?.clear(widget: definition.id)
                 },
                 onConsoleSubmit: { [weak self] text in
                     self?.submitConsole(widget: definition.id, text: text)
@@ -46,28 +53,44 @@ final class InstrumentWidgetsRenderer {
             widget.append(child: canvas.widget)
         }
 
-        startSubscriber()
+        startSubscriber(updates)
+        followAgentState()
     }
 
     deinit {
         subscriber?.cancel()
     }
 
-    func setLive(_ live: Bool) {
-        guard live != self.live else { return }
-        self.live = live
+    func refreshAgentState() {
+        actionGate.refresh()
+        let input = consoleInput
         for canvas in canvases {
-            canvas.setLive(live)
+            canvas.setConsoleInput(enabled: input.enabled, reason: input.reason)
         }
     }
 
-    private func startSubscriber() {
-        guard let engine else { return }
-        let instanceID = instance.id
+    private var consoleInput: (enabled: Bool, reason: String?) {
+        guard let engine, let instance else { return (false, "Session not attached.") }
+        if engine.canSubmitConsoleInput(of: instance) { return (true, nil) }
+        if engine.isHostedRemotelyLive(instance.sessionID) { return (false, "Only the member hosting this session can type here.") }
+        if engine.isHostingNode(instance.sessionID) { return (false, "The instrument is not running.") }
+        return (false, "Session not attached.")
+    }
+
+    private func startSubscriber(_ updates: AsyncStream<WidgetUpdate>?) {
+        guard let updates, let instanceID = instance?.id else { return }
         subscriber = Task { @MainActor [weak self] in
-            for await update in engine.widgetUpdates where update.instanceID == instanceID {
+            for await update in updates where update.instanceID == instanceID {
                 self?.dispatch(update)
             }
+        }
+    }
+
+    private func followAgentState() {
+        withObservationTracking {
+            refreshAgentState()
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.followAgentState() }
         }
     }
 
@@ -77,21 +100,22 @@ final class InstrumentWidgetsRenderer {
         }
     }
 
-    private func invoke(widget: String, action: String, item: String?) {
-        guard let engine else { return }
-        let instance = self.instance
+    private func invoke(widget: String, action: String) {
+        guard let engine, let instance else { return }
         Task { @MainActor in
-            await engine.invokeWidgetAction(instance: instance, widget: widget, action: action, item: item)
+            await engine.invokeWidgetAction(instance: instance, widget: widget, action: action)
         }
     }
 
-    private func clear(widget: String) {
-        engine?.clearWidget(instance: instance, widget: widget)
+    private func invoke(widget: String, action: String, item: String) {
+        guard let engine, let instance else { return }
+        Task { @MainActor in
+            await engine.invokeRowAction(instance: instance, widget: widget, action: action, item: item)
+        }
     }
 
     private func submitConsole(widget: String, text: String) {
-        guard let engine else { return }
-        let instance = self.instance
+        guard let engine, let instance else { return }
         Task { @MainActor in
             await engine.submitConsoleInput(instance: instance, widget: widget, text: text)
         }
@@ -102,7 +126,7 @@ final class InstrumentWidgetsRenderer {
 private final class WidgetCanvas {
     let definition: InstrumentWidget
     let widget: Box
-    private let onAction: (_ action: String, _ item: String?) -> Void
+    private let onAction: (_ action: String, _ item: String) -> Void
     private var counterView: CounterView?
     private var histogramView: HistogramView?
     private var graphView: GraphView?
@@ -116,39 +140,47 @@ private final class WidgetCanvas {
         definition: InstrumentWidget,
         snapshot: WidgetState,
         engine: Engine,
-        instance: LumaCore.InstrumentInstance,
-        onAction: @escaping (_ action: String, _ item: String?) -> Void,
-        onClear: @escaping () -> Void,
+        instance: LumaCore.InstrumentInstance?,
+        actionGate: WidgetActionGate,
+        onWidgetAction: @escaping (_ action: String) -> Void,
+        onAction: @escaping (_ action: String, _ item: String) -> Void,
         onConsoleSubmit: @escaping (_ text: String) -> Void
     ) {
         self.definition = definition
         self.onAction = onAction
 
-        widget = Box(orientation: .vertical, spacing: 4)
-        widget.add(cssClass: "card")
+        widget = Box(orientation: .vertical, spacing: 0)
+
+        if definition.title != nil || !definition.actions.isEmpty {
+            let header = Box(orientation: .horizontal, spacing: 4)
+            header.marginBottom = 4
+            header.setSizeRequest(width: -1, height: 16)
+            let title = Label(str: definition.title ?? "")
+            title.add(cssClass: "luma-widget-title")
+            title.halign = .start
+            title.xalign = 0
+            title.ellipsize = .end
+            title.hexpand = true
+            title.valign = .center
+            header.append(child: title)
+            if !definition.actions.isEmpty {
+                let actions = WidgetHeaderActions.make(definition.actions, of: definition.id, gate: actionGate, onPress: onWidgetAction)
+                header.append(child: actions)
+            }
+            widget.append(child: header)
+        }
+
+        let card = Box(orientation: .vertical, spacing: 0)
+        card.add(cssClass: "luma-widget-box")
+        Self.setAccessibleLabel(definition.label, of: card)
+        widget.append(child: card)
 
         let column = Box(orientation: .vertical, spacing: 6)
-        column.marginStart = 12
-        column.marginEnd = 12
-        column.marginTop = 12
-        column.marginBottom = 12
-        widget.append(child: column)
-
-        let header = Box(orientation: .horizontal, spacing: 8)
-        let title = Label(str: definition.name)
-        title.add(cssClass: "heading")
-        title.halign = .start
-        title.hexpand = true
-        header.append(child: title)
-        let clearButton = Button()
-        clearButton.add(cssClass: "flat")
-        clearButton.set(iconName: "user-trash-symbolic")
-        clearButton.tooltipText = "Clear"
-        clearButton.onClicked { _ in
-            MainActor.assumeIsolated { onClear() }
-        }
-        header.append(child: clearButton)
-        column.append(child: header)
+        column.marginStart = 5
+        column.marginEnd = 5
+        column.marginTop = 5
+        column.marginBottom = 5
+        card.append(child: column)
 
         switch definition.kind {
         case .counter(let cfg):
@@ -165,42 +197,62 @@ private final class WidgetCanvas {
             column.append(child: view.widget)
         case .list(let cfg):
             let view = WidgetRowList(kind: definition.kind, initial: snapshot, rows: \.listItems, header: nil, emptyText: "No items.") {
-                ListItemPresenter(actions: cfg.actions, onAction: onAction)
+                ListItemPresenter(actions: cfg.rowActions, gate: actionGate, onAction: onAction)
             }
             listView = view
             column.append(child: view.widget)
         case .table(let cfg):
-            let layout = TableLayout(columns: cfg.columns, actions: cfg.actions)
+            let layout = TableLayout(columns: cfg.columns, actions: cfg.rowActions)
             let header = layout.makeHeader()
-            let view = WidgetRowList(kind: definition.kind, initial: snapshot, rows: \.tableRows, header: header, emptyText: "No rows.") {
-                TableRowPresenter(layout: layout, onAction: onAction)
+            let view = WidgetRowList(kind: definition.kind, initial: snapshot, rows: { layout.fit($0.tableRows) }, header: header, emptyText: "No rows.") {
+                TableRowPresenter(layout: layout, gate: actionGate, onAction: onAction)
             }
             tableView = view
             column.append(child: view.widget)
         case .hex:
-            let view = HexWidgetView(initial: snapshot.hex, engine: engine, instance: instance, widgetID: definition.id)
-            hexView = view
-            column.append(child: view.widget)
+            if let instance {
+                let view = HexWidgetView(initial: snapshot.hex, engine: engine, instance: instance, widgetID: definition.id)
+                hexView = view
+                column.append(child: view.widget)
+            } else {
+                let empty = Label(str: "No data.")
+                empty.add(cssClass: "dim-label")
+                empty.add(cssClass: "luma-widget-empty")
+                empty.halign = .start
+                column.append(child: empty)
+            }
         case .console(let cfg):
             let view = ConsoleWidget(
                 config: cfg,
                 initialEntries: snapshot.consoleEntries,
-                widgetName: definition.name,
+                widgetName: definition.label,
                 engine: engine,
-                sessionID: instance.sessionID,
+                sessionID: instance?.sessionID ?? UUID(),
                 onSubmit: onConsoleSubmit
             )
             consoleWidget = view
             column.append(child: view.widget)
         case .view(let cfg):
-            let view = InstrumentViewWidget(engine: engine, key: .init(instanceID: instance.id, widget: definition.id), config: cfg)
-            viewWidget = view
-            column.append(child: view.widget)
+            if let instance {
+                let view = InstrumentViewWidget(engine: engine, key: .init(instanceID: instance.id, widget: definition.id), config: cfg)
+                viewWidget = view
+                column.append(child: view.widget)
+            }
         }
     }
 
-    func setLive(_ live: Bool) {
-        consoleWidget?.setLive(live)
+    private static func setAccessibleLabel(_ label: String, of widget: Widget) {
+        var value = GValue()
+        g_value_init(&value, GType(64))
+        g_value_set_string(&value, label)
+        var property = GTK_ACCESSIBLE_PROPERTY_LABEL
+        let accessible = UnsafeMutableRawPointer(widget.widget_ptr)?.assumingMemoryBound(to: GtkAccessible.self)
+        gtk_accessible_update_property_value(accessible, 1, &property, &value)
+        g_value_unset(&value)
+    }
+
+    func setConsoleInput(enabled: Bool, reason: String?) {
+        consoleWidget?.setInput(enabled: enabled, reason: reason)
     }
 
     func apply(_ update: WidgetUpdate) {
@@ -244,6 +296,94 @@ private final class WidgetCanvas {
 }
 
 @MainActor
+private final class WidgetActionGate {
+    private let allows: (_ action: String?, _ widget: String) -> Bool
+    private var controls: [(control: Widget, widget: String, actions: [String?])] = []
+
+    init(allows: @escaping (_ action: String?, _ widget: String) -> Bool) {
+        self.allows = allows
+    }
+
+    func refresh() {
+        for entry in controls {
+            apply(entry)
+        }
+    }
+
+    func adoptWidgetActions(_ control: Widget, widget: String, actions: [String]) {
+        adopt((control, widget, actions))
+    }
+
+    func adoptRowAction(_ control: Widget) {
+        adopt((control, "", [nil]))
+    }
+
+    private func adopt(_ entry: (control: Widget, widget: String, actions: [String?])) {
+        controls.append(entry)
+        apply(entry)
+    }
+
+    private func apply(_ entry: (control: Widget, widget: String, actions: [String?])) {
+        entry.control.sensitive = entry.actions.contains { allows($0, entry.widget) }
+    }
+}
+
+@MainActor
+private enum WidgetHeaderActions {
+    private static let shownBeforeOverflow = 3
+
+    static func make(
+        _ actions: [InstrumentWidget.Action], of widget: String, gate: WidgetActionGate, onPress: @escaping (String) -> Void
+    ) -> Box {
+        let box = Box(orientation: .horizontal, spacing: 2)
+        box.valign = .center
+        let shown = actions.count > shownBeforeOverflow ? Array(actions.prefix(shownBeforeOverflow - 1)) : actions
+        for action in shown {
+            let button = Button(label: action.name)
+            button.add(cssClass: "luma-widget-action")
+            button.valign = .center
+            button.onClicked { _ in
+                MainActor.assumeIsolated { onPress(action.id) }
+            }
+            gate.adoptWidgetActions(button, widget: widget, actions: [action.id])
+            box.append(child: button)
+        }
+        guard shown.count < actions.count else { return box }
+        let more = MenuButton()
+        more.add(cssClass: "luma-widget-action")
+        more.valign = .center
+        more.set(iconName: "view-more-symbolic")
+        more.tooltipText = "More Actions"
+        let rest = Array(actions.dropFirst(shown.count))
+        more.set(popover: overflowMenu(rest, of: widget, gate: gate, onPress: onPress))
+        gate.adoptWidgetActions(more, widget: widget, actions: rest.map(\.id))
+        box.append(child: more)
+        return box
+    }
+
+    private static func overflowMenu(
+        _ actions: [InstrumentWidget.Action], of widget: String, gate: WidgetActionGate, onPress: @escaping (String) -> Void
+    ) -> Popover {
+        let popover = Popover()
+        let list = Box(orientation: .vertical, spacing: 0)
+        for action in actions {
+            let item = Button(label: action.name)
+            item.add(cssClass: "flat")
+            item.onClicked { [popover] _ in
+                MainActor.assumeIsolated {
+                    popover.popdown()
+                    onPress(action.id)
+                }
+            }
+            gate.adoptWidgetActions(item, widget: widget, actions: [action.id])
+            list.append(child: item)
+        }
+        popover.set(child: list)
+        return popover
+    }
+}
+
+@MainActor
 private final class ConsoleWidget {
     let widget: Box
     private weak var engine: Engine?
@@ -251,6 +391,7 @@ private final class ConsoleWidget {
     private let widgetName: String
     private let console: ConsoleView
     private let inputPlaceholder: String
+    private let promptGlyph: String
     private var valueWidgetKeepers: [JSInspectValueWidget] = []
 
     init(
@@ -266,17 +407,19 @@ private final class ConsoleWidget {
         self.widgetName = widgetName
         let placeholder = config.placeholder ?? ""
         inputPlaceholder = placeholder
+        promptGlyph = config.prompt ?? "\u{203A}"
         let style = ConsoleView.Style(
-            promptGlyph: config.prompt ?? "\u{203A}",
+            promptGlyph: promptGlyph,
             placeholder: placeholder,
             runButtonLabel: config.runButtonLabel ?? "Run"
         )
         console = ConsoleView(style: style, emptyState: Self.makeEmptyState())
         console.onSubmit = onSubmit
         console.setInputEnabled(false, placeholder: "Session not attached.")
+        console.fitLogToContent(minHeight: 64, maxHeight: 400)
         widget = Box(orientation: .vertical, spacing: 0)
+        widget.add(cssClass: "luma-widget-console")
         widget.hexpand = true
-        widget.setSizeRequest(width: -1, height: 280)
         widget.append(child: console.widget)
 
         var seededHistory: [String] = []
@@ -287,8 +430,8 @@ private final class ConsoleWidget {
         console.setHistory(seededHistory)
     }
 
-    func setLive(_ live: Bool) {
-        console.setInputEnabled(live, placeholder: live ? inputPlaceholder : "Session not attached.")
+    func setInput(enabled: Bool, reason: String?) {
+        console.setInputEnabled(enabled, placeholder: reason ?? inputPlaceholder)
     }
 
     func append(entry: WidgetConsoleEntry) {
@@ -313,26 +456,27 @@ private final class ConsoleWidget {
     }
 
     private func makeRow(for entry: WidgetConsoleEntry) -> Widget {
-        let row = Box(orientation: .horizontal, spacing: 8)
+        let row = Box(orientation: .horizontal, spacing: 6)
         let glyph: String
         let bodyCssClass: String?
         switch entry.kind {
         case .input:
-            glyph = "\u{203A}"
+            glyph = promptGlyph
             bodyCssClass = nil
         case .output:
-            glyph = "\u{2190}"
+            glyph = ""
             bodyCssClass = nil
         case .image:
             glyph = "\u{1F5BC}"
             bodyCssClass = nil
         case .error:
-            glyph = "!"
+            glyph = "\u{26A0}"
             bodyCssClass = "error"
         }
         let glyphLabel = Label(str: glyph)
         glyphLabel.add(cssClass: "monospace")
-        glyphLabel.add(cssClass: "dim-label")
+        glyphLabel.add(cssClass: bodyCssClass ?? "dim-label")
+        glyphLabel.widthChars = 1
         glyphLabel.valign = .start
         row.append(child: glyphLabel)
         row.append(child: makeBody(for: entry, cssClass: bodyCssClass))
@@ -448,11 +592,12 @@ private final class GraphView {
         self.series = series
         self.points = initialSeries
 
-        widget = Box(orientation: .vertical, spacing: 0)
+        widget = Box(orientation: .vertical, spacing: 4)
         drawingArea = DrawingArea()
         drawingArea.hexpand = true
         drawingArea.contentHeight = 180
         widget.append(child: drawingArea)
+        widget.append(child: Self.makeLegend(series))
 
         drawingArea.setDrawFunc { [weak self] _, ctx, width, height in
             MainActor.assumeIsolated {
@@ -476,88 +621,179 @@ private final class GraphView {
         drawingArea.queueDraw()
     }
 
+    private static func makeLegend(_ series: [InstrumentWidget.Series]) -> Box {
+        let legend = Box(orientation: .horizontal, spacing: 12)
+        for (index, definition) in series.enumerated() {
+            let entry = Box(orientation: .horizontal, spacing: 4)
+            let swatch = DrawingArea()
+            swatch.contentWidth = 8
+            swatch.contentHeight = 8
+            swatch.valign = .center
+            swatch.setDrawFunc { _, ctx, width, height in
+                let color = ChartFrame.seriesColor(at: index)
+                ctx.setSource(red: color.0, green: color.1, blue: color.2, alpha: 1)
+                ctx.arc(xc: Double(width) / 2, yc: Double(height) / 2, radius: 4)
+                ctx.fill()
+            }
+            entry.append(child: swatch)
+            let name = Label(str: definition.name)
+            name.add(cssClass: "luma-chart-legend")
+            name.add(cssClass: "dim-label")
+            entry.append(child: name)
+            legend.append(child: entry)
+        }
+        return legend
+    }
+
     private func draw(ctx: Cairo.ContextRef, width: Double, height: Double) {
-        let bounds = computeBounds()
-        guard let bounds else {
-            drawEmptyMessage(ctx: ctx, width: width, height: height)
-            return
+        guard let bounds = computeBounds() else { return }
+        let yTicks = ChartFrame.ticks(upTo: bounds.y.upperBound, from: bounds.y.lowerBound)
+        let xTicks = ChartFrame.ticks(upTo: bounds.x.upperBound, from: bounds.x.lowerBound).filter { bounds.x.contains($0) }
+        let frame = ChartFrame(area: drawingArea, width: width, height: height, yTicks: yTicks)
+        let xRange = bounds.x
+        let yRange = yTicks.first!...yTicks.last!
+        frame.drawGrid(ctx, verticalAt: xTicks.map { frame.plot.minX + frame.plot.width * normalize($0, in: xRange) })
+        for tick in xTicks {
+            let x = frame.plot.minX + frame.plot.width * normalize(tick, in: xRange)
+            frame.drawText(ctx, ChartFrame.format(tick), x: x + 3, y: frame.plot.maxY + 3, maxWidth: nil, centered: false)
         }
 
-        let inset: Double = 8
-        let plotWidth = max(1.0, width - inset * 2)
-        let plotHeight = max(1.0, height - inset * 2)
-
-        ctx.setSource(red: 0.5, green: 0.5, blue: 0.5, alpha: 0.6)
-        ctx.lineWidth = 0.5
-        ctx.moveTo(inset, inset)
-        ctx.lineTo(inset, inset + plotHeight)
-        ctx.lineTo(inset + plotWidth, inset + plotHeight)
-        ctx.stroke()
-
         for (index, definition) in series.enumerated() {
-            guard let line = points[definition.id], line.count >= 2 else { continue }
-            let color = seriesColor(at: index)
+            guard let line = points[definition.id], !line.isEmpty else { continue }
+            let color = ChartFrame.seriesColor(at: index)
             ctx.setSource(red: color.0, green: color.1, blue: color.2, alpha: 1.0)
-            ctx.lineWidth = 1.5
-            for (i, point) in line.enumerated() {
-                let px = inset + plotWidth * normalize(point.x, in: bounds.x)
-                let py = inset + plotHeight * (1 - normalize(point.y, in: bounds.y))
-                if i == 0 {
-                    ctx.moveTo(px, py)
-                } else {
-                    ctx.lineTo(px, py)
-                }
+            let positions = line.map {
+                (frame.plot.minX + frame.plot.width * normalize($0.x, in: xRange), frame.plot.maxY - frame.plot.height * normalize($0.y, in: yRange))
+            }
+            if positions.count == 1 {
+                ctx.arc(xc: positions[0].0, yc: positions[0].1, radius: 3)
+                ctx.fill()
+                continue
+            }
+            ctx.lineWidth = 2
+            ctx.moveTo(positions[0].0, positions[0].1)
+            for position in positions.dropFirst() {
+                ctx.lineTo(position.0, position.1)
             }
             ctx.stroke()
         }
     }
 
-    private func drawEmptyMessage(ctx: Cairo.ContextRef, width: Double, height: Double) {
-        ctx.setSource(red: 0.6, green: 0.6, blue: 0.6, alpha: 1.0)
-        "monospace".withCString { ctx.selectFontFace($0) }
-        ctx.fontSize = 12
-        let text = "Waiting for data\u{2026}"
-        let extents = text.withCString { ctx.textExtents($0) }
-        ctx.moveTo((width - extents.width) / 2, (height + extents.height) / 2)
-        text.withCString { ctx.showText($0) }
-    }
-
     private func computeBounds() -> (x: ClosedRange<Double>, y: ClosedRange<Double>)? {
-        var xMin = Double.infinity
-        var xMax = -Double.infinity
-        var yMin = Double.infinity
-        var yMax = -Double.infinity
-        var count = 0
-        for line in points.values {
-            for point in line {
-                xMin = min(xMin, point.x)
-                xMax = max(xMax, point.x)
-                yMin = min(yMin, point.y)
-                yMax = max(yMax, point.y)
-                count += 1
-            }
-        }
-        guard count > 0 else { return nil }
-        if xMin == xMax { xMax = xMin + 1 }
-        if yMin == yMax { yMax = yMin + 1 }
-        return (xMin...xMax, yMin...yMax)
+        let all = points.values.joined()
+        guard let xMin = all.map(\.x).min(), let xMax = all.map(\.x).max(), let yMin = all.map(\.y).min(),
+            let yMax = all.map(\.y).max()
+        else { return nil }
+        let x = xMin == xMax ? (xMin - 0.5)...(xMax + 0.5) : xMin...xMax
+        let y = yMin == yMax ? (yMin - 0.5)...(yMax + 0.5) : yMin...yMax
+        return (x, min(0, y.lowerBound)...max(0, y.upperBound))
     }
 
     private func normalize(_ value: Double, in range: ClosedRange<Double>) -> Double {
-        let span = range.upperBound - range.lowerBound
-        guard span > 0 else { return 0 }
-        return (value - range.lowerBound) / span
+        (value - range.lowerBound) / (range.upperBound - range.lowerBound)
+    }
+}
+
+@MainActor
+private struct ChartFrame {
+    let plot: (minX: Double, maxX: Double, minY: Double, maxY: Double, width: Double, height: Double)
+    private let area: DrawingArea
+    private let yTicks: [Double]
+    private let color: GdkRGBA
+
+    static let palette: [(Double, Double, Double)] = [0x2F7BF6, 0xF08A24, 0x2EA44F, 0xE5484D, 0x8E5BD9, 0x1AA7A1, 0xA0703B, 0xD9468F].map(rgb)
+
+    nonisolated private static func rgb(_ hex: Int) -> (Double, Double, Double) {
+        let red = Double(hex >> 16) / 255
+        let green = Double((hex >> 8) & 0xFF) / 255
+        let blue = Double(hex & 0xFF) / 255
+        return (red, green, blue)
     }
 
-    private func seriesColor(at index: Int) -> (Double, Double, Double) {
-        let palette: [(Double, Double, Double)] = [
-            (0.20, 0.55, 0.92),
-            (0.92, 0.42, 0.20),
-            (0.30, 0.78, 0.42),
-            (0.78, 0.30, 0.78),
-            (0.92, 0.78, 0.20),
-        ]
-        return palette[index % palette.count]
+    static func seriesColor(at index: Int) -> (Double, Double, Double) {
+        palette[index % palette.count]
+    }
+
+    static func ticks(upTo top: Double, from bottom: Double) -> [Double] {
+        let span = top - bottom
+        let raw = span / 4
+        let magnitude = pow(10, floor(log10(raw)))
+        let step = [1.0, 2, 5, 10].map { $0 * magnitude }.first { $0 >= raw }!
+        let first = floor(bottom / step) * step
+        let last = ceil(top / step) * step
+        return stride(from: first, through: last + step / 2, by: step).map { $0 }
+    }
+
+    static func format(_ value: Double) -> String {
+        value == value.rounded() ? String(Int(value)) : String(format: "%g", value)
+    }
+
+    init(area: DrawingArea, width: Double, height: Double, yTicks: [Double]) {
+        self.area = area
+        self.yTicks = yTicks
+        var color = GdkRGBA()
+        gtk_widget_get_color(area.widget_ptr, &color)
+        self.color = color
+        let labelWidth = yTicks.map { Self.measure(area, Self.format($0)).width }.max() ?? 0
+        let labelHeight = Self.measure(area, "0").height
+        let maxX = width - labelWidth - 6
+        let minY = labelHeight / 2
+        let maxY = height - labelHeight - 4
+        plot = (0, maxX, minY, maxY, maxX, maxY - minY)
+    }
+
+    func drawGrid(_ ctx: Cairo.ContextRef, verticalAt xs: [Double]) {
+        ctx.setSource(red: Double(color.red), green: Double(color.green), blue: Double(color.blue), alpha: 0.12)
+        ctx.lineWidth = 1
+        let span = yTicks.last! - yTicks.first!
+        for tick in yTicks {
+            let y = (plot.maxY - plot.height * (tick - yTicks.first!) / span).rounded() + 0.5
+            ctx.moveTo(plot.minX, y)
+            ctx.lineTo(plot.maxX, y)
+            ctx.stroke()
+            drawText(ctx, Self.format(tick), x: plot.maxX + 6, y: y - Self.measure(area, "0").height / 2, maxWidth: nil, centered: false)
+            ctx.setSource(red: Double(color.red), green: Double(color.green), blue: Double(color.blue), alpha: 0.12)
+        }
+        ctx.setDash([2.0, 2.0], offset: 0.0)
+        for x in xs {
+            ctx.moveTo(x.rounded() + 0.5, plot.minY)
+            ctx.lineTo(x.rounded() + 0.5, plot.maxY + 4)
+            ctx.stroke()
+        }
+        ctx.setDash([], offset: 0.0)
+    }
+
+    func drawText(_ ctx: Cairo.ContextRef, _ text: String, x: Double, y: Double, maxWidth: Double?, centered: Bool) {
+        let layout = Self.layout(area, text)
+        defer { g_object_unref(layout) }
+        if let maxWidth {
+            pango_layout_set_width(layout, Int32(maxWidth * Double(PANGO_SCALE)))
+            pango_layout_set_ellipsize(layout, PANGO_ELLIPSIZE_END)
+        }
+        var width: gint = 0
+        var height: gint = 0
+        pango_layout_get_pixel_size(layout, &width, &height)
+        ctx.setSource(red: Double(color.red), green: Double(color.green), blue: Double(color.blue), alpha: 0.55)
+        ctx.moveTo(centered ? x - Double(width) / 2 : x, y)
+        pango_cairo_show_layout(ctx._ptr, layout)
+    }
+
+    private static func measure(_ area: DrawingArea, _ text: String) -> (width: Double, height: Double) {
+        let layout = layout(area, text)
+        defer { g_object_unref(layout) }
+        var width: gint = 0
+        var height: gint = 0
+        pango_layout_get_pixel_size(layout, &width, &height)
+        return (Double(width), Double(height))
+    }
+
+    private static func layout(_ area: DrawingArea, _ text: String) -> UnsafeMutablePointer<PangoLayout> {
+        let layout = gtk_widget_create_pango_layout(area.widget_ptr, text)!
+        let font = pango_font_description_copy(pango_context_get_font_description(pango_layout_get_context(layout)))
+        pango_font_description_set_absolute_size(font, 10 * Double(PANGO_SCALE))
+        pango_layout_set_font_description(layout, font)
+        pango_font_description_free(font)
+        return layout
     }
 }
 
@@ -619,6 +855,7 @@ private final class WidgetRowList<Presenter: WidgetRowPresenter> {
         _ = g_object_ref(selection.ptr)
 
         scroller = ScrolledWindow()
+        scroller.add(cssClass: "luma-widget-rows")
         scroller.setPolicy(hscrollbarPolicy: .never, vscrollbarPolicy: .automatic)
         scroller.propagateNaturalHeight = true
         scroller.maxContentHeight = Self.maxHeight
@@ -627,11 +864,10 @@ private final class WidgetRowList<Presenter: WidgetRowPresenter> {
 
         emptyLabel = Label(str: emptyText)
         emptyLabel.add(cssClass: "dim-label")
+        emptyLabel.add(cssClass: "luma-widget-empty")
         emptyLabel.halign = .start
-        emptyLabel.marginStart = 8
-        emptyLabel.marginEnd = 8
-        emptyLabel.marginTop = 6
-        emptyLabel.marginBottom = 6
+        emptyLabel.marginTop = 2
+        emptyLabel.marginBottom = 2
         widget.append(child: emptyLabel)
 
         configure(factory)
@@ -737,33 +973,43 @@ private final class ListItemPresenter: WidgetRowPresenter {
     private let accessory: Label
     private var itemID = ""
 
-    init(actions: [InstrumentWidget.Action], onAction: @escaping (_ action: String, _ item: String?) -> Void) {
+    init(actions: [InstrumentWidget.Action], gate: WidgetActionGate, onAction: @escaping (_ action: String, _ item: String) -> Void) {
         widget = Box(orientation: .horizontal, spacing: 8)
-        widget.marginStart = 8
-        widget.marginEnd = 8
-        widget.marginTop = 6
+        widget.marginTop = 2
         widget.marginBottom = 6
 
-        let column = Box(orientation: .vertical, spacing: 0)
+        let column = Box(orientation: .vertical, spacing: 2)
         column.hexpand = true
+        gtk_box_set_baseline_child(UnsafeMutableRawPointer(column.widget_ptr)?.assumingMemoryBound(to: GtkBox.self), 0)
+        column.valign = .baselineFill
         title = Label(str: "")
+        title.add(cssClass: "luma-list-title")
         title.halign = .start
+        title.xalign = 0
+        title.ellipsize = .end
         column.append(child: title)
         subtitle = Label(str: "")
-        subtitle.add(cssClass: "caption")
+        subtitle.add(cssClass: "luma-list-detail")
         subtitle.add(cssClass: "dim-label")
         subtitle.halign = .start
+        subtitle.xalign = 0
+        subtitle.ellipsize = .end
         column.append(child: subtitle)
         widget.append(child: column)
 
         accessory = Label(str: "")
-        accessory.add(cssClass: "caption")
+        accessory.add(cssClass: "luma-list-detail")
         accessory.add(cssClass: "dim-label")
+        accessory.valign = .baselineFill
         widget.append(child: accessory)
 
+        let buttons = Box(orientation: .horizontal, spacing: 2)
+        buttons.valign = .center
+        widget.append(child: buttons)
         for action in actions {
             let button = Button(label: action.name)
-            button.add(cssClass: "flat")
+            button.add(cssClass: "luma-widget-action")
+            button.valign = .center
             let actionID = action.id
             button.onClicked { [weak self] _ in
                 MainActor.assumeIsolated {
@@ -771,7 +1017,8 @@ private final class ListItemPresenter: WidgetRowPresenter {
                     onAction(actionID, self.itemID)
                 }
             }
-            widget.append(child: button)
+            gate.adoptRowAction(button)
+            buttons.append(child: button)
         }
     }
 
@@ -792,11 +1039,11 @@ private final class TableRowPresenter: WidgetRowPresenter {
     private let cells: [Label]
     private var rowID = ""
 
-    init(layout: TableLayout, onAction: @escaping (_ action: String, _ item: String?) -> Void) {
+    init(layout: TableLayout, gate: WidgetActionGate, onAction: @escaping (_ action: String, _ item: String) -> Void) {
         self.layout = layout
-        widget = layout.makeRow(verticalMargin: 4)
+        widget = layout.makeRow(header: false)
 
-        cells = layout.columns.map { layout.makeCell(for: $0, text: "") }
+        cells = layout.columns.indices.map { layout.makeCell(column: $0, text: "") }
         for cell in cells {
             widget.append(child: cell)
         }
@@ -805,7 +1052,8 @@ private final class TableRowPresenter: WidgetRowPresenter {
         let buttons = layout.makeActionsBox()
         for action in layout.actions {
             let button = Button(label: action.name)
-            button.add(cssClass: "flat")
+            button.add(cssClass: "luma-widget-action")
+            button.valign = .center
             let actionID = action.id
             button.onClicked { [weak self] _ in
                 MainActor.assumeIsolated {
@@ -813,6 +1061,7 @@ private final class TableRowPresenter: WidgetRowPresenter {
                     onAction(actionID, self.rowID)
                 }
             }
+            gate.adoptRowAction(button)
             buttons.append(child: button)
         }
         widget.append(child: buttons)
@@ -831,48 +1080,167 @@ private final class TableLayout {
     let columns: [InstrumentWidget.Column]
     let actions: [InstrumentWidget.Action]
     private let actionsWidth = SizeGroup(mode: .horizontal)
+    private var longest: [Int]
+    private var header: Box?
+    private var advance: Double?
+
+    private static let spacing = 8
+    private static let minimumCharacters = 6.0
 
     init(columns: [InstrumentWidget.Column], actions: [InstrumentWidget.Action]) {
         self.columns = columns
         self.actions = actions
+        longest = columns.map(\.name.count)
+    }
+
+    func fit(_ rows: [WidgetTableRow]) -> [WidgetTableRow] {
+        let fitted = columns.map { column in rows.reduce(column.name.count) { max($0, ($1.cells[column.id] ?? "").count) } }
+        if fitted != longest {
+            longest = fitted
+            header?.parent.map { Self.queueAllocate(rowsUnder: $0.widget_ptr) }
+        }
+        return rows
     }
 
     func makeHeader() -> Box {
-        let header = makeRow(verticalMargin: 6)
-        for column in columns {
-            let label = makeCell(for: column, text: column.name)
-            label.add(cssClass: "caption")
+        let header = makeRow(header: true)
+        for index in columns.indices {
+            let label = makeCell(column: index, text: columns[index].name)
             label.add(cssClass: "dim-label")
             header.append(child: label)
         }
         if !actions.isEmpty {
             header.append(child: makeActionsBox())
         }
+        self.header = header
         return header
     }
 
-    func makeRow(verticalMargin: Int) -> Box {
-        let row = Box(orientation: .horizontal, spacing: 8)
-        row.marginStart = 8
-        row.marginEnd = 8
-        row.marginTop = verticalMargin
-        row.marginBottom = verticalMargin
+    func makeRow(header: Bool) -> Box {
+        let row = Box(orientation: .horizontal, spacing: 0)
+        row.add(cssClass: header ? "luma-table-header" : "luma-table-row")
+        g_object_set_data(UnsafeMutableRawPointer(row.widget_ptr)?.assumingMemoryBound(to: GObject.self), Self.key, Unmanaged.passUnretained(self).toOpaque())
+        gtk_widget_set_layout_manager(row.widget_ptr, gtk_custom_layout_new(nil, Self.measure, Self.allocate))
         return row
     }
 
-    func makeCell(for column: InstrumentWidget.Column, text: String) -> Label {
+    func makeCell(column index: Int, text: String) -> Label {
         let label = Label(str: text)
-        label.hexpand = true
-        label.xalign = column.alignment == .leading ? 0 : 1
+        label.add(cssClass: "luma-table-text")
+        label.xalign = columns[index].alignment == .leading ? 0 : 1
         label.ellipsize = EllipsizeMode.end
-        label.maxWidthChars = 1
         return label
     }
 
     func makeActionsBox() -> Box {
-        let box = Box(orientation: .horizontal, spacing: 4)
+        let box = Box(orientation: .horizontal, spacing: 2)
         actionsWidth.add(widget: box)
         return box
+    }
+
+    private static let key = "luma-table-layout"
+
+    private static func layout(of row: UnsafeMutablePointer<GtkWidget>?) -> TableLayout {
+        let data = g_object_get_data(UnsafeMutableRawPointer(row)?.assumingMemoryBound(to: GObject.self), key)!
+        return Unmanaged<TableLayout>.fromOpaque(data).takeUnretainedValue()
+    }
+
+    private static func children(of row: UnsafeMutablePointer<GtkWidget>?) -> [UnsafeMutablePointer<GtkWidget>] {
+        var children: [UnsafeMutablePointer<GtkWidget>] = []
+        var child = gtk_widget_get_first_child(row)
+        while let each = child {
+            children.append(each)
+            child = gtk_widget_get_next_sibling(each)
+        }
+        return children
+    }
+
+    private static func natural(of child: UnsafeMutablePointer<GtkWidget>, _ orientation: GtkOrientation, for size: Int32) -> (Int32, Int32) {
+        var minimum: Int32 = 0
+        var natural: Int32 = 0
+        gtk_widget_measure(child, orientation, size, &minimum, &natural, nil, nil)
+        return (minimum, natural)
+    }
+
+    private static let measure: GtkCustomMeasureFunc = { row, orientation, _, minimum, natural, _, _ in
+        nonisolated(unsafe) let (row, minimum, natural) = (row, minimum, natural)
+        MainActor.assumeIsolated {
+            let children = TableLayout.children(of: row)
+            if orientation == GTK_ORIENTATION_VERTICAL {
+                let sizes = children.map { TableLayout.natural(of: $0, orientation, for: -1) }
+                minimum?.pointee = sizes.map(\.0).max() ?? 0
+                natural?.pointee = sizes.map(\.1).max() ?? 0
+                return
+            }
+            let layout = TableLayout.layout(of: row)
+            let gaps = Int32(TableLayout.spacing * (children.count - 1))
+            let actions = layout.actions.isEmpty ? 0 : TableLayout.natural(of: children.last!, orientation, for: -1).1
+            minimum?.pointee = gaps + actions
+            natural?.pointee = gaps + actions + Int32(layout.naturalWidths(measuringWith: children[0]).reduce(0, +))
+        }
+    }
+
+    private static let allocate: GtkCustomAllocateFunc = { row, width, height, _ in
+        nonisolated(unsafe) let row = row
+        MainActor.assumeIsolated {
+            let children = TableLayout.children(of: row)
+            let layout = TableLayout.layout(of: row)
+            let actions = layout.actions.isEmpty ? 0 : Double(TableLayout.natural(of: children.last!, GTK_ORIENTATION_HORIZONTAL, for: -1).1)
+            let available = Double(width) - actions - Double(TableLayout.spacing * (children.count - 1))
+            var widths = layout.fitted(to: available, measuringWith: children[0])
+            if !layout.actions.isEmpty { widths.append(actions) }
+            var x = 0.0
+            for (child, childWidth) in zip(children, widths) {
+                var origin = graphene_point_t(x: Float(x.rounded()), y: 0)
+                gtk_widget_allocate(child, Int32(childWidth.rounded(.down)), height, -1, gsk_transform_translate(nil, &origin))
+                x += childWidth + Double(TableLayout.spacing)
+            }
+        }
+    }
+
+    private func naturalWidths(measuringWith cell: UnsafeMutablePointer<GtkWidget>) -> [Double] {
+        let advance = advance ?? Self.measureAdvance(cell)
+        self.advance = advance
+        return longest.map { (Double($0) * advance).rounded(.up) + 1 }
+    }
+
+    private func fitted(to available: Double, measuringWith cell: UnsafeMutablePointer<GtkWidget>) -> [Double] {
+        let natural = naturalWidths(measuringWith: cell)
+        let total = natural.reduce(0, +)
+        guard total > 0 else { return natural }
+        if total <= available {
+            return natural.map { $0 + (available - total) * $0 / total }
+        }
+        var kept = 0.0
+        var cap = available / Double(natural.count)
+        for (index, width) in natural.sorted().enumerated() {
+            let share = (available - kept) / Double(natural.count - index)
+            guard width <= share else {
+                cap = share
+                break
+            }
+            kept += width
+        }
+        let floor = advance! * Self.minimumCharacters
+        return natural.map { min($0, max(cap, floor)) }
+    }
+
+    private static func measureAdvance(_ cell: UnsafeMutablePointer<GtkWidget>) -> Double {
+        let layout = gtk_widget_create_pango_layout(cell, "0")!
+        defer { g_object_unref(layout) }
+        var width: Int32 = 0
+        pango_layout_get_size(layout, &width, nil)
+        return Double(width) / Double(PANGO_SCALE)
+    }
+
+    private static func queueAllocate(rowsUnder widget: UnsafeMutablePointer<GtkWidget>?) {
+        for child in children(of: widget) {
+            if gtk_widget_has_css_class(child, "luma-table-row") != 0 || gtk_widget_has_css_class(child, "luma-table-header") != 0 {
+                gtk_widget_queue_allocate(child)
+            } else {
+                queueAllocate(rowsUnder: child)
+            }
+        }
     }
 }
 
@@ -895,22 +1263,27 @@ private final class CounterView {
         valueRow.valign = .center
 
         valueLabel = Label(str: "")
-        valueLabel.add(cssClass: "title-1")
+        valueLabel.add(cssClass: "luma-counter-value")
         valueLabel.halign = .start
+        valueLabel.valign = .baselineFill
         valueRow.append(child: valueLabel)
 
         unitLabel = Label(str: unit ?? "")
+        unitLabel.add(cssClass: "luma-counter-unit")
         unitLabel.add(cssClass: "dim-label")
         unitLabel.halign = .start
+        unitLabel.valign = .baselineFill
         valueRow.append(child: unitLabel)
 
         deltaLabel = Label(str: "")
-        deltaLabel.add(cssClass: "caption")
+        deltaLabel.add(cssClass: "luma-counter-delta")
         deltaLabel.halign = .start
+        deltaLabel.valign = .baselineFill
         valueRow.append(child: deltaLabel)
 
         emptyLabel = Label(str: "No data.")
         emptyLabel.add(cssClass: "dim-label")
+        emptyLabel.add(cssClass: "luma-widget-empty")
         emptyLabel.halign = .start
 
         widget.append(child: valueRow)
@@ -930,6 +1303,8 @@ private final class CounterView {
         unitLabel.visible = resolvedUnit != nil
         if let delta = value.delta {
             deltaLabel.label = formatDelta(delta)
+            deltaLabel.remove(cssClass: delta >= 0 ? "error" : "success")
+            deltaLabel.add(cssClass: delta >= 0 ? "success" : "error")
             deltaLabel.visible = true
         } else {
             deltaLabel.visible = false
@@ -1015,21 +1390,22 @@ private final class HistogramView {
     }
 
     private func draw(ctx: Cairo.ContextRef, width: Double, height: Double) {
-        guard !buckets.isEmpty, let maxCount = buckets.map(\.count).max(), maxCount > 0 else { return }
-        let inset: Double = 12
-        let plotWidth = max(1.0, width - inset * 2)
-        let plotHeight = max(1.0, height - inset * 2)
-        let barCount = Double(buckets.count)
-        let gap: Double = 4
-        let barWidth = max(1.0, (plotWidth - gap * (barCount - 1)) / barCount)
+        guard let maxCount = buckets.map(\.count).max(), maxCount > 0 else { return }
+        let yTicks = ChartFrame.ticks(upTo: maxCount, from: 0)
+        let frame = ChartFrame(area: drawingArea, width: width, height: height, yTicks: yTicks)
+        let slot = frame.plot.width / Double(buckets.count)
+        frame.drawGrid(ctx, verticalAt: buckets.indices.map { frame.plot.minX + slot * Double($0) })
 
-        ctx.setSource(red: 0.20, green: 0.55, blue: 0.92, alpha: 0.85)
+        let top = yTicks.last!
+        let barWidth = slot * 0.7
         for (i, bucket) in buckets.enumerated() {
-            let h = plotHeight * (bucket.count / maxCount)
-            let x = inset + Double(i) * (barWidth + gap)
-            let y = inset + plotHeight - h
-            ctx.rectangle(x: x, y: y, width: barWidth, height: h)
+            let center = frame.plot.minX + slot * (Double(i) + 0.5)
+            let h = frame.plot.height * bucket.count / top
+            let color = ChartFrame.seriesColor(at: 0)
+            ctx.setSource(red: color.0, green: color.1, blue: color.2, alpha: 1)
+            ctx.rectangle(x: center - barWidth / 2, y: frame.plot.maxY - h, width: barWidth, height: h)
             ctx.fill()
+            frame.drawText(ctx, bucket.label, x: center, y: frame.plot.maxY + 3, maxWidth: slot - 4, centered: true)
         }
     }
 }
@@ -1057,6 +1433,7 @@ private final class HexWidgetView {
 
         emptyLabel = Label(str: "No data.")
         emptyLabel.add(cssClass: "dim-label")
+        emptyLabel.add(cssClass: "luma-widget-empty")
         emptyLabel.halign = .start
 
         widget = Box(orientation: .vertical, spacing: 0)

@@ -6,16 +6,12 @@ import LumaCore
 @MainActor
 final class CustomInstrumentCompatibilityDialog {
     private let engine: Engine
-    private var def: CustomInstrumentDef
+    private let def: CustomInstrumentDef
     private let dialog: Adw.Dialog
 
     private var draftPlatforms: Set<String>
     private var draftOSIDs: Set<String>
     private var draftArchs: Set<String>
-
-    private static let knownPlatforms = ["windows", "darwin", "linux", "freebsd", "qnx", "barebone"]
-    private static let knownOSIDs = ["windows", "macos", "linux", "ios", "watchos", "tvos", "visionos", "android", "freebsd", "qnx"]
-    private static let knownArchs = ["ia32", "x64", "arm", "arm64", "mips"]
 
     init(engine: Engine, def: CustomInstrumentDef) {
         self.engine = engine
@@ -51,17 +47,35 @@ final class CustomInstrumentCompatibilityDialog {
         intro.maxWidthChars = 60
         content.append(child: intro)
 
-        content.append(child: axisSection(title: "Platforms", known: Self.knownPlatforms, displayName: InstrumentCompatibility.platformDisplayName, axis: .platforms))
-        content.append(child: axisSection(title: "Operating Systems", known: Self.knownOSIDs, displayName: InstrumentCompatibility.osDisplayName, axis: .osIDs))
-        content.append(child: axisSection(title: "Architectures", known: Self.knownArchs, displayName: InstrumentCompatibility.archDisplayName, axis: .archs))
+        content.append(
+            child: axisSection(
+                title: "Platforms",
+                known: InstrumentCompatibility.knownPlatforms,
+                displayName: InstrumentCompatibility.platformDisplayName,
+                axis: .platforms
+            )
+        )
+        content.append(
+            child: axisSection(
+                title: "Operating Systems",
+                known: InstrumentCompatibility.knownOSIDs,
+                displayName: InstrumentCompatibility.osDisplayName,
+                axis: .osIDs
+            )
+        )
+        content.append(
+            child: axisSection(
+                title: "Architectures",
+                known: InstrumentCompatibility.knownArchs,
+                displayName: InstrumentCompatibility.archDisplayName,
+                axis: .archs
+            )
+        )
 
-        let header = Adw.HeaderBar()
-        let saveButton = Button(label: "Save")
-        saveButton.add(cssClass: "suggested-action")
-        saveButton.onClicked { [weak self] _ in
-            MainActor.assumeIsolated { self?.commit() }
-        }
-        header.packEnd(child: saveButton)
+        let header = CustomInstrumentEditorChrome.header(
+            onCancel: { [weak self] in self?.close() },
+            onSave: { [weak self] in self?.commit() }
+        )
 
         let toolbarView = Adw.ToolbarView()
         toolbarView.addTopBar(widget: header)
@@ -134,18 +148,13 @@ final class CustomInstrumentCompatibilityDialog {
     }
 
     private func commit() {
-        var updated = def
-        updated.compatibility = InstrumentCompatibility(
-            platforms: draftPlatforms,
-            osIDs: draftOSIDs,
-            archs: draftArchs
-        )
-        let engine = self.engine
-        let dialog = self.dialog
-        Task { @MainActor in
-            engine.updateCustomInstrument(updated)
-            _ = dialog.close()
-        }
+        let compatibility = InstrumentCompatibility(platforms: draftPlatforms, osIDs: draftOSIDs, archs: draftArchs)
+        engine.updateCustomInstrument(def.id) { $0.compatibility = compatibility }
+        close()
+    }
+
+    private func close() {
+        _ = dialog.close()
     }
 
 }

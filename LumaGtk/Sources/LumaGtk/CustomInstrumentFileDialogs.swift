@@ -21,8 +21,9 @@ enum CustomInstrumentFileDialogs {
             placeholderText: "path/to/file.ts",
             isValid: { input in
                 guard !input.isEmpty else { return false }
-                return engine.customInstruments.file(defID: defID, path: input) == nil
+                return engine.customInstrumentFileProblem(defID: defID, path: input) == nil
             },
+            problem: { input in input.isEmpty ? nil : engine.customInstrumentFileProblem(defID: defID, path: input) },
             onCommit: { input in
                 Task { @MainActor in
                     do {
@@ -40,6 +41,7 @@ enum CustomInstrumentFileDialogs {
         engine: Engine,
         def: CustomInstrumentDef,
         file: CustomInstrumentFile,
+        heading: String,
         parent: Gtk.Window,
         onRenamed: @escaping (String) -> Void
     ) {
@@ -49,7 +51,7 @@ enum CustomInstrumentFileDialogs {
             ? "Renaming the entrypoint updates the entrypoint automatically."
             : "Relative path inside this instrument."
         CustomInstrumentPathDialog(
-            heading: "Rename File",
+            heading: heading,
             body: body,
             actionID: "rename",
             actionLabel: "_Rename",
@@ -57,7 +59,10 @@ enum CustomInstrumentFileDialogs {
             placeholderText: nil,
             isValid: { input in
                 guard !input.isEmpty, input != oldPath else { return false }
-                return engine.customInstruments.file(defID: defID, path: input) == nil
+                return engine.customInstrumentFileProblem(defID: defID, path: input) == nil
+            },
+            problem: { input in
+                input.isEmpty || input == oldPath ? nil : engine.customInstrumentFileProblem(defID: defID, path: input)
             },
             onCommit: { input in
                 Task { @MainActor in
@@ -85,8 +90,10 @@ enum CustomInstrumentFileDialogs {
 private final class CustomInstrumentPathDialog {
     private let dialog: Adw.AlertDialog
     private let pathEntry: Entry
+    private let problemLabel: Label
     private let actionID: String
     private let isValid: (String) -> Bool
+    private let problem: (String) -> String?
     private let onCommit: (String) -> Void
 
     init(
@@ -97,10 +104,12 @@ private final class CustomInstrumentPathDialog {
         initialText: String,
         placeholderText: String?,
         isValid: @escaping (String) -> Bool,
+        problem: @escaping (String) -> String?,
         onCommit: @escaping (String) -> Void
     ) {
         self.actionID = actionID
         self.isValid = isValid
+        self.problem = problem
         self.onCommit = onCommit
 
         pathEntry = Entry()
@@ -111,14 +120,26 @@ private final class CustomInstrumentPathDialog {
             pathEntry.placeholderText = placeholderText
         }
 
+        problemLabel = Label(str: "")
+        problemLabel.add(cssClass: "caption")
+        problemLabel.add(cssClass: "error")
+        problemLabel.wrap = true
+        problemLabel.xalign = 0
+        problemLabel.halign = .start
+        problemLabel.visible = false
+
+        let extra = Box(orientation: .vertical, spacing: 6)
+        extra.append(child: pathEntry)
+        extra.append(child: problemLabel)
+
         dialog = Adw.AlertDialog(heading: heading, body: body)
         dialog.addResponse(id: "cancel", label: "_Cancel")
         dialog.addResponse(id: actionID, label: actionLabel)
         dialog.setResponseAppearance(response: actionID, appearance: .suggested)
         dialog.setDefault(response: actionID)
         dialog.setClose(response: "cancel")
-        dialog.setExtra(child: pathEntry)
-        dialog.setResponseEnabled(response: actionID, enabled: isValid(normalizedInput))
+        dialog.setExtra(child: extra)
+        refreshEnabled()
 
         pathEntry.onChanged { [weak self] _ in
             MainActor.assumeIsolated { self?.refreshEnabled() }
@@ -142,6 +163,9 @@ private final class CustomInstrumentPathDialog {
 
     private func refreshEnabled() {
         dialog.setResponseEnabled(response: actionID, enabled: isValid(normalizedInput))
+        let refusal = problem(normalizedInput)
+        problemLabel.label = refusal ?? ""
+        problemLabel.visible = refusal != nil
     }
 
     private var normalizedInput: String {

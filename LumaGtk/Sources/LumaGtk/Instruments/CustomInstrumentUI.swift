@@ -24,7 +24,7 @@ private final class CustomDetailUI: InstrumentDetailUI {
     private weak var engine: Engine?
     private var instrument: LumaCore.InstrumentInstance
     private let outer: Box
-    private var featureEditors: [FeatureValueEditor] = []
+    private var settingRows: [InstrumentSettingRow] = []
     private var widgetRenderer: InstrumentWidgetsRenderer?
     private let updateBanner: StoreUpdateBanner?
 
@@ -32,19 +32,19 @@ private final class CustomDetailUI: InstrumentDetailUI {
         self.engine = engine
         self.instrument = instrument
 
-        let outer = Box(orientation: .vertical, spacing: 8)
+        let outer = Box(orientation: .vertical, spacing: 12)
         outer.hexpand = true
-        outer.marginStart = 24
-        outer.marginEnd = 24
+        outer.marginStart = 8
+        outer.marginEnd = 8
         outer.marginTop = 8
-        outer.marginBottom = 12
+        outer.marginBottom = 8
         self.outer = outer
 
         let scroll = ScrolledWindow()
         scroll.hexpand = true
         scroll.vexpand = true
         scroll.setPolicy(hscrollbarPolicy: .never, vscrollbarPolicy: .automatic)
-        scroll.set(child: outer)
+        scroll.set(naturallyTallChild: outer)
 
         let column = Box(orientation: .vertical, spacing: 0)
         updateBanner = UUID(uuidString: instrument.sourceIdentifier).map { StoreUpdateBanner(storefront: engine.storefront, defID: $0) }
@@ -65,13 +65,7 @@ private final class CustomDetailUI: InstrumentDetailUI {
     }
 
     func applySessionState() {
-        guard let engine else { return }
-        widgetRenderer?.setLive(isLive(engine: engine))
-    }
-
-    private func isLive(engine: Engine) -> Bool {
-        let sessionID = instrument.sessionID
-        return engine.isHostingNode(sessionID) || engine.isHostedRemotelyLive(sessionID)
+        widgetRenderer?.refreshAgentState()
     }
 
     private func rebuild() {
@@ -79,7 +73,7 @@ private final class CustomDetailUI: InstrumentDetailUI {
             outer.remove(child: child)
         }
         widgetRenderer = nil
-        featureEditors.removeAll()
+        settingRows.removeAll()
 
         guard let engine,
             let config = try? CustomInstrumentConfig.decode(from: instrument.configJSON),
@@ -89,13 +83,32 @@ private final class CustomDetailUI: InstrumentDetailUI {
             return
         }
 
-        let title = Label(str: def.name)
-        title.add(cssClass: "title-3")
-        title.halign = .start
-        outer.append(child: title)
+        outer.append(child: makeHeader(def: def))
 
+        if !def.features.isEmpty {
+            outer.append(child: InstrumentSettingRow.makeGroup(features: def.features, config: config, keeping: &settingRows) { [weak self] id, state in
+                self?.mutate { $0.features[id] = state }
+            })
+        }
+
+        widgetRenderer = InstrumentUIHelpers.appendWidgets(
+            into: outer,
+            widgets: def.widgets,
+            engine: engine,
+            instance: instrument
+        )
+        widgetRenderer?.refreshAgentState()
+    }
+
+    private func makeHeader(def: CustomInstrumentDef) -> Box {
+        let header = Box(orientation: .horizontal, spacing: 8)
+        header.append(child: InstrumentIconView.makeImage(for: def.icon, pixelSize: 16))
+        let title = Label(str: def.name)
+        title.add(cssClass: "heading")
+        title.halign = .start
+        title.hexpand = true
+        header.append(child: title)
         let editButton = Button(label: "Edit Source\u{2026}")
-        editButton.halign = .start
         let defID = def.id
         editButton.onClicked { _ in
             MainActor.assumeIsolated {
@@ -106,98 +119,8 @@ private final class CustomDetailUI: InstrumentDetailUI {
                 )
             }
         }
-        outer.append(child: editButton)
-
-        let header = Label(str: "Features")
-        header.halign = .start
-        header.add(cssClass: "heading")
-        outer.append(child: header)
-
-        if def.features.isEmpty {
-            outer.append(child: InstrumentUIHelpers.dimLabel("This custom instrument does not declare any features."))
-        } else {
-            for feature in def.features {
-                outer.append(child: makeFeatureRow(feature: feature, config: config))
-            }
-        }
-
-        widgetRenderer = InstrumentUIHelpers.appendWidgets(
-            into: outer,
-            widgets: def.widgets,
-            engine: engine,
-            instance: instrument
-        )
-        widgetRenderer?.setLive(isLive(engine: engine))
-    }
-
-    private func makeFeatureRow(feature: CustomInstrumentDef.Feature, config: CustomInstrumentConfig) -> Box {
-        let row = Box(orientation: .vertical, spacing: 4)
-        row.hexpand = true
-
-        let initialEnabled = config.features[feature.id]?.enabled ?? feature.enabledByDefault
-        let initialValue = config.features[feature.id]?.value ?? feature.schema.defaultValue
-        let fid = feature.id
-
-        if feature.optional {
-            let check = CheckButton(label: feature.name)
-            check.active = initialEnabled
-            check.onToggled { [weak self] ref in
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    let enabled = ref.active
-                    self.mutate { cfg in
-                        let existingValue = cfg.features[fid]?.value ?? feature.schema.defaultValue
-                        cfg.features[fid] = FeatureState(enabled: enabled, value: existingValue)
-                    }
-                }
-            }
-            row.append(child: check)
-
-            if case .boolean = feature.schema {
-                return row
-            }
-
-            let editor = FeatureValueEditor(schema: feature.schema, value: initialValue) { [weak self] newValue in
-                self?.mutate { cfg in
-                    let existingEnabled = cfg.features[fid]?.enabled ?? feature.enabledByDefault
-                    cfg.features[fid] = FeatureState(enabled: existingEnabled, value: newValue)
-                }
-            }
-            featureEditors.append(editor)
-            editor.widget.marginStart = 24
-            row.append(child: editor.widget)
-            return row
-        }
-
-        if case .boolean = feature.schema {
-            let check = CheckButton(label: feature.name)
-            if case .boolean(let b) = initialValue { check.active = b }
-            check.onToggled { [weak self] ref in
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    let newValue: FeatureValue = .boolean(ref.active)
-                    self.mutate { cfg in
-                        let existingEnabled = cfg.features[fid]?.enabled ?? feature.enabledByDefault
-                        cfg.features[fid] = FeatureState(enabled: existingEnabled, value: newValue)
-                    }
-                }
-            }
-            row.append(child: check)
-            return row
-        }
-
-        let nameLabel = Label(str: feature.name)
-        nameLabel.halign = .start
-        row.append(child: nameLabel)
-        let editor = FeatureValueEditor(schema: feature.schema, value: initialValue) { [weak self] newValue in
-            self?.mutate { cfg in
-                let existingEnabled = cfg.features[fid]?.enabled ?? feature.enabledByDefault
-                cfg.features[fid] = FeatureState(enabled: existingEnabled, value: newValue)
-            }
-        }
-        featureEditors.append(editor)
-        row.append(child: editor.widget)
-        return row
+        header.append(child: editButton)
+        return header
     }
 
     private func mutate(_ body: (inout CustomInstrumentConfig) -> Void) {

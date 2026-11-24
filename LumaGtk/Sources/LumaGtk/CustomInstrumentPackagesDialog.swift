@@ -117,8 +117,8 @@ final class CustomInstrumentPackagesDialog {
     }
 
     private func setDependency(name: String, versionSpec: String?) {
+        engine.updateCustomInstrument(def.id) { $0.dependencies[name] = versionSpec }
         def.dependencies[name] = versionSpec
-        engine.updateCustomInstrument(def)
         renderDependencies()
     }
 }

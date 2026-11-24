@@ -394,6 +394,100 @@ enum StyleSheet {
         padding-left: 0;
     }
 
+    .luma-widget-box {
+        background-color: alpha(@window_fg_color, 0.035);
+        border-radius: 8px;
+    }
+    label.luma-widget-title {
+        font-size: 11px;
+    }
+    label.luma-widget-empty {
+        font-size: 10px;
+    }
+    label.luma-counter-value {
+        font-size: 28px;
+        font-weight: 600;
+    }
+    label.luma-counter-unit {
+        font-size: 13px;
+    }
+    label.luma-counter-delta {
+        font-size: 10px;
+    }
+    label.luma-list-title {
+        font-size: 13px;
+    }
+    label.luma-list-detail {
+        font-size: 10px;
+    }
+    label.luma-table-text {
+        font-family: monospace;
+        font-size: 10px;
+    }
+    box.luma-table-header {
+        padding: 4px 0;
+        border-bottom: 1px solid alpha(@window_fg_color, 0.12);
+    }
+    box.luma-table-row {
+        min-height: 13px;
+        padding: 2px 0;
+        border-bottom: 1px solid alpha(@window_fg_color, 0.05);
+    }
+    box.luma-table-row button.luma-widget-action {
+        margin: -1px 0;
+    }
+    label.luma-chart-legend {
+        font-size: 10px;
+    }
+    .luma-widget-console label.monospace,
+    .luma-widget-console .monospace label {
+        font-size: 10px;
+    }
+    .luma-widget-console label.luma-console-prompt {
+        font-size: 13px;
+    }
+    .luma-widget-console entry {
+        font-family: inherit;
+        font-size: 13px;
+        min-height: 24px;
+    }
+    .luma-widget-console button.suggested-action {
+        min-height: 24px;
+        padding-top: 0;
+        padding-bottom: 0;
+        font-weight: normal;
+    }
+    button.luma-widget-action,
+    menubutton.luma-widget-action > button {
+        min-height: 0;
+        min-width: 0;
+        min-height: 14px;
+        padding: 1px 6px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: normal;
+        color: @accent_color;
+        background-color: alpha(@accent_bg_color, 0.1);
+        box-shadow: none;
+    }
+    button.luma-widget-action:hover,
+    menubutton.luma-widget-action > button:hover {
+        background-color: alpha(@accent_bg_color, 0.18);
+    }
+    button.luma-widget-action:active,
+    menubutton.luma-widget-action > button:active,
+    menubutton.luma-widget-action > button:checked {
+        background-color: alpha(@accent_bg_color, 0.3);
+    }
+    button.luma-widget-action:disabled,
+    menubutton.luma-widget-action > button:disabled {
+        color: alpha(@theme_fg_color, 0.45);
+        background-color: alpha(@theme_fg_color, 0.06);
+    }
+    menubutton.luma-widget-action > button image {
+        -gtk-icon-size: 12px;
+    }
+
     .luma-context-menu button.luma-menu-item {
         padding: 7px 14px;
         min-height: 0;
@@ -611,6 +705,12 @@ enum StyleSheet {
     box.luma-pharo-table-header {
         margin-left: 6px;
         margin-right: 6px;
+    }
+    listview.luma-widget-rows {
+        background: none;
+    }
+    scrolledwindow.luma-widget-rows > scrollbar slider {
+        min-height: 8px;
     }
     listview.luma-widget-rows > row {
         padding: 0;

@@ -2,6 +2,7 @@ import Adw
 import CLuma
 import Foundation
 import Frida
+import Gdk
 import Gtk
 import LumaCore
 import Observation
@@ -1610,6 +1611,10 @@ final class MainWindow: InstrumentUIHost {
             pane.onRevertNavigation = { [weak self] revertedPath in
                 self?.select(.customInstrumentFile(defID, revertedPath))
             }
+            pane.onPresentMenu = { [weak self] button in
+                guard let self, let def = self.engine?.customInstruments.def(withId: defID) else { return }
+                self.presentCustomInstrumentContextMenu(anchor: button, x: 0, y: Double(button.height), def: def)
+            }
             currentCustomInstrumentDefPane = pane
         }
         if pane.widget.parent != nil {
@@ -1641,6 +1646,23 @@ final class MainWindow: InstrumentUIHost {
             }
         }
         row.add(controller: click)
+        let longPress = GestureLongPress()
+        longPress.onPressed { [weak self, anchor] _, x, y in
+            MainActor.assumeIsolated {
+                self?.presentCustomInstrumentContextMenu(anchor: anchor, x: x, y: y, def: def)
+            }
+        }
+        row.add(controller: longPress)
+        let keys = EventControllerKey()
+        keys.onKeyPressed { [weak self, anchor] _, keyval, _, state in
+            MainActor.assumeIsolated {
+                let key = Int32(keyval)
+                guard key == Gdk.keyMenu || (key == Gdk.keyF10 && state.contains(.shiftMask)) else { return false }
+                self?.presentCustomInstrumentContextMenu(anchor: anchor, x: 0, y: Double(anchor.height), def: def)
+                return true
+            }
+        }
+        row.add(controller: keys)
     }
 
     private func presentCustomInstrumentContextMenu(
@@ -1653,7 +1675,7 @@ final class MainWindow: InstrumentUIHost {
             [
                 .init("Rename & Icon\u{2026}") { [weak self] in self?.presentCustomInstrumentRenameDialog(def: def) },
                 .init("Compatibility\u{2026}") { [weak self] in self?.presentCustomInstrumentCompatibilityDialog(def: def) },
-                .init("Features\u{2026}") { [weak self] in self?.presentCustomInstrumentFeaturesDialog(def: def) },
+                .init("Settings\u{2026}") { [weak self] in self?.presentCustomInstrumentFeaturesDialog(def: def) },
                 .init("Widgets\u{2026}") { [weak self] in self?.presentCustomInstrumentWidgetsDialog(def: def) },
                 .init("Packages\u{2026}") { [weak self] in self?.presentCustomInstrumentPackagesDialog(def: def) },
             ],
@@ -1728,15 +1750,18 @@ final class MainWindow: InstrumentUIHost {
         file: LumaCore.CustomInstrumentFile
     ) {
         let isEntrypoint = file.path == def.entrypoint
-        var sections: [[ContextMenu.Item]] = []
+        var editItems: [ContextMenu.Item] = []
         if !isEntrypoint && file.patternKind == nil {
-            sections.append([
+            editItems.append(
                 .init("Set as Entrypoint") { [weak self] in self?.setCustomInstrumentEntrypoint(defID: def.id, path: file.path) }
-            ])
+            )
         }
-        sections.append([
-            .init("Rename\u{2026}") { [weak self] in self?.presentRenameCustomInstrumentFileDialog(def: def, file: file) }
-        ])
+        editItems.append(
+            .init("Rename\u{2026}") { [weak self] in
+                self?.presentRenameCustomInstrumentFileDialog(def: def, file: file, heading: "Rename File")
+            }
+        )
+        var sections = [editItems]
         if !isEntrypoint {
             sections.append([
                 .init("Delete", destructive: true) { [weak self] in
@@ -1756,10 +1781,11 @@ final class MainWindow: InstrumentUIHost {
 
     private func presentRenameCustomInstrumentFileDialog(
         def: LumaCore.CustomInstrumentDef,
-        file: LumaCore.CustomInstrumentFile
+        file: LumaCore.CustomInstrumentFile,
+        heading: String
     ) {
         guard let engine else { return }
-        CustomInstrumentFileDialogs.presentRename(engine: engine, def: def, file: file, parent: window) { [weak self] newPath in
+        CustomInstrumentFileDialogs.presentRename(engine: engine, def: def, file: file, heading: heading, parent: window) { [weak self] newPath in
             if self?.selection == .customInstrumentFile(def.id, file.path) {
                 self?.select(.customInstrumentFile(def.id, newPath))
             }
@@ -1777,7 +1803,7 @@ final class MainWindow: InstrumentUIHost {
         guard let engine,
             let file = engine.customInstruments.file(defID: def.id, path: def.entrypoint)
         else { return }
-        presentRenameCustomInstrumentFileDialog(def: def, file: file)
+        presentRenameCustomInstrumentFileDialog(def: def, file: file, heading: "Rename Entrypoint File")
     }
 
     private func setCustomInstrumentEntrypoint(defID: UUID, path: String) {
@@ -2870,6 +2896,7 @@ final class MainWindow: InstrumentUIHost {
             reconcileInstrumentChildren(for: instrument)
             if let detail = currentInstrumentDetail, detail.instrumentID == instrument.id {
                 detail.update(instrument)
+                detail.applySessionState()
             }
         case .instrumentRemoved(let id, let sessionID):
             instrumentsBySession[sessionID]?.removeAll { $0.id == id }
@@ -4330,8 +4357,8 @@ final class MainWindow: InstrumentUIHost {
     private func confirmDeleteInstrument(_ instrument: LumaCore.InstrumentInstance) {
         let title = engine?.descriptor(for: instrument).displayName ?? "Instrument"
         confirmDestructive(
-            message: "Delete instrument “\(title)”?",
-            detail: nil,
+            message: "Delete \"\(title)\"?",
+            detail: "This removes the instrument from this session.",
             destructiveLabel: "Delete"
         ) { [weak self] in
             self?.deleteInstrument(instrument)

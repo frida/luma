@@ -6,7 +6,7 @@ import LumaCore
 @MainActor
 final class CustomInstrumentFeaturesDialog {
     private let engine: Engine
-    private var def: CustomInstrumentDef
+    private let def: CustomInstrumentDef
     private var draftFeatures: [CustomInstrumentDef.Feature]
     private let dialog: Adw.Dialog
     private let listBox: Box
@@ -14,6 +14,8 @@ final class CustomInstrumentFeaturesDialog {
     private let toggleAddButton: Button
     private let idEntry: Entry
     private let nameEntry: Entry
+    private let addButton = Button(label: "Add")
+    private var addKindDropdown: DropDown?
     private var draftKind: SchemaKind = .boolean
     private var nameAutoFilled: Bool = true
     private var suppressIDChange: Bool = false
@@ -28,14 +30,13 @@ final class CustomInstrumentFeaturesDialog {
         self.draftFeatures = def.features
 
         dialog = Adw.Dialog()
-        dialog.set(title: "Features")
+        dialog.set(title: "Settings")
         dialog.set(followsContentSize: true)
 
         listBox = Box(orientation: .vertical, spacing: 4)
         addRowBox = Box(orientation: .horizontal, spacing: 8)
         addRowBox.visible = false
-        toggleAddButton = Button(label: "+ Add Feature")
-        toggleAddButton.halign = .start
+        toggleAddButton = CustomInstrumentEditorChrome.addToggle("Add Setting", isAdding: false)
 
         idEntry = Entry()
         idEntry.placeholderText = "id"
@@ -62,7 +63,7 @@ final class CustomInstrumentFeaturesDialog {
         scrollContent.marginBottom = 16
         scrollContent.setSizeRequest(width: 560, height: -1)
 
-        let intro = Label(str: "Per-session knobs the user can configure. Each has a typed schema (boolean, number, string, regex, combo, object, array, …). Agent code reads `config.features.<id>` directly; optional features may be undefined when the user has disabled them.")
+        let intro = Label(str: "Per-session knobs the user can configure. Each has a typed schema (boolean, number, string, regex, combo, object, array, …). Agent code reads `config.settings.<id>` directly; optional settings may be undefined when the user has disabled them.")
         intro.add(cssClass: "dim-label")
         intro.wrap = true
         intro.xalign = 0
@@ -84,13 +85,10 @@ final class CustomInstrumentFeaturesDialog {
         scroll.maxContentHeight = 600
         scroll.setPolicy(hscrollbarPolicy: .never, vscrollbarPolicy: .automatic)
 
-        let header = Adw.HeaderBar()
-        let saveButton = Button(label: "Save")
-        saveButton.add(cssClass: "suggested-action")
-        saveButton.onClicked { [weak self] _ in
-            MainActor.assumeIsolated { self?.commit() }
-        }
-        header.packEnd(child: saveButton)
+        let header = CustomInstrumentEditorChrome.header(
+            onCancel: { [weak self] in self?.close() },
+            onSave: { [weak self] in self?.commit() }
+        )
 
         let toolbarView = Adw.ToolbarView()
         toolbarView.addTopBar(widget: header)
@@ -105,8 +103,9 @@ final class CustomInstrumentFeaturesDialog {
         let kindDropdown = makeKindDropdown(initial: draftKind) { [weak self] kind in
             self?.draftKind = kind
         }
+        addKindDropdown = kindDropdown
         addRowBox.append(child: kindDropdown)
-        let addButton = Button(label: "Add")
+        addButton.sensitive = false
         addButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated { self?.appendFeature() }
         }
@@ -140,13 +139,21 @@ final class CustomInstrumentFeaturesDialog {
             nameEntry.text = CamelCase.humanized(lowered)
             suppressNameChange = false
         }
+        refreshAddEnabled()
     }
 
     private func handleNameChanged() {
+        refreshAddEnabled()
         guard !suppressNameChange else { return }
         if (nameEntry.text ?? "") != CamelCase.humanized(idEntry.text ?? "") {
             nameAutoFilled = false
         }
+    }
+
+    private func refreshAddEnabled() {
+        let id = (idEntry.text ?? "").trimmingCharacters(in: .whitespaces)
+        let name = (nameEntry.text ?? "").trimmingCharacters(in: .whitespaces)
+        addButton.sensitive = !id.isEmpty && !name.isEmpty
     }
 
     private func toggleAdding() {
@@ -155,12 +162,13 @@ final class CustomInstrumentFeaturesDialog {
             appendFeature()
         }
         addRowBox.visible = nowVisible
-        toggleAddButton.label = nowVisible ? "Done Adding" : "+ Add Feature"
+        CustomInstrumentEditorChrome.setAddToggle(toggleAddButton, label: "Add Setting", isAdding: nowVisible)
         if nowVisible {
             applyExpansion(to: nil)
             _ = idEntry.grabFocus()
         } else {
             resetDraft()
+            resetKind()
         }
     }
 
@@ -182,7 +190,8 @@ final class CustomInstrumentFeaturesDialog {
         rebuildList()
         if kindHasChildren {
             addRowBox.visible = false
-            toggleAddButton.label = "+ Add Feature"
+            CustomInstrumentEditorChrome.setAddToggle(toggleAddButton, label: "Add Setting", isAdding: false)
+            resetKind()
         } else {
             _ = idEntry.grabFocus()
         }
@@ -198,18 +207,21 @@ final class CustomInstrumentFeaturesDialog {
         nameAutoFilled = true
     }
 
+    private func resetKind() {
+        addKindDropdown?.selected = SchemaKind.boolean.index
+    }
+
     private func commit() {
         if addRowBox.visible {
             appendFeature()
         }
-        var updated = def
-        updated.features = draftFeatures
-        let engine = self.engine
-        let dialog = self.dialog
-        Task { @MainActor in
-            engine.updateCustomInstrument(updated)
-            _ = dialog.close()
-        }
+        let features = draftFeatures
+        engine.updateCustomInstrument(def.id) { $0.features = features }
+        close()
+    }
+
+    private func close() {
+        _ = dialog.close()
     }
 
     private func rebuildList() {
@@ -219,7 +231,7 @@ final class CustomInstrumentFeaturesDialog {
         featureSchemaEditors.removeAll()
         featureBodies.removeAll()
         if draftFeatures.isEmpty {
-            let empty = Label(str: "No features defined.")
+            let empty = Label(str: "No settings defined.")
             empty.add(cssClass: "dim-label")
             empty.halign = .start
             listBox.append(child: empty)
@@ -284,7 +296,7 @@ final class CustomInstrumentFeaturesDialog {
         }
         header.append(child: kindDropdown)
 
-        let removeButton = Button(label: "Remove")
+        let removeButton = CustomInstrumentEditorChrome.iconButton("list-remove-symbolic", tooltip: "Remove")
         removeButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, index < self.draftFeatures.count else { return }

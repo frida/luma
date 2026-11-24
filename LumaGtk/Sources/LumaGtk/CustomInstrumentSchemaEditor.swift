@@ -12,6 +12,7 @@ final class CustomInstrumentSchemaEditor {
     private let onChanged: (FeatureSchema) -> Void
     private let fieldsBox: Box
     private var childEditors: [AnyObject] = []
+    private var comboDefaultRow: Box?
 
     init(schema: FeatureSchema, onChanged: @escaping (FeatureSchema) -> Void) {
         self.schema = schema
@@ -148,6 +149,12 @@ final class CustomInstrumentSchemaEditor {
         fieldsBox.append(child: editor.widget)
 
         let defaultRow = labeledRow("Default")
+        defaultRow.append(child: comboDefaultDropdown(choices: choices, defaultChoice: defaultChoice))
+        comboDefaultRow = defaultRow
+        fieldsBox.append(child: defaultRow)
+    }
+
+    private func comboDefaultDropdown(choices: [ComboChoice], defaultChoice: String?) -> DropDown {
         let labels = ["(first)"] + choices.map(\.name)
         let selectedIndex = defaultChoice.flatMap { id in
             choices.firstIndex(where: { $0.id == id }).map { $0 + 1 }
@@ -158,8 +165,7 @@ final class CustomInstrumentSchemaEditor {
             handler: comboDefaultDropdownChanged
         )
         dropdown.hexpand = true
-        defaultRow.append(child: dropdown)
-        fieldsBox.append(child: defaultRow)
+        return dropdown
     }
 
     private func appendObjectFields(fields: [ObjectField]) {
@@ -269,7 +275,10 @@ final class CustomInstrumentSchemaEditor {
         let ids = Set(newChoices.map(\.id))
         let preservedDefault = d.flatMap { ids.contains($0) ? $0 : nil }
         schema = .combo(choices: newChoices, default: preservedDefault)
-        rebuildFields()
+        if let row = comboDefaultRow, let dropdown = row.lastChild {
+            row.remove(child: dropdown)
+            row.append(child: comboDefaultDropdown(choices: newChoices, defaultChoice: preservedDefault))
+        }
         onChanged(schema)
     }
 
@@ -432,6 +441,8 @@ final class ObjectFieldsEditor {
     private let toggleAddButton: Button
     private let draftIDEntry: Entry
     private let draftNameEntry: Entry
+    private let addButton = CustomInstrumentEditorChrome.iconButton("list-add-symbolic", tooltip: "Add")
+    private var addKindDropdown: DropDown?
     private var draftKind: SchemaKind = .boolean
     private var nameAutoFilled: Bool = true
     private var suppressIDChange: Bool = false
@@ -447,8 +458,7 @@ final class ObjectFieldsEditor {
         listBox = Box(orientation: .vertical, spacing: 4)
         addRowBox = Box(orientation: .horizontal, spacing: 6)
         addRowBox.visible = fields.isEmpty
-        toggleAddButton = Button(label: fields.isEmpty ? "Done Adding" : "+ Add Field")
-        toggleAddButton.halign = .start
+        toggleAddButton = CustomInstrumentEditorChrome.addToggle("Add Field", isAdding: fields.isEmpty)
         toggleAddButton.add(cssClass: "flat")
         draftIDEntry = Entry()
         draftIDEntry.placeholderText = "id"
@@ -481,8 +491,9 @@ final class ObjectFieldsEditor {
         let kindDropdown = makeKindDropdown(initial: draftKind) { [weak self] kind in
             self?.draftKind = kind
         }
+        addKindDropdown = kindDropdown
         addRowBox.append(child: kindDropdown)
-        let addButton = Button(label: "+")
+        addButton.sensitive = false
         addButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated { self?.appendDraft() }
         }
@@ -515,13 +526,21 @@ final class ObjectFieldsEditor {
             draftNameEntry.text = CamelCase.humanized(lowered)
             suppressNameChange = false
         }
+        refreshAddEnabled()
     }
 
     private func handleNameChanged() {
+        refreshAddEnabled()
         guard !suppressNameChange else { return }
         if (draftNameEntry.text ?? "") != CamelCase.humanized(draftIDEntry.text ?? "") {
             nameAutoFilled = false
         }
+    }
+
+    private func refreshAddEnabled() {
+        let id = (draftIDEntry.text ?? "").trimmingCharacters(in: .whitespaces)
+        let name = (draftNameEntry.text ?? "").trimmingCharacters(in: .whitespaces)
+        addButton.sensitive = !id.isEmpty && !name.isEmpty
     }
 
     private func toggleAdding() {
@@ -530,12 +549,13 @@ final class ObjectFieldsEditor {
             appendDraft()
         }
         addRowBox.visible = nowVisible
-        toggleAddButton.label = nowVisible ? "Done Adding" : "+ Add Field"
+        CustomInstrumentEditorChrome.setAddToggle(toggleAddButton, label: "Add Field", isAdding: nowVisible)
         if nowVisible {
             applyExpansion(to: nil)
             _ = draftIDEntry.grabFocus()
         } else {
             resetDraft()
+            resetKind()
         }
     }
 
@@ -547,6 +567,10 @@ final class ObjectFieldsEditor {
         draftNameEntry.text = ""
         suppressNameChange = false
         nameAutoFilled = true
+    }
+
+    private func resetKind() {
+        addKindDropdown?.selected = SchemaKind.boolean.index
     }
 
     private func rebuildList() {
@@ -645,7 +669,7 @@ final class ObjectFieldsEditor {
         }
         header.append(child: kindDropdown)
 
-        let removeButton = Button(label: "−")
+        let removeButton = CustomInstrumentEditorChrome.iconButton("list-remove-symbolic", tooltip: "Remove")
         removeButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, index < self.fields.count else { return }
@@ -743,7 +767,8 @@ final class ObjectFieldsEditor {
         onChanged(fields)
         if kindHasChildren {
             addRowBox.visible = false
-            toggleAddButton.label = "+ Add Field"
+            CustomInstrumentEditorChrome.setAddToggle(toggleAddButton, label: "Add Field", isAdding: false)
+            resetKind()
         } else {
             _ = draftIDEntry.grabFocus()
         }
@@ -765,79 +790,27 @@ final class ChoicesEditor {
     private var choices: [ComboChoice]
     private let onChanged: ([ComboChoice]) -> Void
     private let listBox: Box
-    private let draftIDEntry: Entry
-    private let draftNameEntry: Entry
-    private var nameAutoFilled: Bool = true
-    private var suppressIDChange: Bool = false
-    private var suppressNameChange: Bool = false
+    private lazy var draft = IDNameDraft { [weak self] id, name in
+        self?.appendChoice(id: id, name: name) ?? false
+    }
 
     init(choices: [ComboChoice], onChanged: @escaping ([ComboChoice]) -> Void) {
         self.choices = choices
         self.onChanged = onChanged
         widget = Box(orientation: .vertical, spacing: 4)
         listBox = Box(orientation: .vertical, spacing: 4)
-        draftIDEntry = Entry()
-        draftIDEntry.placeholderText = "id"
-        draftIDEntry.setSizeRequest(width: 140, height: -1)
-        draftNameEntry = Entry()
-        draftNameEntry.placeholderText = "Name"
-        draftNameEntry.hexpand = true
 
         layout()
         rebuildList()
 
         if choices.isEmpty {
-            Task { @MainActor in _ = draftIDEntry.grabFocus() }
+            Task { @MainActor in self.draft.focus() }
         }
     }
 
     private func layout() {
         widget.append(child: listBox)
-
-        let addRow = Box(orientation: .horizontal, spacing: 6)
-        addRow.append(child: draftIDEntry)
-        addRow.append(child: draftNameEntry)
-        let addButton = Button(label: "+")
-        addButton.onClicked { [weak self] _ in
-            MainActor.assumeIsolated { self?.appendDraft() }
-        }
-        let onActivate: (Gtk.EntryRef) -> Void = { [weak self] _ in
-            MainActor.assumeIsolated { self?.appendDraft() }
-        }
-        draftIDEntry.onActivate(handler: onActivate)
-        draftNameEntry.onActivate(handler: onActivate)
-        draftIDEntry.onChanged { [weak self] _ in
-            MainActor.assumeIsolated { self?.handleDraftIDChanged() }
-        }
-        draftNameEntry.onChanged { [weak self] _ in
-            MainActor.assumeIsolated { self?.handleDraftNameChanged() }
-        }
-        addRow.append(child: addButton)
-        widget.append(child: addRow)
-    }
-
-    private func handleDraftIDChanged() {
-        guard !suppressIDChange else { return }
-        let raw = draftIDEntry.text ?? ""
-        let lowered = CamelCase.sanitized(raw)
-        if lowered != raw {
-            suppressIDChange = true
-            draftIDEntry.text = lowered
-            suppressIDChange = false
-            return
-        }
-        if nameAutoFilled {
-            suppressNameChange = true
-            draftNameEntry.text = CamelCase.humanized(lowered)
-            suppressNameChange = false
-        }
-    }
-
-    private func handleDraftNameChanged() {
-        guard !suppressNameChange else { return }
-        if (draftNameEntry.text ?? "") != CamelCase.humanized(draftIDEntry.text ?? "") {
-            nameAutoFilled = false
-        }
+        widget.append(child: draft.row)
     }
 
     private func rebuildList() {
@@ -877,7 +850,7 @@ final class ChoicesEditor {
         }
         row.append(child: nameEntry)
 
-        let removeButton = Button(label: "−")
+        let removeButton = CustomInstrumentEditorChrome.iconButton("list-remove-symbolic", tooltip: "Remove")
         removeButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, index < self.choices.count else { return }
@@ -890,21 +863,12 @@ final class ChoicesEditor {
         return row
     }
 
-    private func appendDraft() {
-        let id = (draftIDEntry.text ?? "").trimmingCharacters(in: .whitespaces)
-        let name = (draftNameEntry.text ?? "").trimmingCharacters(in: .whitespaces)
-        guard !id.isEmpty, !name.isEmpty, !choices.contains(where: { $0.id == id }) else { return }
+    private func appendChoice(id: String, name: String) -> Bool {
+        guard !choices.contains(where: { $0.id == id }) else { return false }
         choices.append(ComboChoice(id: id, name: name))
-        suppressIDChange = true
-        draftIDEntry.text = ""
-        suppressIDChange = false
-        suppressNameChange = true
-        draftNameEntry.text = ""
-        suppressNameChange = false
-        nameAutoFilled = true
         rebuildList()
         onChanged(choices)
-        _ = draftIDEntry.grabFocus()
+        return true
     }
 }
 

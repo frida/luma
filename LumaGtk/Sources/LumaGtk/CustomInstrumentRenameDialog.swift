@@ -7,7 +7,7 @@ import LumaCore
 @MainActor
 final class CustomInstrumentRenameDialog {
     private let engine: Engine
-    private var def: CustomInstrumentDef
+    private let def: CustomInstrumentDef
     private let nameEntry: Entry
     private let dialog: Adw.AlertDialog
     private let parentWindow: Gtk.Window
@@ -40,7 +40,7 @@ final class CustomInstrumentRenameDialog {
         conceptGrid.rowSpacing = 4
 
         var children: [(InstrumentIconConcept, FlowBoxChild)] = []
-        for concept in InstrumentIconCatalog.userPickable {
+        for concept in InstrumentIconCatalog.all {
             let child = FlowBoxChild()
             child.tooltipText = concept.displayName
             child.set(child: InstrumentIconView.makeImage(for: .symbolic(concept.id), pixelSize: 20))
@@ -49,7 +49,7 @@ final class CustomInstrumentRenameDialog {
         }
         conceptChildren = children
 
-        dialog = Adw.AlertDialog(heading: "Rename Instrument", body: nil)
+        dialog = Adw.AlertDialog(heading: "Rename & Icon", body: nil)
         dialog.addResponse(id: "cancel", label: "_Cancel")
         dialog.addResponse(id: "save", label: "_Save")
         dialog.setResponseAppearance(response: "save", appearance: .suggested)
@@ -57,6 +57,9 @@ final class CustomInstrumentRenameDialog {
         dialog.setClose(response: "cancel")
         dialog.setExtra(child: layoutContent())
 
+        nameEntry.onChanged { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshSaveEnabled() }
+        }
         conceptGrid.onSelectedChildrenChanged { [weak self] _ in
             MainActor.assumeIsolated { self?.applyGridSelection() }
         }
@@ -72,6 +75,14 @@ final class CustomInstrumentRenameDialog {
     func present() {
         dialog.own(self)
         dialog.present(parent: parentWindow)
+    }
+
+    private var proposedName: String {
+        (nameEntry.text ?? "").trimmingCharacters(in: .whitespaces)
+    }
+
+    private func refreshSaveEnabled() {
+        dialog.setResponseEnabled(response: "save", enabled: !proposedName.isEmpty)
     }
 
     private func layoutContent() -> Box {
@@ -155,13 +166,11 @@ final class CustomInstrumentRenameDialog {
     }
 
     private func commit() {
-        let proposedName = (nameEntry.text ?? "").trimmingCharacters(in: .whitespaces)
-        var updated = def
-        updated.name = proposedName.isEmpty ? def.name : proposedName
-        updated.icon = draftIcon
-        let engine = self.engine
-        Task { @MainActor in
-            engine.updateCustomInstrument(updated)
+        let name = proposedName
+        let icon = draftIcon
+        engine.updateCustomInstrument(def.id) {
+            $0.name = name
+            $0.icon = icon
         }
     }
 

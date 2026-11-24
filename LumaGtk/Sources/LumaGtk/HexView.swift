@@ -675,8 +675,8 @@ private struct HexMetrics {
 
     static let shared = HexMetrics()
 
-    private static let fontSize = 12.0
-    private static let rowGap = 2.0
+    private static let fontSize = 13.0
+    private static let rowGap = 3.0
     #if os(Windows)
         private static let family = "Consolas"
     #else
@@ -698,9 +698,22 @@ private struct HexMetrics {
         cairo_text_extents(cr, "0", &digitExtents)
 
         advance = digitExtents.x_advance
-        rowHeight = (fontExtents.ascent + fontExtents.descent).rounded(.up) + Self.rowGap
-        baselineOffset = Self.rowGap / 2 + fontExtents.ascent
+        rowHeight = Self.lineHeight(on: cr).rounded(.up) + Self.rowGap
+        baselineOffset = (rowHeight - fontExtents.ascent - fontExtents.descent) / 2 + fontExtents.ascent
         glyphIndices = Self.printableGlyphIndices(in: cairo_get_scaled_font(cr))
+    }
+
+    private static func lineHeight(on cr: UnsafeMutablePointer<cairo_t>) -> Double {
+        let layout = pango_cairo_create_layout(cr)!
+        defer { g_object_unref(layout) }
+        let font = pango_font_description_from_string(family)!
+        defer { pango_font_description_free(font) }
+        pango_font_description_set_absolute_size(font, fontSize * Double(PANGO_SCALE))
+        pango_layout_set_font_description(layout, font)
+        pango_layout_set_text(layout, "0", -1)
+        var height: Int32 = 0
+        pango_layout_get_size(layout, nil, &height)
+        return Double(height) / Double(PANGO_SCALE)
     }
 
     static func selectFont(on cr: UnsafeMutablePointer<cairo_t>) {

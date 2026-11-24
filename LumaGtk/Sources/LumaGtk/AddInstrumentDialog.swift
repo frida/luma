@@ -39,7 +39,8 @@ final class AddInstrumentDialog {
     private var selectedIndex: Int?
     private var pendingConfigJSON: Data = Data()
     private var tracerEditor: TracerConfigEditor?
-    private var customFeatureEditors: [FeatureValueEditor] = []
+    private var customSettingRows: [InstrumentSettingRow] = []
+    private var customWidgetsPreview: InstrumentWidgetsRenderer?
     private var codeShareEditor: CodeEditor?
     private var rowKinds: [UnsafeMutableRawPointer: RowKind] = [:]
     private var descriptorRows: [ListBoxRow] = []
@@ -814,87 +815,28 @@ final class AddInstrumentDialog {
             return
         }
 
+        let header = Box(orientation: .horizontal, spacing: 8)
+        header.append(child: InstrumentIconView.makeImage(for: def.icon, pixelSize: 16))
         let title = Label(str: def.name)
         title.halign = .start
-        title.add(cssClass: "title-3")
-        outer.append(child: title)
-
-        let header = Label(str: "Features")
-        header.halign = .start
-        header.add(cssClass: "heading")
-        header.marginTop = 8
+        title.add(cssClass: "heading")
+        header.append(child: title)
         outer.append(child: header)
 
-        customFeatureEditors.removeAll()
-
-        if def.features.isEmpty {
-            let dim = Label(str: "This custom instrument does not declare any features.")
-            dim.add(cssClass: "dim-label")
-            dim.halign = .start
-            outer.append(child: dim)
-        } else {
-            for feature in def.features {
-                outer.append(child: customFeatureRow(feature: feature, configCapture: config))
-            }
+        customSettingRows.removeAll()
+        if !def.features.isEmpty {
+            outer.append(child: InstrumentSettingRow.makeGroup(features: def.features, config: config, keeping: &customSettingRows) {
+                [weak self] id, state in
+                guard let self, var cfg = try? CustomInstrumentConfig.decode(from: self.pendingConfigJSON) else { return }
+                cfg.features[id] = state
+                self.pendingConfigJSON = cfg.encode()
+            })
         }
+
+        customWidgetsPreview = InstrumentUIHelpers.appendWidgets(into: outer, widgets: def.widgets, engine: engine, instance: nil)
+        customWidgetsPreview?.widget.sensitive = false
 
         pendingConfigJSON = config.encode()
-    }
-
-    private func customFeatureRow(feature: CustomInstrumentDef.Feature, configCapture: CustomInstrumentConfig) -> Box {
-        let row = Box(orientation: .vertical, spacing: 4)
-        row.hexpand = true
-
-        let initialEnabled = configCapture.features[feature.id]?.enabled ?? feature.enabledByDefault
-        let initialValue = configCapture.features[feature.id]?.value ?? feature.schema.defaultValue
-        let fid = feature.id
-
-        if feature.optional {
-            let header = Box(orientation: .horizontal, spacing: 8)
-            header.hexpand = true
-            let toggle = Switch()
-            toggle.active = initialEnabled
-            toggle.valign = .center
-            header.append(child: toggle)
-            let nameLabel = Label(str: feature.name)
-            nameLabel.halign = .start
-            nameLabel.hexpand = true
-            header.append(child: nameLabel)
-            row.append(child: header)
-
-            toggle.onStateSet { [weak self] _, state in
-                MainActor.assumeIsolated {
-                    guard let self else { return false }
-                    guard var cfg = try? CustomInstrumentConfig.decode(from: self.pendingConfigJSON) else { return false }
-                    let existingValue = cfg.features[fid]?.value ?? feature.schema.defaultValue
-                    cfg.features[fid] = FeatureState(enabled: state, value: existingValue)
-                    self.pendingConfigJSON = cfg.encode()
-                    return false
-                }
-            }
-
-            if case .boolean = feature.schema {
-                return row
-            }
-        } else {
-            let nameLabel = Label(str: feature.name)
-            nameLabel.halign = .start
-            row.append(child: nameLabel)
-        }
-
-        let editor = FeatureValueEditor(schema: feature.schema, value: initialValue) { [weak self] newValue in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                guard var cfg = try? CustomInstrumentConfig.decode(from: self.pendingConfigJSON) else { return }
-                let existingEnabled = cfg.features[fid]?.enabled ?? feature.enabledByDefault
-                cfg.features[fid] = FeatureState(enabled: existingEnabled, value: newValue)
-                self.pendingConfigJSON = cfg.encode()
-            }
-        }
-        customFeatureEditors.append(editor)
-        editor.widget.marginStart = feature.optional ? 28 : 0
-        row.append(child: editor.widget)
-        return row
     }
 
     private func showNewCustomDetail() {
@@ -909,11 +851,13 @@ final class AddInstrumentDialog {
         box.marginTop = 24
         box.marginBottom = 24
 
+        box.append(child: InstrumentIconView.makeImage(for: .symbolic(InstrumentIconCatalog.default.id), pixelSize: 32))
+
         let title = Label(str: "Create a Custom Instrument")
         title.add(cssClass: "title-3")
         box.append(child: title)
 
-        let hint = Label(str: "A custom instrument is a TypeScript snippet saved with the project. After creating you can rename it, choose an icon, and define toggleable features from the sidebar.")
+        let hint = Label(str: "Custom instruments are TypeScript snippets you write inline. They are saved with the project, can be added to multiple sessions, and synchronized when collaboration is enabled. After creating one you can rename it, choose an icon, and define toggleable settings from the sidebar.")
         hint.add(cssClass: "dim-label")
         hint.wrap = true
         hint.justify = .center
