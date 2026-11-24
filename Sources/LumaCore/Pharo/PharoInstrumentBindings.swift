@@ -195,13 +195,21 @@ enum PharoInstrumentBindings {
         view compile: 'sentFor: anItem
             | sent |
             sent := (self viewFor: anItem) sentItemAt: (anItem at: ''index'').
-            ^ [ SwpBridge current session describe: sent ] valueUnpreemptively'.
+            ^ self describe: sent'.
+        view compile: 'describe: anObject
+            ^ [ SwpBridge current session describe: anObject ] valueUnpreemptively'.
         view compile: 'close
             self tell: #close'.
         view compile: 'adopt: aCanvas
             LumaRun adopt: aCanvas.
             LumaHost request: { #op -> ''view_canvas''. #view -> id. #scene -> aCanvas handle } asDictionary.
             ^ aCanvas'.
+        view compile: 'spawn: anObject
+            | described taken |
+            described := self describe: anObject.
+            taken := LumaHost request: { #op -> ''view_spawn''. #view -> id. #object -> described } asDictionary.
+            taken ifFalse: [ [ SwpBridge current session release: (described at: #handle) ] valueUnpreemptively ].
+            ^ taken'.
         view compile: 'guard: aWhat doing: aBlock
             [ [ aBlock
                 valueWithin: self class deadline
@@ -255,6 +263,8 @@ enum PharoInstrumentBindings {
                     #json -> (STONJSON toString: aValue).
                     #data -> (held ifNotNil: [ :bytes | bytes span ]) } asDictionary ]
                 ensure: [ held ifNotNil: [ :bytes | bytes release ] ]'.
+        context compile: 'spawn: anObject
+            ^ view spawn: anObject'.
         context compile: 'fork: aBlock
             ^ LumaRun fork: [
                 [ aBlock value ]

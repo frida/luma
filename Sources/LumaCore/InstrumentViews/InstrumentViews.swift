@@ -38,6 +38,7 @@ public final class InstrumentViews {
     @ObservationIgnored private var viewsByID: [String: RunningView] = [:]
     @ObservationIgnored private var heldEvents: [Key: [WidgetViewPayload]] = [:]
     @ObservationIgnored private var heldRefusals: [Key: String] = [:]
+    @ObservationIgnored private var spawnWatchers: [Key: [UUID: AsyncStream<PharoObject>.Continuation]] = [:]
     @ObservationIgnored private var codeFiles: [String: [CustomInstrumentFile]] = [:]
     @ObservationIgnored private var loadedCode: Set<String> = []
     @ObservationIgnored private var operations: [Key: Task<Void, Never>] = [:]
@@ -96,6 +97,16 @@ public final class InstrumentViews {
 
     public func drill(into key: Key, view: String, index: Int, filter: String?) async throws -> PharoObject {
         try JSONDecoder().decode(PharoObject.self, from: try await request(.send(view: view, index: index, filter: filter), of: key))
+    }
+
+    public func spawns(of key: Key) -> AsyncStream<PharoObject> {
+        let (spawned, continuation) = AsyncStream<PharoObject>.makeStream()
+        let watcher = UUID()
+        spawnWatchers[key, default: [:]][watcher] = continuation
+        continuation.onTermination = { [weak self] _ in
+            Task { @MainActor in self?.spawnWatchers[key]?[watcher] = nil }
+        }
+        return spawned
     }
 
     func start() {
@@ -188,6 +199,9 @@ public final class InstrumentViews {
             return engine?.canSendViewMessage(from: view.key) ?? false
         case "view_send":
             return try send(request, from: view)
+        case "view_spawn":
+            let described = try JSONSerialization.data(withJSONObject: try argument("object", of: request) as [String: Any])
+            return spawn(try JSONDecoder().decode(PharoObject.self, from: described), from: view)
         default:
             throw PharoAsyncBridgeError.unknownOperation(operation)
         }
@@ -390,6 +404,11 @@ public final class InstrumentViews {
             throw InstrumentViewError.failed("The message was refused: \(error.message)")
         }
         return engine.sendViewMessage(payload, from: view.key)
+    }
+
+    private func spawn(_ object: PharoObject, from view: RunningView) -> Bool {
+        let deliveries = (spawnWatchers[view.key] ?? [:]).values.map { $0.yield(object) }
+        return deliveries.contains { if case .enqueued = $0 { true } else { false } }
     }
 
     private func runningView(of request: [String: Any]) throws -> RunningView {
