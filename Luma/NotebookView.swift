@@ -179,7 +179,7 @@ struct NotebookView: View {
     /// width the rest of the time.
     private func drillSide(width: CGFloat) -> some View {
         VStack(spacing: 0) {
-            PharoOverviewStrip(path: drillPath)
+            PharoOverviewStrip(path: drillPath, pageName: "Snippets")
             Divider()
 
             ScrollView(.horizontal) {

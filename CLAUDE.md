@@ -410,7 +410,11 @@ is gitignored — it is produced at build time.
   row's `send:` is described and hands it, through `spawns(of:)`, to the
   frontends showing the widget, which open it as they open a selected row;
   with none showing it the description is released and `spawn:` answers
-  false. Like any other view request it stays in this Luma.
+  false. Like any other view request it stays in this Luma. Either way the
+  object starts a column path over beside the view, which the widget lays
+  out as the Playground lays out its page and columns, the view as the
+  first of them, with the Playground's overview strip above them while
+  there are any, the widget growing by its height.
 - **Canvas (`CanvasScene`, `CanvasDrawable`, `CanvasRegistry`)** — a
   scene the image holds by handle and changes; the host draws it.
   A drawable carries the author's own vertex and fragment stages,

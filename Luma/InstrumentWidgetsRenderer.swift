@@ -99,7 +99,7 @@ private struct WidgetCanvas: View {
                 consoleView(cfg)
             case .view(let cfg):
                 if let instance {
-                    InstrumentViewWidget(key: .init(instanceID: instance.id, widget: widget.id), config: cfg, engine: engine)
+                    InstrumentViewWidget(key: .init(instanceID: instance.id, widget: widget.id), name: widget.label, config: cfg, engine: engine)
                 }
             }
         }

@@ -4,22 +4,61 @@ import SwiftyPharo
 
 struct InstrumentViewWidget: View {
     let key: InstrumentViews.Key
+    let name: String
     let config: InstrumentWidget.ViewConfig
     let engine: Engine
 
     @State private var declarations: [PharoViewDeclaration] = []
     @State private var shown: String?
     @State private var failure: String?
-    @State private var inspected: InspectedObject?
+    @State private var columnPath = PharoColumnPath(includesPage: true)
+
+    @Environment(\.instrumentInstance) private var instance
 
     var body: some View {
-        content
-            .frame(maxWidth: .infinity)
-            .frame(height: CGFloat(config.height))
-            .onAppear { views.show(key) }
-            .onDisappear { views.hide(key) }
-            .task(id: generation) { await load() }
-            .sheet(item: $inspected) { inspector(of: $0.object) }
+        VStack(spacing: 0) {
+            if !columnPath.objects.isEmpty {
+                PharoOverviewStrip(path: columnPath, pageName: name)
+                Divider()
+            }
+            columns
+        }
+        .frame(maxWidth: .infinity)
+        .pharoMaximizedPane(runtime: PharoRuntime.shared, path: columnPath, onCloseAll: columnPath.clear)
+        .environment(\.engine, engine)
+        .environment(\.pharoChatOrigin, chatOrigin)
+        .onAppear { views.show(key) }
+        .onDisappear { views.hide(key) }
+        .task(id: generation) { await load() }
+        .task { await inspectSpawned() }
+    }
+
+    private var chatOrigin: PharoChatOrigin? {
+        instance.map {
+            PharoChatOrigin(
+                origin: .instrumentView(instanceID: key.instanceID, widget: key.widget, sessionID: $0.sessionID),
+                label: "the \(name) view of an instrument",
+                source: nil)
+        }
+    }
+
+    private var columns: some View {
+        GeometryReader { scroller in
+            ScrollView(.horizontal) {
+                HStack(spacing: 0) {
+                    content
+                        .frame(width: viewWidth(fitting: scroller.size.width))
+                        .id(PharoColumnPath.pageID)
+                    inspectionSide(fitting: scroller.size.width)
+                }
+                .frame(height: scroller.size.height - 2 * columnMargin)
+                .scrollTargetLayout()
+            }
+            .contentMargins(columnMargin, for: .scrollContent)
+            .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+            .pharoColumnScrolling(columnPath)
+        }
+        .frame(height: CGFloat(config.height))
     }
 
     @ViewBuilder
@@ -84,8 +123,26 @@ struct InstrumentViewWidget: View {
                     declaration: declaration,
                     source: InstrumentViewSource(instrumentViews: views, key: key),
                     reloadToken: generation,
-                    onSelect: { inspected = InspectedObject(object: $0) })
+                    onSelect: { columnPath.startOver(at: $0) })
             }
+        }
+    }
+
+    private func viewWidth(fitting available: CGFloat) -> CGFloat {
+        columnPath.objects.isEmpty ? available : pharoColumnWidth(fitting: available)
+    }
+
+    @ViewBuilder
+    private func inspectionSide(fitting available: CGFloat) -> some View {
+        if !columnPath.objects.isEmpty {
+            if !columnPath.isFirstColumnCollapsed {
+                PharoDrillArrow()
+            }
+            pharoColumns(
+                runtime: PharoRuntime.shared,
+                path: columnPath,
+                width: pharoColumnWidth(fitting: available),
+                onCloseAll: columnPath.clear)
         }
     }
 
@@ -102,13 +159,14 @@ struct InstrumentViewWidget: View {
         }
     }
 
-    private func inspector(of object: PharoObject) -> some View {
-        PharoObjectColumn(
-            runtime: PharoRuntime.shared,
-            object: object,
-            onSelect: { inspected = InspectedObject(object: $0) },
-            onClose: { inspected = nil })
-            .frame(minWidth: 420, minHeight: 360)
+    private func inspectSpawned() async {
+        for await object in views.spawns(of: key) {
+            columnPath.startOver(at: object)
+        }
+    }
+
+    private var columnMargin: CGFloat {
+        columnPath.objects.isEmpty ? 0 : pharoColumnMargin
     }
 
     private var generation: Int? {
@@ -121,13 +179,5 @@ struct InstrumentViewWidget: View {
 
     private var views: InstrumentViews {
         engine.instrumentViews
-    }
-}
-
-private struct InspectedObject: Identifiable {
-    let object: PharoObject
-
-    var id: Int {
-        object.handle
     }
 }

@@ -1317,6 +1317,7 @@ private struct PharoDoubleClickCatcher: NSViewRepresentable {
 /// scrollbar under them.
 struct PharoOverviewStrip: View {
     let path: PharoColumnPath
+    let pageName: String
 
     var body: some View {
         VStack(spacing: 2) {
@@ -1332,7 +1333,7 @@ struct PharoOverviewStrip: View {
             PharoOverviewSquare(
                 isCurrent: path.shown == nil,
                 isOnScreen: path.isOnScreen(0),
-                printString: "Snippets",
+                printString: pageName,
                 width: previewWidth,
                 height: previewHeight) {
                 path.show(slot: 0)

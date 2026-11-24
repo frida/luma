@@ -61,7 +61,7 @@ struct PharoPlaygroundView: View {
         VStack(spacing: 0) {
             // The strip stands over the whole page, snippets included, rather
             // than over the columns alone.
-            PharoOverviewStrip(path: columnPath)
+            PharoOverviewStrip(path: columnPath, pageName: "Snippets")
             Divider()
 
             // The columns are given the height they are scrolled in rather than
