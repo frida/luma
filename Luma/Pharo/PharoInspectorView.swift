@@ -530,11 +530,11 @@ struct PharoObjectColumn: View {
     }
 
     private var printDeclaration: PharoViewDeclaration {
-        PharoViewDeclaration(viewName: "print", title: "Print", priority: .max - 1, methodSelector: "swpPrint")
+        PharoViewDeclaration(viewName: "print", title: "Print", priority: .greatestFiniteMagnitude, methodSelector: "swpPrint")
     }
 
     private var metaDeclaration: PharoViewDeclaration {
-        PharoViewDeclaration(viewName: "meta", title: "Meta", priority: .max, methodSelector: Self.metaView)
+        PharoViewDeclaration(viewName: "meta", title: "Meta", priority: .infinity, methodSelector: Self.metaView)
     }
 
     private func load() async {

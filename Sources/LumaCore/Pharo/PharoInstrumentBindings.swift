@@ -170,7 +170,7 @@ enum PharoInstrumentBindings {
         view compile: 'views
             ^ (((SwpViewCollector gtViewSelectorsFor: object) collect: [ :each | self viewBy: each ])
                 reject: [ :each | each isKindOf: SwpEmptyView ])
-                asSortedCollection: [ :a :b | a priority <= b priority ]'.
+                asSortedCollection: #priority ascending , #methodSelector ascending'.
         view compile: 'viewBy: aSelector
             | view |
             view := self in: aSelector raising: [ SwpViewCollector viewOf: object bySending: aSelector ].

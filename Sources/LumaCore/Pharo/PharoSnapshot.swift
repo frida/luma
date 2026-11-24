@@ -13,7 +13,7 @@ public struct PharoSnapshot: Codable, Sendable, Equatable {
         public var title: String
         public var methodSelector: String
         public var content: Content
-        public var priority: Int
+        public var priority: Double
 
         public enum Content: Codable, Sendable, Equatable {
             case items(kept: [[Cell]], total: Int)
