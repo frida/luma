@@ -18,7 +18,7 @@ public enum ProjectStoreError: Error, LocalizedError {
 
 public final class ProjectStore: Sendable {
     public static let didChangeNotification = Notification.Name("LumaCore.ProjectStore.didChange")
-    private static let formatVersion = 6
+    private static let formatVersion = 7
 
     public let instanceID = UUID()
     private let db: DatabaseQueue
@@ -316,6 +316,37 @@ public final class ProjectStore: Sendable {
     public func fetchOutboxOp(opID: UUID) throws -> QueuedOp? {
         try db.read { db in
             try OutboxRecord.fetchOne(db, key: opID)?.toQueuedOp()
+        }
+    }
+
+    public func removeOutboxOps(family: String, subject: UUID) throws {
+        try db.write { db in
+            try db.execute(sql: "DELETE FROM outbox WHERE family = ? AND subject_id = ?", arguments: [family, subject])
+        }
+    }
+
+    public func withholdFromLab(_ subject: LabSubject) throws {
+        try db.write { db in
+            try db.execute(
+                sql: "INSERT OR IGNORE INTO lab_withheld_subject (family, subject_id) VALUES (?, ?)",
+                arguments: [subject.family.rawValue, subject.id])
+        }
+    }
+
+    public func releaseToLab(_ subject: LabSubject) throws {
+        try db.write { db in
+            try db.execute(
+                sql: "DELETE FROM lab_withheld_subject WHERE family = ? AND subject_id = ?",
+                arguments: [subject.family.rawValue, subject.id])
+        }
+    }
+
+    public func subjectsWithheldFromLab() throws -> Set<LabSubject> {
+        try db.read { db in
+            Set(
+                try Row.fetchAll(db, sql: "SELECT family, subject_id FROM lab_withheld_subject").compactMap { row in
+                    LabSubject.Family(rawValue: row["family"]).map { LabSubject($0, row["subject_id"]) }
+                })
         }
     }
 
@@ -689,6 +720,124 @@ public final class ProjectStore: Sendable {
         }
     }
 
+    public func fetchObjectChats() throws -> [ObjectChat] {
+        try db.read { db in
+            try ObjectChat.order(Column("created_at")).fetchAll(db)
+        }
+    }
+
+    public func fetchObjectChatMessages(chatID: UUID) throws -> [ObjectChatMessage] {
+        try db.read { db in
+            try ObjectChatMessage
+                .filter(Column("chat_id") == chatID)
+                .order(Column("index"), Column("created_at"))
+                .fetchAll(db)
+        }
+    }
+
+    public func fetchObjectChatToolCalls(chatID: UUID) throws -> [ObjectChatToolCall] {
+        try db.read { db in
+            try ObjectChatToolCall
+                .filter(Column("chat_id") == chatID)
+                .fetchAll(db)
+                .sorted(by: ObjectChatToolCall.precedes)
+        }
+    }
+
+    public func fetchObjectChatObjects(chatID: UUID) throws -> [ObjectChatObject] {
+        try db.read { db in
+            try ObjectChatObject
+                .filter(Column("chat_id") == chatID)
+                .order(Column("created_at"))
+                .fetchAll(db)
+        }
+    }
+
+    public func save(_ chat: ObjectChat) throws {
+        try db.write { db in
+            try chat.save(db)
+        }
+    }
+
+    public func save(_ message: ObjectChatMessage) throws {
+        try db.write { db in
+            try message.save(db)
+        }
+    }
+
+    public func save(_ call: ObjectChatToolCall) throws {
+        try db.write { db in
+            try call.save(db)
+        }
+    }
+
+    public func save(_ object: ObjectChatObject) throws {
+        try db.write { db in
+            try object.save(db)
+        }
+    }
+
+    public func deleteObjectChat(id: UUID) throws {
+        try db.write { db in
+            _ = try ObjectChat.deleteOne(db, key: id)
+        }
+    }
+
+    public func deleteObjectChatMessage(id: UUID) throws {
+        try db.write { db in
+            _ = try ObjectChatMessage.deleteOne(db, key: id)
+        }
+    }
+
+    public func rekeyObjectChat(_ chat: ObjectChat, from oldID: UUID) throws {
+        try db.write { db in
+            try chat.save(db)
+            for table in ["object_chat_message", "object_chat_tool_call", "object_chat_object", "object_chat_read_marker"] {
+                try db.execute(sql: "UPDATE OR IGNORE \(table) SET chat_id = ? WHERE chat_id = ?", arguments: [chat.id, oldID])
+            }
+            _ = try ObjectChat.deleteOne(db, key: oldID)
+        }
+    }
+
+    public func fetchObjectChatReadMarkers() throws -> [UUID: Int] {
+        try db.read { db in
+            var markers: [UUID: Int] = [:]
+            for row in try Row.fetchAll(db, sql: "SELECT chat_id, read_through FROM object_chat_read_marker") {
+                markers[row["chat_id"]] = row["read_through"]
+            }
+            return markers
+        }
+    }
+
+    public func fetchUnsentObjectChatMessages() throws -> [UUID: String] {
+        try db.read { db in
+            var unsent: [UUID: String] = [:]
+            for row in try Row.fetchAll(db, sql: "SELECT message_id, reason FROM object_chat_unsent") {
+                unsent[row["message_id"]] = row["reason"]
+            }
+            return unsent
+        }
+    }
+
+    public func saveUnsentObjectChatMessage(_ messageID: UUID, reason: String?) throws {
+        try db.write { db in
+            if let reason {
+                try db.execute(
+                    sql: "INSERT OR REPLACE INTO object_chat_unsent (message_id, reason) VALUES (?, ?)", arguments: [messageID, reason])
+            } else {
+                try db.execute(sql: "DELETE FROM object_chat_unsent WHERE message_id = ?", arguments: [messageID])
+            }
+        }
+    }
+
+    public func saveObjectChatReadMarker(chatID: UUID, readThrough index: Int) throws {
+        try db.write { db in
+            try db.execute(
+                sql: "INSERT OR REPLACE INTO object_chat_read_marker (chat_id, read_through) VALUES (?, ?)",
+                arguments: [chatID, index])
+        }
+    }
+
     public func observeMissions(
         onChange: @escaping @Sendable ([Mission]) -> Void
     ) -> StoreObservation {
@@ -809,6 +958,52 @@ public final class ProjectStore: Sendable {
     public func deleteMission(id: UUID) throws {
         try db.write { db in
             _ = try Mission.deleteOne(db, key: id)
+        }
+    }
+
+    public func fetchMissionSteering(missionID: UUID) throws -> [MissionSteer] {
+        try db.read { db in
+            try MissionSteer
+                .filter(Column("mission_id") == missionID)
+                .fetchAll(db)
+                .sorted(by: MissionSteer.precedes)
+        }
+    }
+
+    public func save(_ steer: MissionSteer) throws {
+        try db.write { db in
+            try steer.save(db)
+        }
+    }
+
+    public func observeMissionSteering(
+        missionID: UUID,
+        onChange: @escaping @Sendable ([MissionSteer]) -> Void
+    ) -> StoreObservation {
+        StoreObservation(
+            ValueObservation
+                .tracking { db in
+                    try MissionSteer
+                        .filter(Column("mission_id") == missionID)
+                        .fetchAll(db)
+                        .sorted(by: MissionSteer.precedes)
+                }
+                .start(in: db, scheduling: .async(onQueue: .main), onError: { _ in }, onChange: onChange)
+        )
+    }
+
+    public func deleteMissionSteering(ids: [UUID]) throws {
+        try db.write { db in
+            _ = try MissionSteer.deleteAll(db, keys: ids)
+        }
+    }
+
+    public func deleteMissionRows(turns: [UUID], actions: [UUID], findings: [UUID], evidence: [UUID]) throws {
+        try db.write { db in
+            _ = try MissionEvidence.deleteAll(db, keys: evidence)
+            _ = try MissionFinding.deleteAll(db, keys: findings)
+            _ = try MissionAction.deleteAll(db, keys: actions)
+            _ = try MissionTurn.deleteAll(db, keys: turns)
         }
     }
 
@@ -1530,6 +1725,93 @@ public final class ProjectStore: Sendable {
             t.column("created_at", .datetime).notNull()
         }
 
+        try db.create(table: "object_chat") { t in
+            t.primaryKey("id", .blob).notNull()
+            t.column("title", .text)
+            t.column("subject", .blob).notNull()
+            t.column("session_id", .blob)
+                .references("process_session", onDelete: .cascade)
+                .indexed()
+            t.column("provider_id", .text)
+            t.column("model_id", .text)
+            t.column("editors", .blob).notNull()
+            t.column("created_at", .datetime).notNull()
+            t.column("updated_at", .datetime).notNull()
+        }
+
+        try db.create(table: "object_chat_message") { t in
+            t.primaryKey("id", .blob).notNull()
+            t.column("chat_id", .blob).notNull()
+                .references("object_chat", onDelete: .cascade)
+                .indexed()
+            t.column("index", .integer).notNull()
+            t.column("role", .text).notNull()
+            t.column("author", .blob)
+            t.column("body_markdown", .text).notNull()
+            t.column("reply_to", .blob)
+            t.column("asks_assistant", .boolean).notNull()
+            t.column("provider_id", .text)
+            t.column("model_id", .text)
+            t.column("error", .text)
+            t.column("input_tokens", .integer).notNull()
+            t.column("output_tokens", .integer).notNull()
+            t.column("cache_read_tokens", .integer).notNull()
+            t.column("cache_create_tokens", .integer).notNull()
+            t.column("created_at", .datetime).notNull()
+        }
+
+        try db.create(table: "object_chat_tool_call") { t in
+            t.primaryKey("id", .blob).notNull()
+            t.column("chat_id", .blob).notNull()
+                .references("object_chat", onDelete: .cascade)
+                .indexed()
+            t.column("message_id", .blob).notNull()
+            t.column("reply_to", .blob).notNull()
+            t.column("offset", .integer).notNull()
+            t.column("index", .integer).notNull()
+            t.column("tool_call_id", .text).notNull()
+            t.column("tool", .text).notNull()
+            t.column("args", .blob).notNull()
+            t.column("asked_by", .blob)
+            t.column("executor", .blob)
+            t.column("status", .text).notNull()
+            t.column("summary", .text)
+            t.column("result", .text)
+            t.column("error", .text)
+            t.column("error_position", .integer)
+            t.column("object_id", .text)
+            t.column("created_at", .datetime).notNull()
+            t.column("updated_at", .datetime).notNull()
+        }
+
+        try db.create(table: "object_chat_object") { t in
+            t.column("chat_id", .blob).notNull()
+                .references("object_chat", onDelete: .cascade)
+            t.column("object_id", .text).notNull()
+            t.column("name", .text)
+            t.column("class_name", .text).notNull()
+            t.column("print_string", .text).notNull()
+            t.column("snapshot", .blob)
+            t.column("produced_by", .blob)
+            t.column("stands_for", .text)
+            t.column("added_by", .blob)
+            t.column("created_at", .datetime).notNull()
+            t.column("updated_at", .datetime).notNull()
+            t.primaryKey(["chat_id", "object_id"])
+        }
+
+        try db.create(table: "object_chat_unsent") { t in
+            t.primaryKey("message_id", .blob).notNull()
+                .references("object_chat_message", onDelete: .cascade)
+            t.column("reason", .text).notNull()
+        }
+
+        try db.create(table: "object_chat_read_marker") { t in
+            t.primaryKey("chat_id", .blob).notNull()
+                .references("object_chat", onDelete: .cascade)
+            t.column("read_through", .integer).notNull()
+        }
+
         try db.create(table: "memory_page_module") { t in
             t.column("session_id", .blob).notNull()
                 .references("process_session", onDelete: .cascade)
@@ -1755,7 +2037,6 @@ public final class ProjectStore: Sendable {
             t.column("updated_at", .datetime).notNull()
             t.column("title", .text)
             t.column("goal_text", .text).notNull()
-            t.column("pending_user_text", .text).notNull().defaults(to: "")
             t.column("status", .text).notNull()
             t.column("provider_id", .text).notNull()
             t.column("model_id", .text).notNull()
@@ -1810,6 +2091,17 @@ public final class ProjectStore: Sendable {
             t.column("rationale", .text)
             t.column("rejection_reason", .text)
             t.column("tool_call_id", .text)
+            t.column("executor", .blob)
+        }
+
+        try db.create(table: "mission_steer") { t in
+            t.primaryKey("id", .blob).notNull()
+            t.column("mission_id", .blob).notNull()
+                .references("mission", onDelete: .cascade)
+                .indexed()
+            t.column("author", .blob)
+            t.column("text", .text).notNull()
+            t.column("created_at", .datetime).notNull()
         }
 
         try db.create(table: "mission_finding") { t in
@@ -1845,6 +2137,12 @@ public final class ProjectStore: Sendable {
             t.column("payload_json", .text).notNull()
             t.column("binary_data", .blob)
             t.column("created_at", .datetime).notNull()
+        }
+
+        try db.create(table: "lab_withheld_subject") { t in
+            t.column("family", .text).notNull()
+            t.column("subject_id", .blob).notNull()
+            t.primaryKey(["family", "subject_id"])
         }
 
         try db.create(table: "lab_known_subject") { t in

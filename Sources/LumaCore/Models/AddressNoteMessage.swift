@@ -1,7 +1,7 @@
 import Foundation
 import GRDB
 
-public struct AddressNoteMessage: Codable, Identifiable, Sendable, FetchableRecord, PersistableRecord {
+public struct AddressNoteMessage: Codable, Equatable, Identifiable, Sendable, FetchableRecord, PersistableRecord {
     public static let databaseTableName = "address_note_message"
 
     public enum Role: String, Codable, Sendable {

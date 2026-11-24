@@ -22,6 +22,19 @@ public enum QueuedOp: Sendable {
     case pattern(PatternSourceOp)
     case mission(MissionOp)
     case addressNote(AddressNoteOp)
+    case objectChat(ObjectChatOp)
+
+    var opID: UUID {
+        switch self {
+        case .notebook(let op): op.opID
+        case .session(let op): op.opID
+        case .customInstrument(let op): op.opID
+        case .pattern(let op): op.opID
+        case .mission(let op): op.opID
+        case .addressNote(let op): op.opID
+        case .objectChat(let op): op.opID
+        }
+    }
 }
 
 struct OutboxRecord: Codable, Sendable, FetchableRecord, PersistableRecord {
@@ -64,6 +77,7 @@ struct OutboxRecord: Codable, Sendable, FetchableRecord, PersistableRecord {
         case PatternSourceOp.outboxFamily: toOp(PatternSourceOp.self).map(QueuedOp.pattern)
         case MissionOp.outboxFamily: toOp(MissionOp.self).map(QueuedOp.mission)
         case AddressNoteOp.outboxFamily: toOp(AddressNoteOp.self).map(QueuedOp.addressNote)
+        case ObjectChatOp.outboxFamily: toOp(ObjectChatOp.self).map(QueuedOp.objectChat)
         default: nil
         }
     }
@@ -137,6 +151,16 @@ extension AddressNoteOp: OutboxOp {
     public var outboxSubject: UUID { noteID }
 
     public static func fromOutbox(_ payload: [String: Any], subject: UUID, binary: Data?) -> AddressNoteOp? {
+        fromJSON(payload)
+    }
+}
+
+extension ObjectChatOp: OutboxOp {
+    public static let outboxFamily = "object-chat"
+
+    public var outboxSubject: UUID { chatID }
+
+    public static func fromOutbox(_ payload: [String: Any], subject: UUID, binary: Data?) -> ObjectChatOp? {
         fromJSON(payload)
     }
 }

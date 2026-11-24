@@ -101,7 +101,7 @@ public enum MissionTools {
                 {"type":"object","properties":{},"additionalProperties":false}
                 """,
             isObserve: true,
-            requiresSession: false
+            needs: [.project]
         )
         catalog.register(spec: spec) { [weak engine] _ in
             guard let engine else { return errorResult("engine unavailable", code: .unavailable) }
@@ -126,7 +126,7 @@ public enum MissionTools {
                 {"type":"object","properties":{"device_id":{"type":"string"},"name_pattern":{"type":"string","description":"Case-insensitive regex matched against process names. Omit to return everything."},"scope":{"type":"string","enum":["minimal","metadata","full"],"default":"minimal","description":"metadata adds parameters; full also adds icons (slower)"}},"required":["device_id"],"additionalProperties":false}
                 """,
             isObserve: true,
-            requiresSession: false
+            needs: [.project]
         )
         catalog.register(spec: spec) { [weak engine] invocation in
             guard let engine else { return errorResult("engine unavailable", code: .unavailable) }
@@ -194,7 +194,7 @@ public enum MissionTools {
                 {"type":"object","properties":{},"additionalProperties":false}
                 """,
             isObserve: true,
-            requiresSession: false
+            needs: [.project]
         )
         catalog.register(spec: spec) { [weak engine] _ in
             guard let engine else { return ActionResult(summary: "engine unavailable", resultJSON: "[]", isError: true) }
@@ -644,7 +644,7 @@ public enum MissionTools {
                 {"type":"object","properties":{"session_id":{"type":"string"},"kind":{"type":"string","description":"Filter by event kind, e.g. tracer, repl"},"match_pattern":{"type":"string","description":"Case-insensitive regex matched against the event summary."},"since_event_id":{"type":"string","description":"Only return events that arrived after this id."},"limit":{"type":"integer","minimum":1,"maximum":200,"description":"Max events to return (default 50)"},"include_payload":{"type":"boolean","description":"Include each event's structured payload (default true, capped to a compact depth)."},"symbolicate":{"type":"boolean","description":"For tracer events, symbolicate caller and backtrace addresses (default true)."}},"additionalProperties":false}
                 """,
             isObserve: true,
-            requiresSession: false
+            needs: [.project]
         )
         catalog.register(spec: spec) { [weak engine] invocation in
             guard let engine else { return errorResult("engine unavailable", code: .unavailable) }
@@ -710,7 +710,7 @@ public enum MissionTools {
                 {"type":"object","properties":{"event_id":{"type":"string"},"symbolicate":{"type":"boolean","description":"For tracer events, symbolicate caller and backtrace addresses (default true)."}},"required":["event_id"],"additionalProperties":false}
                 """,
             isObserve: true,
-            requiresSession: false
+            needs: [.project]
         )
         catalog.register(spec: spec) { [weak engine] invocation in
             guard let engine else { return errorResult("engine unavailable", code: .unavailable) }

@@ -1,7 +1,7 @@
 import Foundation
 import GRDB
 
-public struct Mission: Codable, Identifiable, Sendable, FetchableRecord, PersistableRecord {
+public struct Mission: Codable, Equatable, Identifiable, Sendable, FetchableRecord, PersistableRecord {
     public static let databaseTableName = "mission"
 
     public var id: UUID
@@ -10,7 +10,6 @@ public struct Mission: Codable, Identifiable, Sendable, FetchableRecord, Persist
     public var updatedAt: Date
     public var title: String?
     public var goalText: String
-    public var pendingUserText: String
     public var status: MissionStatus
     public var providerID: String
     public var modelID: String
@@ -33,7 +32,6 @@ public struct Mission: Codable, Identifiable, Sendable, FetchableRecord, Persist
         case updatedAt = "updated_at"
         case title
         case goalText = "goal_text"
-        case pendingUserText = "pending_user_text"
         case status
         case providerID = "provider_id"
         case modelID = "model_id"
@@ -66,7 +64,6 @@ public struct Mission: Codable, Identifiable, Sendable, FetchableRecord, Persist
         self.updatedAt = now
         self.title = nil
         self.goalText = goalText
-        self.pendingUserText = ""
         self.status = .drafting
         self.providerID = providerID
         self.modelID = modelID

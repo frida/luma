@@ -1,7 +1,7 @@
 import Foundation
 import GRDB
 
-public struct MissionAction: Codable, Identifiable, Sendable, FetchableRecord, PersistableRecord {
+public struct MissionAction: Codable, Equatable, Identifiable, Sendable, FetchableRecord, PersistableRecord {
     public static let databaseTableName = "mission_action"
 
     public var id: UUID
@@ -22,6 +22,7 @@ public struct MissionAction: Codable, Identifiable, Sendable, FetchableRecord, P
     public var rationale: String?
     public var rejectionReason: String?
     public var toolCallID: String?
+    public var executor: Author?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -42,6 +43,7 @@ public struct MissionAction: Codable, Identifiable, Sendable, FetchableRecord, P
         case rationale
         case rejectionReason = "rejection_reason"
         case toolCallID = "tool_call_id"
+        case executor
     }
 
     public init(
@@ -73,5 +75,6 @@ public struct MissionAction: Codable, Identifiable, Sendable, FetchableRecord, P
         self.rationale = rationale
         self.rejectionReason = nil
         self.toolCallID = toolCallID
+        self.executor = nil
     }
 }

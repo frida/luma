@@ -4,6 +4,7 @@ import Foundation
 public final class MissionExecutor {
     public typealias SystemPromptBuilder = @MainActor (Mission) -> String
     public typealias LiveDeltaSink = @MainActor (UUID, LLMTurnEvent) -> Void
+    public typealias ExecutorAssigner = @MainActor (inout MissionAction, Mission) -> Void
 
     private let store: ProjectStore
     private let registry: LLMProviderRegistry
@@ -12,6 +13,7 @@ public final class MissionExecutor {
     private let systemPromptBuilder: SystemPromptBuilder
     private weak var collaboration: CollaborationSession?
     public var liveDeltaSink: LiveDeltaSink?
+    public var assignExecutor: ExecutorAssigner = { _, _ in }
 
     private var inFlight: [UUID: Task<Void, Never>] = [:]
 
@@ -41,6 +43,10 @@ public final class MissionExecutor {
         runDetached(missionID: missionID, mode: .resume)
     }
 
+    public func isRunning(missionID: UUID) -> Bool {
+        inFlight[missionID] != nil
+    }
+
     public func cancel(missionID: UUID) {
         inFlight[missionID]?.cancel()
         inFlight[missionID] = nil
@@ -52,7 +58,7 @@ public final class MissionExecutor {
     }
 
     public func runActionByID(_ actionID: UUID, mission: Mission) async {
-        guard let action = try? store.fetchMissionAction(id: actionID) else { return }
+        guard let action = try? store.fetchMissionAction(id: actionID), action.status == .approved else { return }
         await runAction(action, mission: mission)
     }
 
@@ -119,6 +125,7 @@ public final class MissionExecutor {
             }
 
             let outcome = await streamOneTurn(provider: provider, request: request, apiKey: apiKey, missionID: mission.id)
+            guard !Task.isCancelled, (try? store.fetchMission(id: mission.id)) != nil else { return }
 
             if !outcome.blocks.isEmpty {
                 do {
@@ -148,18 +155,19 @@ public final class MissionExecutor {
             }
 
             if toolUses.isEmpty || outcome.stopReason == .endTurn {
+                guard ((try? store.fetchMissionSteering(missionID: mission.id)) ?? []).isEmpty else { continue }
                 mission.status = .completed
                 persistMission(mission)
                 return
             }
 
             let assistantTurnID = try? store.fetchMissionTurns(missionID: mission.id).last?.id
-            let actions = createActions(missionID: mission.id, turnID: assistantTurnID, calls: toolUses)
+            let actions = createActions(in: mission, turnID: assistantTurnID, calls: toolUses)
             for action in actions {
                 persistAction(action)
             }
 
-            for action in actions where action.isObserve {
+            for action in actions where action.status == .approved {
                 await runAction(action, mission: mission)
             }
 
@@ -223,7 +231,7 @@ public final class MissionExecutor {
 
         let messages = try reconstructMessages(mission: mission)
 
-        let tools = catalog.toolSpecs()
+        let tools = catalog.toolSpecs(in: ToolNeed.missionContext)
 
         let maxOut = max(mission.tokenBudgetOutput - mission.tokensUsedOutput, 1024)
 
@@ -341,8 +349,7 @@ public final class MissionExecutor {
         mission.tokensUsedOutput += outcome.usage.outputTokens
         mission.cacheReadTokens += outcome.usage.cacheReadTokens
         mission.cacheCreateTokens += outcome.usage.cacheCreateTokens
-        try store.save(mission)
-        collaboration?.enqueueMissionUpsert(mission)
+        persistMission(mission)
     }
 
     private struct ToolCallSpec {
@@ -351,18 +358,21 @@ public final class MissionExecutor {
         let inputJSON: String
     }
 
-    private func createActions(missionID: UUID, turnID: UUID?, calls: [ToolCallSpec]) -> [MissionAction] {
+    private func createActions(in mission: Mission, turnID: UUID?, calls: [ToolCallSpec]) -> [MissionAction] {
         calls.map { call in
             let isObserve = catalog.spec(named: call.name)?.isObserve ?? false
-            return MissionAction(
-                missionID: missionID,
+            let args = (try? JSONSerialization.jsonObject(with: Data(call.inputJSON.utf8))) as? [String: Any] ?? [:]
+            var action = MissionAction(
+                missionID: mission.id,
                 turnID: turnID,
                 toolName: call.name,
                 argsJSON: call.inputJSON,
                 isObserve: isObserve,
-                sessionID: nil,
+                sessionID: (args["session_id"] as? String).flatMap(UUID.init(uuidString:)),
                 toolCallID: call.id
             )
+            assignExecutor(&action, mission)
+            return action
         }
     }
 
@@ -417,16 +427,16 @@ public final class MissionExecutor {
     }
 
     private func drainPendingUserMessage(mission: inout Mission) throws {
-        var drained = ""
-        let saved = store.updateMission(id: mission.id) { m in
-            drained = m.pendingUserText
-            m.pendingUserText = ""
-        }
-        guard !drained.isEmpty else { return }
-        if let saved {
-            mission.pendingUserText = saved.pendingUserText
-            collaboration?.enqueueMissionUpsert(saved)
-        }
+        let steering = try store.fetchMissionSteering(missionID: mission.id)
+        guard !steering.isEmpty else { return }
+        try store.deleteMissionSteering(ids: steering.map(\.id))
+        collaboration?.enqueueMissionSteerConsumed(missionID: mission.id, steerIDs: steering.map(\.id))
+        let starterID = (try store.fetchMission(id: mission.id))?.author?.id
+        let isShared = steering.contains { $0.author != nil && starterID != nil && $0.author?.id != starterID }
+        let drained = steering.map { steer in
+            guard isShared, let author = steer.author else { return steer.text }
+            return "\(author.name) writes:\n\(steer.text)"
+        }.joined(separator: "\n\n")
 
         let turns = try store.fetchMissionTurns(missionID: mission.id)
         if let last = turns.last, last.role == .user {

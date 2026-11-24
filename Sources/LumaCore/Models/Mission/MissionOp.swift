@@ -8,6 +8,8 @@ public enum MissionOp: Sendable {
     case findingUpsert(FindingUpsert)
     case findingRemove(FindingRemove)
     case evidenceAdd(EvidenceAdd)
+    case steerAppend(SteerAppend)
+    case steerConsume(SteerConsume)
 
     public var opID: UUID {
         switch self {
@@ -18,6 +20,8 @@ public enum MissionOp: Sendable {
         case .findingUpsert(let u): return u.opID
         case .findingRemove(let r): return r.opID
         case .evidenceAdd(let a): return a.opID
+        case .steerAppend(let a): return a.opID
+        case .steerConsume(let c): return c.opID
         }
     }
 
@@ -30,6 +34,19 @@ public enum MissionOp: Sendable {
         case .findingUpsert(let u): return u.finding.missionID
         case .findingRemove(let r): return r.missionID
         case .evidenceAdd(let a): return a.missionID
+        case .steerAppend(let a): return a.steer.missionID
+        case .steerConsume(let c): return c.missionID
+        }
+    }
+
+    public var rowID: UUID? {
+        switch self {
+        case .missionUpsert, .missionRemove, .findingRemove, .steerConsume: return nil
+        case .steerAppend(let a): return a.steer.id
+        case .turnAppend(let a): return a.turn.id
+        case .actionUpsert(let u): return u.action.id
+        case .findingUpsert(let u): return u.finding.id
+        case .evidenceAdd(let a): return a.evidence.id
         }
     }
 
@@ -42,6 +59,8 @@ public enum MissionOp: Sendable {
         case .findingUpsert: return "finding_upsert"
         case .findingRemove: return "finding_remove"
         case .evidenceAdd: return "evidence_add"
+        case .steerAppend: return "steer_append"
+        case .steerConsume: return "steer_consume"
         }
     }
 
@@ -119,6 +138,28 @@ public enum MissionOp: Sendable {
         }
     }
 
+    public struct SteerAppend: Sendable {
+        public let opID: UUID
+        public let steer: MissionSteer
+
+        public init(opID: UUID = UUID(), steer: MissionSteer) {
+            self.opID = opID
+            self.steer = steer
+        }
+    }
+
+    public struct SteerConsume: Sendable {
+        public let opID: UUID
+        public let missionID: UUID
+        public let steerIDs: [UUID]
+
+        public init(opID: UUID = UUID(), missionID: UUID, steerIDs: [UUID]) {
+            self.opID = opID
+            self.missionID = missionID
+            self.steerIDs = steerIDs
+        }
+    }
+
     public func toJSON() -> [String: Any] {
         var obj: [String: Any] = [
             "op_id": opID.uuidString,
@@ -141,6 +182,11 @@ public enum MissionOp: Sendable {
         case .evidenceAdd(let a):
             obj["mission_id"] = a.missionID.uuidString
             obj["evidence"] = encodeRow(a.evidence)
+        case .steerAppend(let a):
+            obj["steer"] = encodeRow(a.steer)
+        case .steerConsume(let c):
+            obj["mission_id"] = c.missionID.uuidString
+            obj["steer_ids"] = c.steerIDs.map(\.uuidString)
         }
         return obj
     }
@@ -191,34 +237,19 @@ public enum MissionOp: Sendable {
                 let e: MissionEvidence = decodeRow(row)
             else { return nil }
             return .evidenceAdd(EvidenceAdd(opID: opID, missionID: mID, evidence: e))
+        case "steer_append":
+            guard let row = obj["steer"] as? [String: Any],
+                let steer: MissionSteer = decodeRow(row)
+            else { return nil }
+            return .steerAppend(SteerAppend(opID: opID, steer: steer))
+        case "steer_consume":
+            guard let mIDStr = obj["mission_id"] as? String,
+                let mID = UUID(uuidString: mIDStr),
+                let ids = obj["steer_ids"] as? [String]
+            else { return nil }
+            return .steerConsume(SteerConsume(opID: opID, missionID: mID, steerIDs: ids.compactMap(UUID.init(uuidString:))))
         default:
             return nil
         }
     }
-}
-
-private let wireEncoder: JSONEncoder = {
-    let e = JSONEncoder()
-    e.dateEncodingStrategy = .iso8601
-    return e
-}()
-
-private let wireDecoder: JSONDecoder = {
-    let d = JSONDecoder()
-    d.dateDecodingStrategy = .iso8601
-    return d
-}()
-
-private func encodeRow<T: Encodable>(_ value: T) -> [String: Any] {
-    guard let data = try? wireEncoder.encode(value),
-        let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-    else { return [:] }
-    return obj
-}
-
-private func decodeRow<T: Decodable>(_ obj: [String: Any]) -> T? {
-    guard let data = try? JSONSerialization.data(withJSONObject: obj),
-        let value = try? wireDecoder.decode(T.self, from: data)
-    else { return nil }
-    return value
 }

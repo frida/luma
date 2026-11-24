@@ -1,7 +1,7 @@
 import Foundation
 import GRDB
 
-public struct MissionFinding: Codable, Identifiable, Sendable, FetchableRecord, PersistableRecord {
+public struct MissionFinding: Codable, Equatable, Identifiable, Sendable, FetchableRecord, PersistableRecord {
     public static let databaseTableName = "mission_finding"
 
     public var id: UUID

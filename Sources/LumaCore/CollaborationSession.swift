@@ -238,50 +238,6 @@ public final class CollaborationSession {
         }
     }
 
-    public struct ChatMessage: Identifiable, Hashable, Sendable {
-        public let id: UUID
-        public let text: String
-        public let sender: UserInfo
-        public let isLocal: Bool
-        public let timestamp: Date
-
-        public init(id: UUID = UUID(), text: String, sender: UserInfo, isLocal: Bool, timestamp: Date = .now) {
-            self.id = id
-            self.text = text
-            self.sender = sender
-            self.isLocal = isLocal
-            self.timestamp = timestamp
-        }
-
-        public static func fromJSON(_ obj: [String: Any], localUser: UserInfo) -> ChatMessage? {
-            guard let idString = obj["id"] as? String,
-                let id = UUID(uuidString: idString),
-                let text = obj["text"] as? String,
-                let senderObj = obj["user"] as? [String: Any],
-                let sender = UserInfo.fromJSON(senderObj),
-                let timestampString = obj["timestamp"] as? String,
-                let timestamp = parseTimestamp(timestampString)
-            else { return nil }
-            return ChatMessage(id: id, text: text, sender: sender, isLocal: sender.id == localUser.id, timestamp: timestamp)
-        }
-
-        private static func parseTimestamp(_ s: String) -> Date? {
-            timestampWithFractionalSeconds.date(from: s) ?? timestampWithoutFractionalSeconds.date(from: s)
-        }
-
-        private nonisolated(unsafe) static let timestampWithFractionalSeconds: ISO8601DateFormatter = {
-            let f = ISO8601DateFormatter()
-            f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            return f
-        }()
-
-        private nonisolated(unsafe) static let timestampWithoutFractionalSeconds: ISO8601DateFormatter = {
-            let f = ISO8601DateFormatter()
-            f.formatOptions = [.withInternetDateTime]
-            return f
-        }()
-    }
-
     private let connection: PortalConnection
     private let store: ProjectStore
 
@@ -294,10 +250,11 @@ public final class CollaborationSession {
     private var membership: LabMembership?
     private var pendingJoinLabID: String?
     private var replayedOpIDs: Set<UUID> = []
+    private var removedMissionIDs: Set<UUID> = []
+    private var replayedForSubjectsTheLabLacks: Set<UUID> = []
     private var opsOverridingJoinSnapshot: [UUID: SessionOp] = [:]
     private var pendingCreateOrJoinDispatched: Bool = false
     private(set) public var members: [Member] = []
-    private(set) public var chatMessages: [ChatMessage] = []
     private(set) public var vapidPublicKey: String?
     private(set) public var registeredPushPlatforms: Set<String> = []
 
@@ -364,6 +321,12 @@ public final class CollaborationSession {
     public var onCustomInstrumentOpReceived: ((CustomInstrumentOp, UserInfo?) -> Void)?
     public var onMissionOpReceived: ((MissionOp) -> Void)?
     public var onAddressNoteOpReceived: ((AddressNoteOp) -> Void)?
+    public var onObjectChatOpReceived: ((ObjectChatOp) -> Void)?
+    public var onObjectChatMessageRefused: ((ObjectChatMessage, String) -> Void)?
+    public var onObjectChatOpRefused: ((ObjectChatOp, String) -> Void)?
+    public var onMissionRemovedInLab: ((UUID) -> Void)?
+    public var onCustomInstrumentRemovedInLab: ((UUID) -> Void)?
+    public var onPatternRemovedInLab: ((UUID) -> Void)?
     public var onMissionSnapshot: ((MissionSnapshot) -> Void)?
     public var onCustomInstrumentSnapshot: (([CustomInstrumentBundle], [UUID: UserInfo]) -> Void)?
     public var onPatternSourceOpReceived: ((PatternSourceOp) -> Void)?
@@ -373,15 +336,8 @@ public final class CollaborationSession {
     public var onWidgetStatesSnapshot: (([WidgetStateSnapshot]) -> Void)?
     public var onWidgetPlacementsSnapshot: (([UUID: [String: [PatternPlacement]]]) -> Void)?
     public var onAddressNotesSnapshot: (([AddressNoteThread], Set<UUID>) -> Void)?
-    public var onChatMessageReceived: ((ChatMessage) -> Void)?
-    public var onChatMessageChange: ((ChatMessageChange) -> Void)?
+    public var onObjectChatsSnapshot: (([ObjectChatThread]) -> Void)?
 
-    public enum ChatMessageChange: Sendable {
-        case reset
-        case appended(ChatMessage)
-        case replaced(id: UUID, with: ChatMessage)
-        case removed(id: UUID)
-    }
     public var onAuthRejected: ((AuthFailure) async -> Void)?
 
     public init(connection: PortalConnection, store: ProjectStore) {
@@ -434,8 +390,6 @@ public final class CollaborationSession {
         opsOverridingJoinSnapshot = [:]
         pendingCreateOrJoinDispatched = false
         members = []
-        chatMessages = []
-        onChatMessageChange?(.reset)
         vapidPublicKey = nil
         registeredPushPlatforms = []
     }
@@ -459,62 +413,6 @@ public final class CollaborationSession {
     ) {
         guard let portalLease else { return }
         portalLease.notify(to: path, type: type, payload: payload, data: data)
-    }
-
-    public func sendChat(_ text: String) async throws {
-        guard case .joined(let labID) = status, let localUser else {
-            throw AuthFailure(domain: "client", code: "not-joined", message: "Not in a lab")
-        }
-        let optimistic = ChatMessage(text: text, sender: localUser, isLocal: true)
-        chatMessages.append(optimistic)
-        onChatMessageChange?(.appended(optimistic))
-        do {
-            let confirmed = try await requestAddChat(labID: labID, message: optimistic, localUser: localUser)
-            replaceChatMessage(id: optimistic.id, with: confirmed)
-        } catch {
-            removeChatMessage(id: optimistic.id)
-            throw error
-        }
-    }
-
-    private func requestAddChat(labID: String, message: ChatMessage, localUser: UserInfo) async throws -> ChatMessage {
-        try await withCheckedThrowingContinuation { cont in
-            sendRequest(
-                to: "/labs/\(labID)/chat/messages",
-                type: ".add",
-                payload: ["messages": [["id": message.id.uuidString, "text": message.text]]]
-            ) { result in
-                switch result {
-                case .success(let reply):
-                    guard let msgs = reply.payload["messages"] as? [JSONObject],
-                        let first = msgs.first,
-                        let parsed = ChatMessage.fromJSON(first, localUser: localUser)
-                    else {
-                        cont.resume(throwing: AuthFailure(
-                            domain: "portal",
-                            code: "bad-response",
-                            message: "Missing 'messages' in chat response"
-                        ))
-                        return
-                    }
-                    cont.resume(returning: parsed)
-                case .failure(let err):
-                    cont.resume(throwing: err)
-                }
-            }
-        }
-    }
-
-    private func replaceChatMessage(id: UUID, with replacement: ChatMessage) {
-        guard let index = chatMessages.firstIndex(where: { $0.id == id }) else { return }
-        chatMessages[index] = replacement
-        onChatMessageChange?(.replaced(id: id, with: replacement))
-    }
-
-    private func removeChatMessage(id: UUID) {
-        guard let index = chatMessages.firstIndex(where: { $0.id == id }) else { return }
-        chatMessages.remove(at: index)
-        onChatMessageChange?(.removed(id: id))
     }
 
     /// True once this project has ever joined or created a lab. Local-only
@@ -567,7 +465,7 @@ public final class CollaborationSession {
     }
 
     public func enqueueCustomInstrumentOp(_ op: CustomInstrumentOp) {
-        guard isCollaborative else { return }
+        guard isCollaborative, !isWithheld(LabSubject(.definition, op.defID)) else { return }
         try? store.saveOutboxOps([op])
         guard case .joined(let labID) = status else { return }
         sendCustomInstrumentOpOverWire(op, labID: labID)
@@ -622,8 +520,21 @@ public final class CollaborationSession {
         enqueueMissionOp(.evidenceAdd(.init(missionID: missionID, evidence: evidence)))
     }
 
+    public func enqueueMissionSteer(_ steer: MissionSteer) {
+        enqueueMissionOp(.steerAppend(.init(steer: steer)))
+    }
+
+    public func enqueueMissionSteerConsumed(missionID: UUID, steerIDs: [UUID]) {
+        enqueueMissionOp(.steerConsume(.init(missionID: missionID, steerIDs: steerIDs)))
+    }
+
+    public func forget(removedMission missionID: UUID) {
+        removedMissionIDs.insert(missionID)
+        try? store.removeOutboxOps(family: MissionOp.outboxFamily, subject: missionID)
+    }
+
     private func enqueueMissionOp(_ op: MissionOp) {
-        guard isCollaborative else { return }
+        guard isCollaborative, !removedMissionIDs.contains(op.missionID) || op.kind == "mission_remove" else { return }
         try? store.saveOutboxOps([op])
         sendMissionOpIfJoined(op)
     }
@@ -680,6 +591,22 @@ public final class CollaborationSession {
         )
     }
 
+    public func enqueueObjectChat(_ change: ObjectChatOp.Change) throws {
+        guard isCollaborative else { return }
+        let op = ObjectChatOp(change)
+        try store.saveOutboxOps([op])
+        guard case .joined(let labID) = status else { return }
+        sendObjectChatOpOverWire(op, labID: labID)
+    }
+
+    private func sendObjectChatOpOverWire(_ op: ObjectChatOp, labID: String) {
+        sendNotification(
+            to: "/labs/\(labID)/object-chats",
+            type: "+op",
+            payload: op.toJSON()
+        )
+    }
+
     public func enqueuePatternSourceUpsert(_ record: PatternSourceRecord) {
         enqueuePatternSourceOp(.upsert(.init(record: record)))
     }
@@ -689,10 +616,14 @@ public final class CollaborationSession {
     }
 
     private func enqueuePatternSourceOp(_ op: PatternSourceOp) {
-        guard isCollaborative else { return }
+        guard isCollaborative, !isWithheld(LabSubject(.pattern, op.sourceID)) else { return }
         try? store.saveOutboxOps([op])
         guard case .joined(let labID) = status else { return }
         sendPatternSourceOpOverWire(op, labID: labID)
+    }
+
+    private func isWithheld(_ subject: LabSubject) -> Bool {
+        ((try? store.subjectsWithheldFromLab()) ?? []).contains(subject)
     }
 
     private func sendPatternSourceOpOverWire(_ op: PatternSourceOp, labID: String) {
@@ -743,6 +674,9 @@ public final class CollaborationSession {
         case .addressNote(let op):
             replayedOpIDs.insert(op.opID)
             sendAddressNoteOpOverWire(op, labID: labID)
+        case .objectChat(let op):
+            replayedOpIDs.insert(op.opID)
+            sendObjectChatOpOverWire(op, labID: labID)
         }
     }
 
@@ -1637,8 +1571,6 @@ public final class CollaborationSession {
     private func ingestJoinSnapshot(payload: JSONObject, data: [UInt8]?, labID: String) {
         guard let localUser = self.localUser,
             let memberDicts = payload["members"] as? [JSONObject],
-            let chatObj = payload["chat"] as? JSONObject,
-            let chatMsgs = chatObj["messages"] as? [JSONObject],
             let notebookObj = payload["notebook"] as? JSONObject,
             let notebookEntries = notebookObj["entries"] as? [JSONObject]
         else { Task { await self.stop() }; return }
@@ -1666,8 +1598,6 @@ public final class CollaborationSession {
         members = memberDicts.compactMap(Member.fromJSON)
         remember(LabMembership(labID: labID, user: localUser, role: members.first { $0.user.id == localUser.id }!.role))
         setStatus(.joined(labID: labID))
-        chatMessages = chatMsgs.compactMap { ChatMessage.fromJSON($0, localUser: localUser) }
-        onChatMessageChange?(.reset)
 
         var collabState = try! store.fetchCollaborationState()
         if collabState.labID != labID {
@@ -1694,17 +1624,28 @@ public final class CollaborationSession {
         let notes = noteDicts.compactMap(AddressNoteThread.fromWireJSON)
         let missionDicts = (payload["missions"] as? [JSONObject]) ?? []
         let missions = missionDicts.compactMap(Mission.fromWireJSON)
+        let objectChatDicts = (payload["object_chats"] as? [JSONObject]) ?? []
+        let objectChats = objectChatDicts.compactMap(ObjectChatThread.fromWireJSON)
         var heldByLab = snapshot.map { LabSubject(.entry, $0.id) }
         heldByLab += sessions.flatMap(\.labSubjects)
         heldByLab += customBundles.map { LabSubject(.definition, $0.def.id) }
         heldByLab += patterns.map { LabSubject(.pattern, $0.id) }
         heldByLab += notes.map { LabSubject(.addressNote, $0.note.id) }
         heldByLab += missions.map { LabSubject(.mission, $0.id) }
+        heldByLab += objectChats.flatMap {
+            [LabSubject(.objectChat, $0.chat.id)] + $0.messages.map { LabSubject(.objectChatMessage, $0.id) }
+        }
         try? store.markKnownToLab(heldByLab)
 
         onNotebookSnapshot?(snapshot)
         onCustomInstrumentSnapshot?(customBundles, Self.customInstrumentEditors(in: customDicts))
         onPatternSourcesSnapshot?(patterns)
+        let held = Set(heldByLab)
+        replayedForSubjectsTheLabLacks = Set(
+            ((try? store.fetchOutbox()) ?? []).filter { op in
+                if case .session = op { return false }
+                return !held.contains(op.labSubject)
+            }.map(\.opID))
         replayOutbox(knownSessions: Set(sessions.map(\.id))) { onSessionsSnapshot?(sessions) }
 
         let widgetStateDicts = (payload["widget_states"] as? [JSONObject]) ?? []
@@ -1717,17 +1658,20 @@ public final class CollaborationSession {
         onWidgetPlacementsSnapshot?(Self.widgetPlacements(of: sessions, from: widgetPlacementDicts))
 
         onAddressNotesSnapshot?(notes, Set(sessions.map(\.id)))
+        onObjectChatsSnapshot?(objectChats)
 
         let turnsArr = (payload["mission_turns"] as? [JSONObject]) ?? []
         let actionsArr = (payload["mission_actions"] as? [JSONObject]) ?? []
         let findingsArr = (payload["mission_findings"] as? [JSONObject]) ?? []
         let evidenceArr = (payload["mission_evidence"] as? [JSONObject]) ?? []
+        let steeringArr = (payload["mission_steering"] as? [JSONObject]) ?? []
         let missionSnapshot = MissionSnapshot(
             missions: missions,
             turns: turnsArr.compactMap(MissionTurn.fromWireJSON),
             actions: actionsArr.compactMap(MissionAction.fromWireJSON),
             findings: findingsArr.compactMap(MissionFinding.fromWireJSON),
-            evidence: evidenceArr.compactMap(MissionEvidence.fromWireJSON)
+            evidence: evidenceArr.compactMap(MissionEvidence.fromWireJSON),
+            steering: steeringArr.compactMap(MissionSteer.fromWireJSON)
         )
         onMissionSnapshot?(missionSnapshot)
     }
@@ -1788,7 +1732,7 @@ public final class CollaborationSession {
         let segs = from.hasPrefix("/") ? from.dropFirst()
             .split(separator: "/", omittingEmptySubsequences: true).map(String.init) : []
 
-        if type == "+op", isEchoOfOpAlreadyApplied(payload) { return }
+        if type == "+op", isEchoOfOpAlreadyApplied(payload), !Self.stampsWhatItEchoes(segs) { return }
 
         switch (type, segs) {
         case ("+update", let s) where s.count == 2 && s[0] == "labs":
@@ -1889,25 +1833,15 @@ public final class CollaborationSession {
                 let opID = UUID(uuidString: idStr) else { return }
             settleOutboxOp(opID: opID)
             replayedOpIDs.remove(opID)
+            if replayedForSubjectsTheLabLacks.remove(opID) != nil, replayedForSubjectsTheLabLacks.isEmpty {
+                resyncWithLab()
+            }
             if let op = opsOverridingJoinSnapshot.removeValue(forKey: opID) {
                 apply(op)
             }
 
         case ("+op-rejected", _):
-            guard let opID = (payload["op_id"] as? String).flatMap(UUID.init(uuidString:)) else { return }
-            let reason = (payload["reason"] as? String) ?? "rejected"
-            opsOverridingJoinSnapshot.removeValue(forKey: opID)
-            let rejected = try? store.fetchOutboxOp(opID: opID)
-            _ = try? store.removeOutboxOp(opID: opID)
-            if reason == Self.patternNameTaken, case .pattern(.upsert(let upsert)) = rejected {
-                onPatternSourceNameTaken?(upsert.record)
-            } else {
-                if let rejected {
-                    markKnown(rejected.labSubject)
-                }
-                onOpRejected?(reason)
-                resyncWithLab()
-            }
+            handleOpRejected(payload)
 
         case ("+op", let s) where s.count == 3 && s[0] == "labs" && s[2] == "custom-instruments":
             guard let op = CustomInstrumentOp.fromJSON(payload) else { return }
@@ -1929,6 +1863,12 @@ public final class CollaborationSession {
             guard let op = AddressNoteOp.fromJSON(payload) else { return }
             markKnown(QueuedOp.addressNote(op).labSubject)
             onAddressNoteOpReceived?(op)
+
+        case ("+op", let s) where s.count == 3 && s[0] == "labs" && s[2] == "object-chats":
+            guard let op = ObjectChatOp.fromJSON(payload) else { return }
+            markKnown(QueuedOp.objectChat(op).labSubject)
+            settleOutboxOp(opID: op.opID)
+            onObjectChatOpReceived?(op)
 
         case ("+op", let s) where s.count == 4 && s[0] == "labs" && s[2] == "sessions":
             guard let sessionID = UUID(uuidString: s[3]) else { return }
@@ -2032,19 +1972,56 @@ public final class CollaborationSession {
             else { return }
             onSessionWidgetActionRequested?(sessionID, instanceID, widget, action, payload["item"] as? String)
 
-        case ("+add", let s) where s.count == 4 && s[0] == "labs" && s[2] == "chat" && s[3] == "messages":
-            guard let localUser, let msgs = payload["messages"] as? [JSONObject] else { return }
-            for m in msgs {
-                if let message = ChatMessage.fromJSON(m, localUser: localUser) {
-                    chatMessages.append(message)
-                    onChatMessageReceived?(message)
-                    onChatMessageChange?(.appended(message))
-                }
-            }
-
         default:
             break
         }
+    }
+
+    func handleOpRejected(_ payload: JSONObject) {
+        guard let opID = (payload["op_id"] as? String).flatMap(UUID.init(uuidString:)) else { return }
+        let reason = (payload["reason"] as? String) ?? "rejected"
+        opsOverridingJoinSnapshot.removeValue(forKey: opID)
+        replayedForSubjectsTheLabLacks.remove(opID)
+        guard let rejected = try? store.fetchOutboxOp(opID: opID) else { return }
+        _ = try? store.removeOutboxOp(opID: opID)
+        if reason == Self.patternNameTaken, case .pattern(.upsert(let upsert)) = rejected {
+            onPatternSourceNameTaken?(upsert.record)
+        } else {
+            if announceRemovalInLab(of: rejected, because: reason) {
+                markKnown(rejected.labSubject)
+                return resyncWithLab()
+            }
+            if case .objectChat(let op) = rejected, case .messageAppend(let message) = op.change {
+                onObjectChatMessageRefused?(message, reason)
+            } else if case .objectChat(let op) = rejected {
+                onObjectChatOpRefused?(op, reason)
+                markKnown(QueuedOp.objectChat(op).labSubject)
+            } else {
+                markKnown(rejected.labSubject)
+            }
+            onOpRejected?(reason)
+            resyncWithLab()
+        }
+    }
+
+    private func announceRemovalInLab(of rejected: QueuedOp, because reason: String) -> Bool {
+        switch rejected {
+        case .mission(let op) where reason.hasSuffix(": the mission was removed"):
+            onMissionRemovedInLab?(op.missionID)
+        case .customInstrument(.upsert(let upsert)) where reason == "upsert: the instrument was removed":
+            try? store.removeOutboxOps(family: CustomInstrumentOp.outboxFamily, subject: upsert.bundle.def.id)
+            onCustomInstrumentRemovedInLab?(upsert.bundle.def.id)
+        case .pattern(.upsert(let upsert)) where reason == "upsert: the pattern was removed":
+            try? store.removeOutboxOps(family: PatternSourceOp.outboxFamily, subject: upsert.record.id)
+            onPatternRemovedInLab?(upsert.record.id)
+        default:
+            return false
+        }
+        return true
+    }
+
+    private static func stampsWhatItEchoes(_ segs: [String]) -> Bool {
+        segs.count >= 3 && ["notebook", "missions", "address-notes", "object-chats"].contains(segs[2])
     }
 
     private func isEchoOfOpAlreadyApplied(_ payload: JSONObject) -> Bool {

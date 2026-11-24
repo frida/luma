@@ -30,6 +30,8 @@ extension Engine {
             return try await patternDecoder.summary(ofText: try pharoArgument("source", of: request)).jsonObject
         case "decode":
             return try await decodeForPharo(request)
+        case "object_chat_title":
+            return objectChats.displayTitle(ofChatWithID: UUID(uuidString: try pharoArgument("chat", of: request))!) ?? NSNull()
         case let operation where operation.hasPrefix("view_"):
             return try await instrumentViews.answer(operation, request)
         default:

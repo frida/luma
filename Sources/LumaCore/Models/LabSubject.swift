@@ -7,6 +7,8 @@ public struct LabSubject: Hashable, Sendable {
         case pattern
         case mission
         case addressNote
+        case objectChat
+        case objectChatMessage
         case session
         case replCell
         case instrument
@@ -32,6 +34,17 @@ extension QueuedOp {
         case .pattern(let op): LabSubject(.pattern, op.sourceID)
         case .mission(let op): LabSubject(.mission, op.missionID)
         case .addressNote(let op): LabSubject(.addressNote, op.noteID)
+        case .objectChat(let op): op.labSubject
+        }
+    }
+}
+
+extension ObjectChatOp {
+    var labSubject: LabSubject {
+        switch change {
+        case .messageAppend(let message): LabSubject(.objectChatMessage, message.id)
+        case .messageEdit(_, let messageID, _), .messageRemove(_, let messageID): LabSubject(.objectChatMessage, messageID)
+        default: LabSubject(.objectChat, chatID)
         }
     }
 }

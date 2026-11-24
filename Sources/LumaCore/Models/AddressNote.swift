@@ -1,7 +1,7 @@
 import Foundation
 import GRDB
 
-public struct AddressNote: Codable, Identifiable, Sendable, FetchableRecord, PersistableRecord {
+public struct AddressNote: Codable, Equatable, Identifiable, Sendable, FetchableRecord, PersistableRecord {
     public static let databaseTableName = "address_note"
 
     public var id: UUID

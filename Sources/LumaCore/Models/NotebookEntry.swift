@@ -1,7 +1,7 @@
 import Foundation
 import GRDB
 
-public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, PersistableRecord {
+public struct NotebookEntry: Codable, Equatable, Identifiable, Sendable, FetchableRecord, PersistableRecord {
     public static let databaseTableName = "notebook_entry"
 
     public enum Kind: String, Codable, Sendable {

@@ -9,7 +9,7 @@ public final class PortalConnection {
         certificate: BackendConfig.certificate
     )
 
-    static let protocolVersion = 3
+    static let protocolVersion = 4
 
     public enum Event {
         case notification(Notification)

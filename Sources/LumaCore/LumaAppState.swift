@@ -49,6 +49,7 @@ public final class LumaAppState {
         var providerBaseURLs: [String: String]?
         var missionDefaults: MissionDefaults?
         var externalMCPTrustsClient: Bool?
+        var objectChatRunsWithoutAsking: Bool?
         var instrumentFolderLinks: [String: InstrumentFolderLink]?
         var storeInstallations: [String: StoreInstallation]?
         var approvedHostCode: Set<String>?
@@ -166,6 +167,15 @@ public final class LumaAppState {
         set {
             guard stored.externalMCPTrustsClient != newValue else { return }
             stored.externalMCPTrustsClient = newValue
+            persist()
+        }
+    }
+
+    public var objectChatRunsWithoutAsking: Bool {
+        get { stored.objectChatRunsWithoutAsking ?? false }
+        set {
+            guard stored.objectChatRunsWithoutAsking != newValue else { return }
+            stored.objectChatRunsWithoutAsking = newValue
             persist()
         }
     }

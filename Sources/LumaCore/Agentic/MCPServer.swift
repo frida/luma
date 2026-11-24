@@ -13,13 +13,16 @@ public final class MCPServer {
 
     public var onToolStarted: ToolCallObserver?
     public var onToolFinished: ToolResultObserver?
-    public var trustsClientApprovals: Bool = false
+    public var trustsClientApprovals: Bool {
+        get { missionHost.trustsClientApprovals }
+        set { missionHost.trustsClientApprovals = newValue }
+    }
     public let bearerToken: String
 
     private weak var engine: Engine?
     private let resolveMission: MissionResolver
     private let toolNames: Set<String>
-    private var pendingApprovals: [UUID: CheckedContinuation<ApprovalDecision, Never>] = [:]
+    private let missionHost: MissionToolCallHost
     private var cachedMCPTools: [[String: Any]]?
     private var nextToolCallOrdinalByMission: [UUID: Int] = [:]
 
@@ -40,6 +43,7 @@ public final class MCPServer {
         self.engine = engine
         self.resolveMission = resolveMission
         self.toolNames = Set(toolNames)
+        self.missionHost = MissionToolCallHost(engine: engine)
         if let bearerToken {
             self.bearerToken = bearerToken
         } else {
@@ -53,21 +57,27 @@ public final class MCPServer {
     }
 
     public func approve(actionID: UUID) {
-        if let cont = pendingApprovals.removeValue(forKey: actionID) {
-            cont.resume(returning: .approved)
-        }
+        missionHost.approve(actionID: actionID)
     }
 
     public func reject(actionID: UUID, reason: String?) {
-        if let cont = pendingApprovals.removeValue(forKey: actionID) {
-            cont.resume(returning: .rejected(reason))
-        }
+        missionHost.reject(actionID: actionID, reason: reason)
     }
 
-    fileprivate enum ApprovalDecision {
-        case approved
-        case rejected(String?)
-        case cancelled
+    func settle(_ action: MissionAction) {
+        missionHost.settle(action)
+    }
+
+    func cancelPendingApprovals() {
+        missionHost.cancelAll()
+    }
+
+    var isWaitingForApproval: Bool {
+        missionHost.isWaitingForApproval
+    }
+
+    func end(because reason: String) {
+        missionHost.end(because: reason)
     }
 
     public func start(preferredPort: UInt16? = nil) async throws -> URL {
@@ -88,10 +98,7 @@ public final class MCPServer {
         #elseif canImport(CSoup)
         stopSoup()
         #endif
-        for (_, cont) in pendingApprovals {
-            cont.resume(returning: .cancelled)
-        }
-        pendingApprovals.removeAll()
+        missionHost.cancelAll()
     }
 
     // MARK: - Shared dispatch
@@ -170,88 +177,32 @@ public final class MCPServer {
 
         onToolStarted?(toolName, arguments)
 
-        let sessionID = (arguments["session_id"] as? String).flatMap(UUID.init(uuidString:))
-        let argsJSON = serializeArgs(arguments)
         let toolCallOrdinal = nextToolCallOrdinal(for: mission.id, store: engine.store)
         let toolCallID = "t\(toolCallOrdinal)"
-
-        var action = MissionAction(
-            missionID: mission.id,
-            turnID: nil,
-            toolName: toolName,
-            argsJSON: argsJSON,
-            isObserve: spec.isObserve,
-            sessionID: sessionID,
-            toolCallID: toolCallID
-        )
-
-        if !spec.isObserve, !trustsClientApprovals {
-            try? engine.store.save(action)
-            engine.collaboration.enqueueMissionAction(action)
-
-            let decision = await withCheckedContinuation { (cont: CheckedContinuation<ApprovalDecision, Never>) in
-                pendingApprovals[action.id] = cont
-            }
-
-            switch decision {
-            case .rejected(let reason):
-                action.status = .rejected
-                action.rejectionReason = reason
-                action.decidedAt = Date()
-                action.completedAt = Date()
-                try? engine.store.save(action)
-                engine.collaboration.enqueueMissionAction(action)
-                let message = reason.map { "User declined: \($0)" } ?? "User declined to run this tool."
-                return jsonRPCResult(id: rpcID, result: toolCallPayload(toolCallID: toolCallID, body: message, isError: true))
-            case .cancelled:
-                action.status = .failed
-                action.error = "mission canceled while awaiting approval"
-                action.completedAt = Date()
-                try? engine.store.save(action)
-                engine.collaboration.enqueueMissionAction(action)
-                return jsonRPCError(id: rpcID, code: -32_000, message: "tool call canceled")
-            case .approved:
-                break
-            }
-        }
-
-        action.status = .running
-        action.decidedAt = Date()
-        try? engine.store.save(action)
-        engine.collaboration.enqueueMissionAction(action)
-
-        let invocation = ActionInvocation(
+        let call = ToolCallRequest(
+            spec: spec,
             args: arguments,
-            mission: mission,
-            sessionID: sessionID,
-            toolCallID: toolCallID
+            argsJSON: serializeArgs(arguments),
+            toolCallID: toolCallID,
+            sessionID: (arguments["session_id"] as? String).flatMap(UUID.init(uuidString:)),
+            mission: mission
         )
+        let host = engine.toolCallHost(forMission: mission.id) ?? missionHost
 
-        let result: ActionResult
-        do {
-            result = try await engine.missionTools.execute(toolName, invocation: invocation)
-        } catch {
-            action.status = .failed
-            action.error = error.localizedDescription
-            action.completedAt = Date()
-            try? engine.store.save(action)
-            engine.collaboration.enqueueMissionAction(action)
-            return jsonRPCResult(id: rpcID, result: toolCallPayload(toolCallID: toolCallID, body: "error: \(error.localizedDescription)", isError: true))
+        switch await host.perform(call, in: engine.missionTools) {
+        case .completed(let result):
+            onToolFinished?(toolName, result)
+            let payload = toolCallPayload(
+                toolCallID: toolCallID, body: result.resultJSON, attachments: result.attachments, isError: result.isError)
+            return jsonRPCResult(id: rpcID, result: payload)
+        case .failed(let message):
+            return jsonRPCResult(id: rpcID, result: toolCallPayload(toolCallID: toolCallID, body: "error: \(message)", isError: true))
+        case .rejected(let reason):
+            let message = reason.map { "User declined: \($0)" } ?? "User declined to run this tool."
+            return jsonRPCResult(id: rpcID, result: toolCallPayload(toolCallID: toolCallID, body: message, isError: true))
+        case .cancelled:
+            return jsonRPCError(id: rpcID, code: -32_000, message: "tool call canceled")
         }
-
-        action.status = result.isError ? .failed : .succeeded
-        action.resultJSON = result.resultJSON
-        action.resultSummary = result.summary
-        if result.isError { action.error = result.summary }
-        action.completedAt = Date()
-        try? engine.store.save(action)
-        engine.collaboration.enqueueMissionAction(action)
-
-        onToolFinished?(toolName, result)
-
-        return jsonRPCResult(
-            id: rpcID,
-            result: toolCallPayload(toolCallID: toolCallID, body: result.resultJSON, attachments: result.attachments, isError: result.isError))
     }
 
     private func toolCallPayload(toolCallID: String, body: String, attachments: [LLMAttachment] = [], isError: Bool) -> [String: Any] {

@@ -8,7 +8,7 @@ public final class ToolCatalog {
     private var executorsByName: [String: Executor] = [:]
     private var registrationOrder: [String] = []
     private var cachedSpecs: [ActionSpec]?
-    private var cachedToolSpecs: [LLMToolSpec]?
+    private var cachedToolSpecs: [Set<ToolNeed>: [LLMToolSpec]] = [:]
 
     public init() {}
 
@@ -19,7 +19,7 @@ public final class ToolCatalog {
         specsByName[spec.name] = spec
         executorsByName[spec.name] = executor
         cachedSpecs = nil
-        cachedToolSpecs = nil
+        cachedToolSpecs = [:]
     }
 
     public func unregister(name: String) {
@@ -27,7 +27,7 @@ public final class ToolCatalog {
         executorsByName.removeValue(forKey: name)
         registrationOrder.removeAll { $0 == name }
         cachedSpecs = nil
-        cachedToolSpecs = nil
+        cachedToolSpecs = [:]
     }
 
     public func spec(named name: String) -> ActionSpec? {
@@ -41,13 +41,17 @@ public final class ToolCatalog {
         return specs
     }
 
-    public func toolSpecs() -> [LLMToolSpec] {
-        if let cachedToolSpecs { return cachedToolSpecs }
-        let specs = self.specs()
+    public func specs(in context: Set<ToolNeed>) -> [ActionSpec] {
+        specs().filter { $0.isOffered(in: context) }
+    }
+
+    public func toolSpecs(in context: Set<ToolNeed>) -> [LLMToolSpec] {
+        if let cached = cachedToolSpecs[context] { return cached }
+        let specs = self.specs(in: context)
         let toolSpecs = specs.enumerated().map { index, spec in
             spec.toToolSpec(cacheBoundary: index == specs.count - 1)
         }
-        cachedToolSpecs = toolSpecs
+        cachedToolSpecs[context] = toolSpecs
         return toolSpecs
     }
 

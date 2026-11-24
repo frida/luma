@@ -30,7 +30,7 @@ extension MissionTools {
                 {"type":"object","properties":{},"additionalProperties":false}
                 """,
             isObserve: true,
-            requiresSession: false
+            needs: [.project]
         )
         catalog.register(spec: spec) { [weak engine] _ in
             guard let engine else { return errorResult("engine unavailable", code: .unavailable) }

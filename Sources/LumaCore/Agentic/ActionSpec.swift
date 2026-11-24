@@ -16,12 +16,21 @@ public struct CodePreviewArg: Sendable, Equatable {
     }
 }
 
+public enum ToolNeed: Sendable, Hashable {
+    case mission
+    case project
+    case session
+    case chatObjects
+
+    public static let missionContext: Set<ToolNeed> = [.mission, .project, .session]
+}
+
 public struct ActionSpec: Sendable {
     public var name: String
     public var description: String
     public var inputSchemaJSON: String
     public var isObserve: Bool
-    public var requiresSession: Bool
+    public var needs: Set<ToolNeed>
     public var codePreview: CodePreviewArg?
 
     public init(
@@ -32,12 +41,34 @@ public struct ActionSpec: Sendable {
         requiresSession: Bool,
         codePreview: CodePreviewArg? = nil
     ) {
+        self.init(
+            name: name,
+            description: description,
+            inputSchemaJSON: inputSchemaJSON,
+            isObserve: isObserve,
+            needs: requiresSession ? [.session] : [.mission],
+            codePreview: codePreview
+        )
+    }
+
+    public init(
+        name: String,
+        description: String,
+        inputSchemaJSON: String,
+        isObserve: Bool,
+        needs: Set<ToolNeed>,
+        codePreview: CodePreviewArg? = nil
+    ) {
         self.name = name
         self.description = description
         self.inputSchemaJSON = inputSchemaJSON
         self.isObserve = isObserve
-        self.requiresSession = requiresSession
+        self.needs = needs
         self.codePreview = codePreview
+    }
+
+    public func isOffered(in context: Set<ToolNeed>) -> Bool {
+        needs.isSubset(of: context)
     }
 
     public func toToolSpec(cacheBoundary: Bool = false) -> LLMToolSpec {

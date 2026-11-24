@@ -11,6 +11,7 @@ public enum PharoLumaBindings {
         _ = try await runtime.evaluate(PharoSessionBindings.source)
         _ = try await runtime.evaluate(PharoPatternBindings.source)
         _ = try await runtime.evaluate(PharoInstrumentBindings.source)
+        _ = try await runtime.evaluate(PharoChatBindings.source)
     }
 
     /// Each feed is fetched only when it is asked for. A record carries its

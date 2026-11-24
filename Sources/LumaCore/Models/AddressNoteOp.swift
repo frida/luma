@@ -182,14 +182,14 @@ private let wireDecoder: JSONDecoder = {
     return d
 }()
 
-private func encodeRow<T: Encodable>(_ value: T) -> [String: Any] {
+func encodeRow<T: Encodable>(_ value: T) -> [String: Any] {
     guard let data = try? wireEncoder.encode(value),
         let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     else { return [:] }
     return obj
 }
 
-private func decodeRow<T: Decodable>(_ obj: [String: Any]) -> T? {
+func decodeRow<T: Decodable>(_ obj: [String: Any]) -> T? {
     guard let data = try? JSONSerialization.data(withJSONObject: obj),
         let value = try? wireDecoder.decode(T.self, from: data)
     else { return nil }

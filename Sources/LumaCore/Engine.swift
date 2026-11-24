@@ -90,6 +90,7 @@ public final class Engine {
     @ObservationIgnored public private(set) lazy var pharo = PharoWorkspace(engine: self)
     @ObservationIgnored public private(set) lazy var instrumentViews = InstrumentViews(
         engine: self, catalogURL: BackendConfig.storeCatalogURL)
+    @ObservationIgnored public private(set) lazy var objectChats = ObjectChats(engine: self)
 
     @ObservationIgnored private var disassemblers: [UUID: Disassembler] = [:]
     @ObservationIgnored private var seekRestoredSessions: Set<UUID> = []
@@ -118,6 +119,13 @@ public final class Engine {
     public internal(set) var sessionUIStates: [UUID: SessionUIState] = [:]
     public internal(set) var customInstrumentDefUIStates: [UUID: CustomInstrumentDefUIState] = [:]
     public private(set) var missions: [Mission] = []
+    public private(set) var subjectsKeptFromLab: Set<LabSubject> = []
+    private var problemsOfThisEngine: [LabProblem] = []
+
+    public var labProblems: [LabProblem] {
+        (objectChats.problems.map(LabProblem.init) + problemsOfThisEngine).sorted { $0.date < $1.date }
+    }
+
     public private(set) var installedPackages: [InstalledPackage] = []
     public let placementHistory: PatternPlacementHistory
 
@@ -252,6 +260,9 @@ public final class Engine {
         missionExecutor.liveDeltaSink = { [weak self] missionID, event in
             self?.handleMissionLiveEvent(missionID: missionID, event: event)
         }
+        missionExecutor.assignExecutor = { [weak self] action, mission in
+            self?.assignExecutor(to: &action, askedBy: mission.author)
+        }
 
         registerAddressActionProvider { [weak self] sessionID, address, context, facts in
             self?.tracerAddressActions(sessionID: sessionID, address: address, context: context, facts: facts) ?? []
@@ -304,6 +315,7 @@ public final class Engine {
         llmRegistry.register(OpenAICompatibleProvider.local())
         llmRegistry.register(OpenAICompatibleProvider.remote())
         MissionTools.registerStandard(in: missionTools, engine: self)
+        ObjectChatTools.register(in: missionTools, engine: self)
         missionsObservation = store.observeMissions { [weak self] missions in
             Task { @MainActor in
                 guard let self else { return }
@@ -621,7 +633,7 @@ public final class Engine {
         guard let mission else { return nil }
 
         let system = await buildAddressNoteSystemPrompt(note: note)
-        var messages = thread.map { msg -> LLMMessage in
+        let messages = thread.map { msg -> LLMMessage in
             let role: LLMRole = (msg.role == .assistant) ? .assistant : .user
             return LLMMessage(role: role, blocks: [.text(msg.bodyMarkdown)])
         }
@@ -646,70 +658,27 @@ public final class Engine {
             sessionID: note.sessionID,
             toolCallID: toolCallID
         )
+        action.executor = localUser
         action.status = .running
         action.decidedAt = Date()
         try? store.save(action)
         collaboration.enqueueMissionAction(action)
 
-        let apiKey = (try? await llmCredentials.apiKey(providerID: providerID)) ?? nil
-        if provider.descriptor.capabilities.supports(.apiKey), apiKey == nil {
-            action.status = .failed
-            action.error = "missing API key for provider \(providerID)"
-            action.completedAt = Date()
-            try? store.save(action)
-            collaboration.enqueueMissionAction(action)
-            return nil
-        }
-
-        let tools = noteTurnToolSpecs()
-        let baseURL = LumaAppState.shared.providerBaseURL(providerID: providerID).flatMap(URL.init(string:))
-        var responseText = ""
-        var usage = LLMUsage.zero
-        var iterationsRemaining = Self.noteTurnMaxIterations
+        let loop = ReplyLoop(
+            provider: provider,
+            modelID: modelID,
+            credentials: llmCredentials,
+            mission: mission,
+            limits: Self.noteReplyLimits
+        )
+        let responseText: String
+        let usage: LLMUsage
         do {
-            iterationLoop: while iterationsRemaining > 0 {
-                iterationsRemaining -= 1
-                if Task.isCancelled { throw CancellationError() }
-                let request = LLMTurnRequest(
-                    modelID: modelID,
-                    systemBlocks: [LLMContentBlock(content: .text(system), cacheBoundary: true)],
-                    messages: messages,
-                    tools: tools,
-                    maxOutputTokens: 1024,
-                    thinkingBudget: 0,
-                    temperature: 0.3,
-                    mission: mission
-                )
-
-                let outcome = await streamNoteTurn(
-                    provider: provider,
-                    request: request,
-                    apiKey: apiKey,
-                    baseURL: baseURL,
-                    onDelta: liveDelta
-                )
-                responseText += outcome.text
-                usage.inputTokens += outcome.usage.inputTokens
-                usage.outputTokens += outcome.usage.outputTokens
-                usage.cacheReadTokens += outcome.usage.cacheReadTokens
-                usage.cacheCreateTokens += outcome.usage.cacheCreateTokens
-
-                if let error = outcome.error { throw error }
-
-                let toolUses = outcome.blocks.filter {
-                    if case .toolUse = $0.content { return true }
-                    return false
-                }
-                if toolUses.isEmpty { break iterationLoop }
-
-                messages.append(LLMMessage(role: .assistant, blocks: outcome.blocks))
-                let resultBlocks = await runNoteToolUses(
-                    toolUses,
-                    sessionID: note.sessionID,
-                    mission: mission
-                )
-                messages.append(LLMMessage(role: .user, blocks: resultBlocks))
+            let reply = try await loop.run(system: system, messages: messages, tools: noteTurnToolSpecs(), onDelta: liveDelta) { toolUses in
+                await self.runNoteToolUses(toolUses, sessionID: note.sessionID, mission: mission)
             }
+            responseText = reply.text
+            usage = reply.usage
         } catch {
             action.status = .failed
             action.error = (error is CancellationError) ? "Reply canceled by user." : error.localizedDescription
@@ -800,60 +769,10 @@ public final class Engine {
         sessionUIStates.values.contains { $0.ambientMissionID == missionID }
     }
 
-    private static let noteTurnMaxIterations = 6
+    private static let noteReplyLimits = ReplyLoop.Limits(iterations: 6, maxOutputTokens: 1024, temperature: 0.3)
 
     private func noteTurnToolSpecs() -> [LLMToolSpec] {
-        missionExecutor.catalog.toolSpecs()
-    }
-
-    private struct NoteTurnOutcome {
-        var blocks: [LLMContentBlock]
-        var text: String
-        var usage: LLMUsage
-        var error: (any Swift.Error)?
-    }
-
-    private func streamNoteTurn(
-        provider: any LLMProvider,
-        request: LLMTurnRequest,
-        apiKey: String?,
-        baseURL: URL?,
-        onDelta: (@MainActor (String) -> Void)?
-    ) async -> NoteTurnOutcome {
-        var blocks: [LLMContentBlock] = []
-        var streamedText = ""
-        var usage = LLMUsage.zero
-        var capturedError: (any Swift.Error)?
-
-        do {
-            for try await event in provider.streamTurn(request, apiKey: apiKey, baseURL: baseURL) {
-                switch event {
-                case .textDelta(let delta):
-                    streamedText += delta
-                    onDelta?(delta)
-                case .finalMessage(_, let finalBlocks):
-                    blocks = finalBlocks
-                case .usage(let u):
-                    usage = u
-                default:
-                    break
-                }
-            }
-        } catch {
-            capturedError = error
-        }
-
-        if blocks.isEmpty, !streamedText.isEmpty {
-            blocks = [LLMContentBlock(content: .text(streamedText))]
-        }
-
-        let finalText = blocks.compactMap { block -> String? in
-            if case .text(let t) = block.content { return t }
-            return nil
-        }.joined()
-        let textForLoop = finalText.isEmpty ? streamedText : finalText
-
-        return NoteTurnOutcome(blocks: blocks, text: textForLoop, usage: usage, error: capturedError)
+        missionExecutor.catalog.toolSpecs(in: ToolNeed.missionContext)
     }
 
     private func runNoteToolUses(
@@ -901,7 +820,7 @@ public final class Engine {
             }
         }
 
-        let action = MissionAction(
+        var action = MissionAction(
             missionID: mission.id,
             turnID: nil,
             toolName: name,
@@ -910,6 +829,7 @@ public final class Engine {
             sessionID: sessionID,
             toolCallID: toolCallID
         )
+        assignExecutor(to: &action, askedBy: localUser)
         try? store.save(action)
         collaboration.enqueueMissionAction(action)
 
@@ -955,6 +875,20 @@ public final class Engine {
         switch status {
         case .succeeded, .failed, .rejected: return true
         default: return false
+        }
+    }
+
+    private func isBehindWhatIsHeld(_ action: MissionAction) -> Bool {
+        guard let held = (try? store.fetchMissionAction(id: action.id)).flatMap({ $0 }) else { return false }
+        return stage(of: held.status) > stage(of: action.status)
+    }
+
+    private func stage(of status: MissionActionStatus) -> Int {
+        switch status {
+        case .pending: 0
+        case .approved: 1
+        case .running: 2
+        case .succeeded, .failed, .rejected: 3
         }
     }
 
@@ -1084,6 +1018,7 @@ public final class Engine {
         collaboration.onLabCreated = { [weak self] in
             self?.republishPlacementSnapshots { _ in true }
             self?.reconcileWidgetStates(with: [])
+            self?.objectChats.adopt([])
         }
 
         collaboration.onMissionOpReceived = { [weak self] op in
@@ -1100,6 +1035,34 @@ public final class Engine {
 
         collaboration.onAddressNotesSnapshot = { [weak self] threads, labSessions in
             self?.adoptAddressNotes(threads, ofLabSessions: labSessions)
+        }
+
+        collaboration.onObjectChatOpReceived = { [weak self] op in
+            self?.objectChats.apply(op)
+        }
+
+        collaboration.onObjectChatsSnapshot = { [weak self] threads in
+            self?.objectChats.adopt(threads)
+        }
+
+        collaboration.onObjectChatMessageRefused = { [weak self] message, reason in
+            self?.objectChats.refused(message, because: reason)
+        }
+
+        collaboration.onObjectChatOpRefused = { [weak self] op, reason in
+            self?.objectChats.refused(op, because: reason)
+        }
+
+        collaboration.onMissionRemovedInLab = { [weak self] missionID in
+            self?.endMissionRemovedInLab(missionID)
+        }
+
+        collaboration.onCustomInstrumentRemovedInLab = { [weak self] defID in
+            self?.keepRemovedCustomInstrument(defID)
+        }
+
+        collaboration.onPatternRemovedInLab = { [weak self] sourceID in
+            self?.keepRemovedPattern(sourceID)
         }
 
         collaboration.onCustomInstrumentSnapshot = { [weak self] bundles, editors in
@@ -1143,6 +1106,7 @@ public final class Engine {
             entry.binaryData = upserted.binaryData ?? existing?.binaryData
             entry.pharoResultFuel = upserted.pharoResultFuel ?? existing?.pharoResultFuel
             entry.sessionID = upserted.sessionID ?? existing?.sessionID
+            guard Self.asSent(existing, merging: entry) != entry else { return }
             try? self.store.save(entry)
             if let i = self.notebookEntries.firstIndex(where: { $0.id == entry.id }) {
                 self.notebookEntries[i] = entry
@@ -1549,7 +1513,7 @@ public final class Engine {
         emitEngineEvent(subsystem: subsystem, level: .error, text: text)
     }
 
-    private func emitEngineWarning(subsystem: String, text: String) {
+    func emitEngineWarning(subsystem: String, text: String) {
         emitEngineEvent(subsystem: subsystem, level: .warning, text: text)
     }
 
@@ -1923,6 +1887,7 @@ public final class Engine {
         }
         try? store.deleteSession(id: sessionID)
         sessions.removeAll { $0.id == sessionID }
+        objectChats.forgetChats(ofSession: sessionID)
         onSessionListChanged?(.sessionRemoved(sessionID))
     }
 
@@ -1948,6 +1913,8 @@ public final class Engine {
         }
         #endif
         notebookEntries = (try? store.fetchNotebookEntries()) ?? []
+        subjectsKeptFromLab = (try? store.subjectsWithheldFromLab()) ?? []
+        objectChats.load()
         widgetPlacements = (try? store.fetchWidgetPlacements()) ?? [:]
         sessions = (try? store.fetchSessions()) ?? []
         for session in sessions {
@@ -3594,6 +3561,7 @@ public final class Engine {
         }
         try? store.deleteSession(id: id)
         sessions.removeAll { $0.id == id }
+        objectChats.forgetChats(ofSession: id)
         onSessionListChanged?(.sessionRemoved(id))
         if let deviceID = removedDeviceID {
             Task { @MainActor [weak self] in
@@ -6454,7 +6422,7 @@ public func deleteCustomInstrument(_ defID: UUID) async {
 
     func purgeExternalMCPMissions() {
         guard let missions = try? store.fetchMissions() else { return }
-        for mission in missions where mission.providerID == externalMCPProviderID {
+        for mission in missions where mission.providerID == externalMCPProviderID && isStartedByMe(mission) {
             deleteMission(missionID: mission.id)
         }
     }
@@ -6492,7 +6460,7 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         collaboration.enqueueMissionUpsert(mission)
         externalMCPMissionID = mission.id
 
-        let toolNames = missionTools.specs().map(\.name)
+        let toolNames = missionTools.specs(in: ToolNeed.missionContext).map(\.name)
         let server = MCPServer(
             engine: self,
             resolveMission: { [weak self] in
@@ -6684,12 +6652,32 @@ public func deleteCustomInstrument(_ defID: UUID) async {
     }
 
     public func cancelMission(missionID: UUID) {
+        guard let mission = try? store.fetchMission(id: missionID), isStartedByMe(mission) else {
+            return stopForTheLabsOwner(missionID)
+        }
+        stopLoopHere(missionID)
+    }
+
+    public func canStop(_ mission: Mission) -> Bool {
+        mission.status.isLive && (isStartedByMe(mission) || isLabOwner)
+    }
+
+    private func stopForTheLabsOwner(_ missionID: UUID) {
+        guard let mission = try? store.fetchMission(id: missionID), canStop(mission) else { return }
+        guard let stopped = store.updateMission(id: missionID, { $0.status = .cancelled }) else { return }
+        collaboration.enqueueMissionUpsert(stopped)
+    }
+
+    private func stopLoopHere(_ missionID: UUID) {
         missionExecutor.cancel(missionID: missionID)
+        #if canImport(Network) || canImport(CSoup)
+        activeMCPServersByMissionID[missionID]?.cancelPendingApprovals()
+        #endif
     }
 
     public func appendMissionUserMessage(missionID: UUID, text: String) {
         enqueueMissionUserText(missionID: missionID, text: text)
-        guard let mission = try? store.fetchMission(id: missionID) else { return }
+        guard let mission = try? store.fetchMission(id: missionID), runsLoopHere(mission) else { return }
         switch mission.status {
         case .running, .awaitingApproval:
             break
@@ -6700,7 +6688,7 @@ public func deleteCustomInstrument(_ defID: UUID) async {
 
     public func sendMissionUserMessageNow(missionID: UUID, text: String) {
         enqueueMissionUserText(missionID: missionID, text: text)
-        guard let mission = try? store.fetchMission(id: missionID) else { return }
+        guard let mission = try? store.fetchMission(id: missionID), runsLoopHere(mission) else { return }
         switch mission.status {
         case .running:
             missionExecutor.cancel(missionID: missionID)
@@ -6715,30 +6703,61 @@ public func deleteCustomInstrument(_ defID: UUID) async {
     private func enqueueMissionUserText(missionID: UUID, text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        guard let saved = store.updateMission(id: missionID, { m in
-            m.pendingUserText = mergedSteer(existing: m.pendingUserText, addition: trimmed)
-        }) else { return }
-        collaboration.enqueueMissionUpsert(saved)
+        let steer = MissionSteer(missionID: missionID, author: localUser, text: trimmed)
+        try? store.save(steer)
+        collaboration.enqueueMissionSteer(steer)
     }
 
-    private func mergedSteer(existing: String, addition: String) -> String {
-        existing.isEmpty ? addition : "\(existing)\n\n\(addition)"
+    public func pendingSteering(missionID: UUID) -> [MissionSteer] {
+        (try? store.fetchMissionSteering(missionID: missionID)) ?? []
+    }
+
+    public func myPendingSteering(missionID: UUID) -> [MissionSteer] {
+        pendingSteering(missionID: missionID).filter { $0.author == nil || $0.author?.id == localUserID }
+    }
+
+    private func isConsumedHere(_ steer: MissionSteer) -> Bool {
+        ((try? store.fetchOutboxOps(MissionOp.self)) ?? []).contains { op in
+            if case .steerConsume(let c) = op { return c.steerIDs.contains(steer.id) }
+            return false
+        }
+    }
+
+    private func takeUpSteering(_ missionID: UUID) {
+        guard let mission = try? store.fetchMission(id: missionID), runsLoopHere(mission), !missionExecutor.isRunning(missionID: missionID),
+            !pendingSteering(missionID: missionID).isEmpty
+        else { return }
+        let actions = (try? store.fetchMissionActions(missionID: missionID)) ?? []
+        guard !actions.contains(where: { [.pending, .approved, .running].contains($0.status) }) else { return }
+        missionExecutor.resume(missionID: missionID)
+    }
+
+    public func canDelete(missionID: UUID) -> Bool {
+        guard let mission = try? store.fetchMission(id: missionID) else { return false }
+        return isStartedByMe(mission) || isLabOwner
+    }
+
+    public func isStartedByMe(_ mission: Mission) -> Bool {
+        mission.author == nil || mission.author?.id == localUserID
+    }
+
+    private var isLabOwner: Bool {
+        collaboration.members.first { $0.user.id == localUserID }?.role == .owner
     }
 
     public func deleteMission(missionID: UUID) {
-        missionExecutor.cancel(missionID: missionID)
+        guard canDelete(missionID: missionID) else { return }
+        collaboration.forget(removedMission: missionID)
+        endMissionHere(missionID, because: "this mission was deleted")
         try? store.deleteMission(id: missionID)
         collaboration.enqueueMissionRemove(missionID: missionID)
     }
 
     public func approveMissionAction(actionID: UUID) async {
-        guard let action = try? store.fetchMissionAction(id: actionID),
-            action.status == .pending,
-            let mission = try? store.fetchMission(id: action.missionID)
-        else { return }
+        guard let action = try? store.fetchMissionAction(id: actionID), canApprove(action) else { return }
 
         #if canImport(Network) || canImport(CSoup)
-        if let server = activeMCPServersByMissionID[action.missionID] {
+        if isExecutor(of: action), let server = activeMCPServersByMissionID[action.missionID] {
             server.approve(actionID: actionID)
             return
         }
@@ -6749,13 +6768,99 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         approved.decidedAt = Date()
         try? store.save(approved)
         collaboration.enqueueMissionAction(approved)
+        await continueMissionHere(approved.missionID)
+    }
 
-        await missionExecutor.runActionByID(approved.id, mission: mission)
+    public func canApprove(_ action: MissionAction) -> Bool {
+        action.status == .pending && isExecutor(of: action) && hold(on: action) == nil
+    }
 
-        let stillPending = (try? store.hasPendingMissionActions(missionID: approved.missionID)) ?? false
-        if !stillPending {
-            missionExecutor.resume(missionID: approved.missionID)
+    public func isExecutor(of action: MissionAction) -> Bool {
+        let executor = executor(of: action)
+        return executor == nil || executor?.id == localUserID
+    }
+
+    public func executor(of action: MissionAction) -> Author? {
+        action.executor ?? (try? store.fetchMission(id: action.missionID))?.author
+    }
+
+    public func hold(on action: MissionAction) -> ObjectChatCallHold? {
+        guard action.status == .pending || action.status == .approved else { return nil }
+        let executor = executor(of: action)
+        guard let sessionID = action.sessionID, needsSession(action) else {
+            return isOnline(executor) ? nil : .executorOffline
         }
+        return hold(onCallExecutedBy: executor, in: sessionID)
+    }
+
+    public func isWaitingForStarter(_ mission: Mission) -> Bool {
+        mission.status.isLive && !isStartedByMe(mission) && !isOnline(mission.author)
+    }
+
+    func hold(onCallExecutedBy executor: Author?, in sessionID: UUID) -> ObjectChatCallHold? {
+        let session = sessions.first { $0.id == sessionID }
+        guard isOnline(executor) else { return .executorOffline }
+        guard session?.host?.id == executor?.id else {
+            return .executorNoLongerHosts(currentHost: session?.host.map(Self.author))
+        }
+        guard session?.phase == .attached else { return .sessionDetached }
+        return nil
+    }
+
+    func assignExecutor(to action: inout MissionAction, askedBy asker: Author?) {
+        let asker = asker ?? localUser
+        if let sessionID = action.sessionID, needsSession(action) {
+            action.executor = sessions.first { $0.id == sessionID }?.host.map(Self.author) ?? asker
+        } else {
+            action.executor = asker
+        }
+        guard !isExecutor(of: action) else { return }
+        action.status = .pending
+        action.decidedAt = nil
+    }
+
+    private func continueMissionHere(_ missionID: UUID) async {
+        guard let mission = try? store.fetchMission(id: missionID) else { return }
+        let actions = (try? store.fetchMissionActions(missionID: missionID)) ?? []
+        for action in actions where action.status == .approved && isExecutor(of: action) && hold(on: action) == nil {
+            #if canImport(Network) || canImport(CSoup)
+            if let server = activeMCPServersByMissionID[missionID] {
+                server.approve(actionID: action.id)
+                continue
+            }
+            #endif
+            await missionExecutor.runActionByID(action.id, mission: mission)
+        }
+        resumeMissionHere(missionID)
+    }
+
+    private func resumeMissionHere(_ missionID: UUID) {
+        guard let mission = try? store.fetchMission(id: missionID), runsLoopHere(mission), mission.status == .awaitingApproval else {
+            return
+        }
+        let actions = (try? store.fetchMissionActions(missionID: missionID)) ?? []
+        guard !actions.contains(where: { [.pending, .approved, .running].contains($0.status) }) else { return }
+        missionExecutor.resume(missionID: missionID)
+    }
+
+    private func runsLoopHere(_ mission: Mission) -> Bool {
+        isStartedByMe(mission) && mission.providerID != externalMCPProviderID
+    }
+
+    private func needsSession(_ action: MissionAction) -> Bool {
+        missionTools.spec(named: action.toolName)?.needs.contains(.session) == true
+    }
+
+    private func isOnline(_ author: Author?) -> Bool {
+        author == nil || author?.id == localUserID || collaboration.members.first { $0.user.id == author?.id }?.presence == .online
+    }
+
+    private var localUser: Author? {
+        (collaboration.localUser ?? gitHubAuth.currentUser).map(Self.author)
+    }
+
+    private static func author(_ user: CollaborationSession.UserInfo) -> Author {
+        Author(id: user.id, name: user.name, avatarURL: user.avatarURL?.absoluteString ?? "")
     }
 
     public func submitUserInputResponse(actionID: UUID, answer: String) {
@@ -6772,11 +6877,7 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         action.resultSummary = answer
         try? store.save(action)
         collaboration.enqueueMissionAction(action)
-
-        let stillPending = (try? store.hasPendingMissionActions(missionID: action.missionID)) ?? false
-        if !stillPending {
-            missionExecutor.resume(missionID: action.missionID)
-        }
+        resumeMissionHere(action.missionID)
     }
 
     public func cancelAddressNoteReply(sessionID: UUID) async {
@@ -6806,11 +6907,7 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         action.rejectionReason = reason
         try? store.save(action)
         collaboration.enqueueMissionAction(action)
-
-        let stillPending = (try? store.hasPendingMissionActions(missionID: action.missionID)) ?? false
-        if !stillPending {
-            missionExecutor.resume(missionID: action.missionID)
-        }
+        resumeMissionHere(action.missionID)
     }
 
     public func acceptFinding(findingID: UUID) {
@@ -6836,6 +6933,117 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         return nil
     }
 
+    private func endMissionRemovedInLab(_ missionID: UUID) {
+        collaboration.forget(removedMission: missionID)
+        let removed = try? store.fetchMission(id: missionID)
+        for steer in myPendingSteering(missionID: missionID) {
+            emitEngineWarning(
+                subsystem: "missions",
+                text: "Your message to the mission “\(removed?.title ?? removed?.goalText ?? "")” was not delivered because "
+                    + "the mission was deleted in the lab: \(steer.text)")
+        }
+        let wasRunningHere = endMissionHere(missionID, because: "this mission was deleted in the lab")
+        try? store.deleteMission(id: missionID)
+        guard let removed, wasRunningHere else { return }
+        let title = removed.title ?? removed.goalText
+        report(
+            .missionDeletedInLab(missionID: missionID, title: title), in: "missions",
+            reason: "The mission “\(title)” was deleted in the lab, so it was stopped here.")
+    }
+
+    @discardableResult
+    private func endMissionHere(_ missionID: UUID, because reason: String) -> Bool {
+        var wasRunningHere = missionExecutor.isRunning(missionID: missionID)
+        var turnEndsOnItsOwn = false
+        #if canImport(Network) || canImport(CSoup)
+        if let server = activeMCPServersByMissionID[missionID] {
+            wasRunningHere = true
+            turnEndsOnItsOwn = server.isWaitingForApproval
+            server.end(because: reason)
+        }
+        #endif
+        if !turnEndsOnItsOwn {
+            missionExecutor.cancel(missionID: missionID)
+        }
+        for (sessionID, state) in sessionUIStates where state.ambientMissionID == missionID {
+            wasRunningHere = wasRunningHere || activeNoteReplyTasks[sessionID] != nil
+            activeNoteReplyTasks[sessionID]?.cancel()
+            var cleared = state
+            cleared.ambientMissionID = nil
+            sessionUIStates[sessionID] = cleared
+            try? store.save(cleared)
+        }
+        return wasRunningHere
+    }
+
+    private func keepRemovedCustomInstrument(_ defID: UUID) {
+        guard let def = try? store.fetchCustomInstrumentDef(id: defID),
+            let files = try? store.fetchCustomInstrumentFiles(defID: defID)
+        else { return }
+        var copy = def
+        copy.id = UUID()
+        let copiedFiles = files.map { file -> CustomInstrumentFile in
+            var copied = file
+            copied.defID = copy.id
+            return copied
+        }
+        try? store.withholdFromLab(LabSubject(.definition, copy.id))
+        try? store.save(copy)
+        try? store.replaceCustomInstrumentFiles(defID: copy.id, files: copiedFiles)
+        if let link = instrumentFolderLinks[defID] {
+            LumaAppState.shared.setInstrumentFolderLink(link, forDefID: copy.id)
+            unlinkInstrumentFolder(defID: defID)
+        }
+        subjectsKeptFromLab.insert(LabSubject(.definition, copy.id))
+        report(
+            .copyKeptFromLab(LabSubject(.definition, copy.id), name: def.name), in: "collaboration",
+            reason: "“\(def.name)” was deleted in the lab, so your changes to it are kept here as an instrument the lab does not have. "
+                + "Add it to the lab again, or delete it.")
+    }
+
+    private func keepRemovedPattern(_ sourceID: UUID) {
+        guard var copy = try? store.fetchPatternSource(id: sourceID) else { return }
+        copy.id = UUID()
+        try? store.withholdFromLab(LabSubject(.pattern, copy.id))
+        patterns.adopt(copy)
+        subjectsKeptFromLab.insert(LabSubject(.pattern, copy.id))
+        report(
+            .copyKeptFromLab(LabSubject(.pattern, copy.id), name: copy.name), in: "collaboration",
+            reason: "The pattern “\(copy.name)” was deleted in the lab, so your changes to it are kept here "
+                + "as a pattern the lab does not have. Add it to the lab again, or delete it.")
+    }
+
+    public func dismiss(_ problem: LabProblem) {
+        if case .objectChat(let chatProblem) = problem.concern {
+            objectChats.dismiss(chatProblem.id)
+        } else {
+            problemsOfThisEngine.removeAll { $0.id == problem.id }
+        }
+    }
+
+    private func report(_ concern: LabProblem.Concern, in subsystem: String, reason: String) {
+        problemsOfThisEngine.append(LabProblem(concern, reason: reason))
+        emitEngineWarning(subsystem: subsystem, text: reason)
+    }
+
+    public func addToLab(_ subject: LabSubject) {
+        try? store.releaseToLab(subject)
+        subjectsKeptFromLab.remove(subject)
+        problemsOfThisEngine.removeAll {
+            if case .copyKeptFromLab(subject, _) = $0.concern { return true }
+            return false
+        }
+        switch subject.family {
+        case .definition:
+            broadcastCustomInstrumentUpsert(defID: subject.id)
+        case .pattern:
+            guard let record = try? store.fetchPatternSource(id: subject.id) else { return }
+            collaboration.enqueuePatternSourceUpsert(record)
+        default:
+            break
+        }
+    }
+
     private func applyRemoteMissionSnapshot(_ snapshot: MissionSnapshot) {
         let serverMissionIDs = Set(snapshot.missions.map(\.id))
         let localMissions = (try? store.fetchMissions()) ?? []
@@ -6843,16 +7051,76 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         let known = knownToLab(.mission)
         for absent in localMissions where !serverMissionIDs.contains(absent.id) && !pending.contains(absent.id) {
             if known.contains(absent.id) {
-                try? store.deleteMission(id: absent.id)
+                endMissionRemovedInLab(absent.id)
             } else {
                 collaboration.enqueueMission(absent)
             }
         }
-        for mission in snapshot.missions { try? store.save(mission) }
-        for turn in snapshot.turns { try? store.save(turn) }
-        for action in snapshot.actions { try? store.save(action) }
-        for finding in snapshot.findings { try? store.save(finding) }
-        for evidence in snapshot.evidence { try? store.save(evidence) }
+        let queued = (try? store.fetchOutboxOps(MissionOp.self)) ?? []
+        let queuedRows = Set(queued.compactMap(\.rowID))
+        let queuedMissions = Set(queued.compactMap { op -> UUID? in
+            if case .missionUpsert(let u) = op { return u.mission.id }
+            return nil
+        })
+        for mission in snapshot.missions where !queuedMissions.contains(mission.id) { try? store.save(mission) }
+        for turn in snapshot.turns where !queuedRows.contains(turn.id) { try? store.save(turn) }
+        for action in snapshot.actions where !queuedRows.contains(action.id) && !isBehindWhatIsHeld(action) { try? store.save(action) }
+        for finding in snapshot.findings where !queuedRows.contains(finding.id) { try? store.save(finding) }
+        for evidence in snapshot.evidence where !queuedRows.contains(evidence.id) { try? store.save(evidence) }
+        adoptSteering(of: snapshot, keeping: queued)
+        dropRowsTheLabRefused(in: snapshot)
+        Task {
+            for mission in snapshot.missions {
+                await continueMissionHere(mission.id)
+                takeUpSteering(mission.id)
+            }
+        }
+    }
+
+    private func adoptSteering(of snapshot: MissionSnapshot, keeping queued: [MissionOp]) {
+        let queuedSteers = Set(queued.compactMap { op -> UUID? in
+            if case .steerAppend(let a) = op { return a.steer.id }
+            return nil
+        })
+        let consumed = Set(queued.flatMap { op -> [UUID] in
+            if case .steerConsume(let c) = op { return c.steerIDs }
+            return []
+        })
+        let held = Set(snapshot.steering.map(\.id))
+        for mission in snapshot.missions {
+            let gone = pendingSteering(missionID: mission.id).filter { !held.contains($0.id) && !queuedSteers.contains($0.id) }
+            try? store.deleteMissionSteering(ids: gone.map(\.id))
+        }
+        for steer in snapshot.steering where !consumed.contains(steer.id) {
+            try? store.save(steer)
+        }
+    }
+
+    private func dropRowsTheLabRefused(in snapshot: MissionSnapshot) {
+        let queued = Set(((try? store.fetchOutboxOps(MissionOp.self)) ?? []).compactMap(\.rowID))
+        let held = Set(snapshot.turns.map(\.id) + snapshot.actions.map(\.id) + snapshot.findings.map(\.id) + snapshot.evidence.map(\.id))
+        let isRefused = { (id: UUID) in !held.contains(id) && !queued.contains(id) }
+        for mission in snapshot.missions {
+            let turns = ((try? store.fetchMissionTurns(missionID: mission.id)) ?? []).filter { isRefused($0.id) }
+            let actions = ((try? store.fetchMissionActions(missionID: mission.id)) ?? []).filter { isRefused($0.id) }
+            let findings = (try? store.fetchMissionFindings(missionID: mission.id)) ?? []
+            let evidence = findings.flatMap { (try? store.fetchMissionEvidence(findingID: $0.id)) ?? [] }.filter { isRefused($0.id) }
+            try? store.deleteMissionRows(
+                turns: turns.map(\.id), actions: actions.map(\.id), findings: findings.map(\.id).filter(isRefused),
+                evidence: evidence.map(\.id))
+            let typed = turns.filter { $0.role == .user }.flatMap(Self.typedText(of:))
+            if !typed.isEmpty {
+                enqueueMissionUserText(missionID: mission.id, text: typed.joined(separator: "\n\n"))
+            }
+        }
+    }
+
+    private static func typedText(of turn: MissionTurn) -> [String] {
+        let blocks = (try? JSONDecoder().decode([LLMContentBlock].self, from: Data(turn.contentJSON.utf8))) ?? []
+        return blocks.compactMap { block in
+            if case .text(let text) = block.content { return text }
+            return nil
+        }
     }
 
     private func adoptAddressNotes(_ threads: [AddressNoteThread], ofLabSessions labSessions: Set<UUID>) {
@@ -6896,7 +7164,9 @@ public func deleteCustomInstrument(_ defID: UUID) async {
     private func applyRemoteAddressNoteOp(_ op: AddressNoteOp) {
         switch op {
         case .noteUpsert(let u):
-            let existed = (try? store.fetchAddressNote(id: u.note.id)) != nil
+            let held = (try? store.fetchAddressNote(id: u.note.id)).flatMap { $0 }
+            guard Self.asSent(held) != u.note else { return }
+            let existed = held != nil
             try? store.save(u.note)
             rebuildAddressAnnotations(sessionID: u.note.sessionID)
             onAddressNoteChanged?(existed ? .noteUpdated(u.note) : .noteAdded(u.note))
@@ -6906,10 +7176,13 @@ public func deleteCustomInstrument(_ defID: UUID) async {
             rebuildAddressAnnotations(sessionID: prior.sessionID)
             onAddressNoteChanged?(.noteRemoved(prior))
         case .messageAppend(let a):
+            let held = (try? store.fetchAddressNoteMessage(id: a.message.id)).flatMap { $0 }
+            guard Self.asSent(held) != a.message else { return }
+            let existed = held != nil
             try? store.save(a.message)
-            onAddressNoteChanged?(.messageAppended(a.message))
+            onAddressNoteChanged?(existed ? .messageEdited(a.message) : .messageAppended(a.message))
         case .messageEdit(let e):
-            guard var message = try? store.fetchAddressNoteMessage(id: e.messageID) else { return }
+            guard var message = try? store.fetchAddressNoteMessage(id: e.messageID), message.bodyMarkdown != e.bodyMarkdown else { return }
             message.bodyMarkdown = e.bodyMarkdown
             try? store.save(message)
             onAddressNoteChanged?(.messageEdited(message))
@@ -6920,22 +7193,57 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         }
     }
 
+    private static func asSent(_ held: NotebookEntry?, merging entry: NotebookEntry) -> NotebookEntry? {
+        guard let held, var sent = NotebookEntry.fromJSON(held.toJSON(), binaryData: held.binaryData.map { [UInt8]($0) }) else { return nil }
+        sent.pharoResultFuel = entry.pharoResultFuel
+        sent.sessionID = entry.sessionID
+        return sent
+    }
+
+    private static func asSent<Row: Codable>(_ row: Row?) -> Row? {
+        row.flatMap { decodeRow(encodeRow($0)) }
+    }
+
     private func applyRemoteMissionOp(_ op: MissionOp) {
         switch op {
         case .missionUpsert(let u):
+            let held = (try? store.fetchMission(id: u.mission.id)).flatMap { $0 }
+            guard held.flatMap({ $0.toWireJSON() }).flatMap(Mission.fromWireJSON) != u.mission else { return }
             try? store.save(u.mission)
+            if u.mission.status == .cancelled, held?.status.isLive == true, isStartedByMe(u.mission) {
+                stopLoopHere(u.mission.id)
+                let title = u.mission.title ?? u.mission.goalText
+                report(
+                    .missionStoppedByOwner(missionID: u.mission.id, title: title), in: "missions",
+                    reason: "The lab's owner stopped the mission “\(title)”, so it was stopped here.")
+            }
         case .missionRemove(let r):
-            try? store.deleteMission(id: r.missionID)
+            endMissionRemovedInLab(r.missionID)
         case .turnAppend(let a):
             try? store.save(a.turn)
         case .actionUpsert(let u):
+            guard !isBehindWhatIsHeld(u.action) else { return }
+            let local = (try? store.fetchMissionAction(id: u.action.id)).flatMap { $0 }
+            guard local.flatMap({ $0.toWireJSON() }).flatMap(MissionAction.fromWireJSON) != u.action else { return }
             try? store.save(u.action)
+            #if canImport(Network) || canImport(CSoup)
+            if isTerminal(u.action.status) {
+                activeMCPServersByMissionID[u.action.missionID]?.settle(u.action)
+            }
+            #endif
+            Task { await continueMissionHere(u.action.missionID) }
         case .findingUpsert(let u):
             try? store.save(u.finding)
         case .findingRemove(let r):
             try? store.deleteMissionFinding(id: r.findingID)
         case .evidenceAdd(let a):
             try? store.save(a.evidence)
+        case .steerAppend(let a):
+            guard !isConsumedHere(a.steer) else { return }
+            try? store.save(a.steer)
+            takeUpSteering(a.steer.missionID)
+        case .steerConsume(let c):
+            try? store.deleteMissionSteering(ids: c.steerIDs)
         }
     }
 }
