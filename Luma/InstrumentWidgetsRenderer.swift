@@ -14,17 +14,23 @@ struct InstrumentWidgetsRenderer: View {
         } else {
             VStack(alignment: .leading, spacing: 12) {
                 ForEach(widgets) { widget in
-                    GroupBox {
-                        WidgetCanvas(
-                            widget: widget,
-                            instance: instance,
-                            engine: engine,
-                            selection: selection
-                        )
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .disabled(!isLive && !widget.kind.isView)
-                    } label: {
-                        widgetHeader(widget: widget)
+                    VStack(alignment: .leading, spacing: 4) {
+                        if widget.title != nil || !widget.actions.isEmpty {
+                            widgetHeader(widget: widget)
+                                .font(.subheadline)
+                        }
+                        GroupBox {
+                            WidgetCanvas(
+                                widget: widget,
+                                instance: instance,
+                                engine: engine,
+                                selection: selection
+                            )
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .disabled(!isLive && !widget.kind.isView)
+                        }
+                        .accessibilityElement(children: .contain)
+                        .accessibilityLabel(widget.label)
                     }
                 }
             }
@@ -38,19 +44,30 @@ struct InstrumentWidgetsRenderer: View {
     }
 
     private func widgetHeader(widget: InstrumentWidget) -> some View {
-        HStack(spacing: 8) {
-            Text(widget.name)
-            Spacer()
-            if let instance {
-                Button {
-                    engine.clearWidget(instance: instance, widget: widget.id)
-                } label: {
-                    Label("Clear", systemImage: "trash")
-                        .labelStyle(.iconOnly)
-                }
-                .buttonStyle(.borderless)
-                .help("Clear")
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            if let title = widget.title {
+                Text(title)
+                    .layoutPriority(1)
             }
+            Spacer()
+            if !widget.actions.isEmpty {
+                WidgetHeaderActions(
+                    actions: widget.actions,
+                    isEnabled: { canChoose($0, of: widget) },
+                    onPress: { invoke(action: $0, of: widget) })
+            }
+        }
+    }
+
+    private func canChoose(_ action: String, of widget: InstrumentWidget) -> Bool {
+        instance.map { engine.canChoose(action, of: widget.id, instance: $0) } ?? false
+    }
+
+    private func invoke(action: String, of widget: InstrumentWidget) {
+        guard let instance else { return }
+        let engine = engine
+        Task { @MainActor in
+            await engine.invokeWidgetAction(instance: instance, widget: widget.id, action: action)
         }
     }
 }
@@ -94,12 +111,25 @@ private struct WidgetCanvas: View {
         ConsoleWidgetView(
             entries: state.consoleEntries,
             config: cfg,
-            widgetName: widget.name,
+            widgetName: widget.label,
             sessionID: instance?.sessionID ?? UUID(),
             engine: engine,
             selection: selection,
+            acceptsInput: instance.map(engine.canSubmitConsoleInput) ?? false,
+            inputRefusal: inputRefusal,
             onSubmit: { text in submitConsoleInput(text: text) }
         )
+    }
+
+    private var inputRefusal: String? {
+        guard let instance, !engine.canSubmitConsoleInput(of: instance) else { return nil }
+        if !engine.isHostingNode(instance.sessionID) && !engine.isHostedRemotelyLive(instance.sessionID) {
+            return "Session not attached."
+        }
+        if !engine.isHostingNode(instance.sessionID) {
+            return "Only the member hosting this session can type here."
+        }
+        return "The instrument is not running."
     }
 
     private func submitConsoleInput(text: String) {
@@ -119,15 +149,28 @@ private struct WidgetCanvas: View {
             Chart {
                 ForEach(cfg.series) { series in
                     let points = state.graphSeries[series.id] ?? []
-                    ForEach(points.indices, id: \.self) { i in
-                        LineMark(
-                            x: .value("x", points[i].x),
-                            y: .value("y", points[i].y),
-                            series: .value("series", series.name)
+                    if points.count == 1 {
+                        PointMark(
+                            x: .value("x", points[0].x),
+                            y: .value("y", points[0].y)
                         )
+                        .foregroundStyle(by: .value("Series", series.name))
+                    } else {
+                        ForEach(points.indices, id: \.self) { i in
+                            LineMark(
+                                x: .value("x", points[i].x),
+                                y: .value("y", points[i].y),
+                                series: .value("series", series.name)
+                            )
+                            .foregroundStyle(by: .value("Series", series.name))
+                        }
                     }
                 }
             }
+            .chartForegroundStyleScale(
+                domain: cfg.series.map(\.name),
+                range: cfg.series.indices.map { GraphSeriesPalette.colors[$0 % GraphSeriesPalette.colors.count] })
+            .chartLegend(position: .bottom, alignment: .leading)
             .frame(height: 180)
         }
     }
@@ -139,7 +182,7 @@ private struct WidgetCanvas: View {
         } else {
             ScrollingRows(spacing: 4) {
                 ForEach(state.listItems) { item in
-                    listRow(item: item, actions: cfg.actions)
+                    listRow(item: item, actions: cfg.rowActions)
                 }
             }
         }
@@ -169,13 +212,14 @@ private struct WidgetCanvas: View {
         } else if state.tableRows.isEmpty {
             Text("No rows.").font(.caption).foregroundStyle(.secondary)
         } else {
+            let widths = TableColumnWidths(columns: cfg.columns, rows: state.tableRows)
             VStack(alignment: .leading, spacing: 0) {
-                tableHeader(cfg)
+                tableHeader(cfg, widths: widths)
                 Divider()
                 ScrollingRows(spacing: 0) {
                     ForEach(state.tableRows) { row in
                         VStack(spacing: 0) {
-                            tableRow(row: row, columns: cfg.columns, actions: cfg.actions)
+                            tableRow(row: row, columns: cfg.columns, actions: cfg.rowActions, widths: widths)
                             Divider().opacity(0.3)
                         }
                     }
@@ -185,15 +229,16 @@ private struct WidgetCanvas: View {
         }
     }
 
-    private func tableHeader(_ cfg: InstrumentWidget.TableConfig) -> some View {
-        HStack(spacing: 8) {
+    private func tableHeader(_ cfg: InstrumentWidget.TableConfig, widths: TableColumnWidths) -> some View {
+        TableRowLayout(widths: widths, hasActions: !cfg.rowActions.isEmpty) {
             ForEach(cfg.columns) { col in
                 Text(col.name)
+                    .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: alignment(for: col.alignment))
                     .foregroundStyle(.secondary)
             }
-            if !cfg.actions.isEmpty {
-                actionButtons(cfg.actions, item: "")
+            if !cfg.rowActions.isEmpty {
+                ActionButtons(actions: cfg.rowActions, isEnabled: { _ in true }, onPress: { _ in })
                     .hidden()
                     .accessibilityHidden(true)
             }
@@ -201,8 +246,10 @@ private struct WidgetCanvas: View {
         .padding(.vertical, 4)
     }
 
-    private func tableRow(row: WidgetTableRow, columns: [InstrumentWidget.Column], actions: [InstrumentWidget.Action]) -> some View {
-        HStack(spacing: 8) {
+    private func tableRow(
+        row: WidgetTableRow, columns: [InstrumentWidget.Column], actions: [InstrumentWidget.Action], widths: TableColumnWidths
+    ) -> some View {
+        TableRowLayout(widths: widths, hasActions: !actions.isEmpty) {
             ForEach(columns) { col in
                 Text(row.cells[col.id] ?? "")
                     .lineLimit(1)
@@ -220,13 +267,11 @@ private struct WidgetCanvas: View {
     }
 
     private func actionButtons(_ actions: [InstrumentWidget.Action], item: String) -> some View {
-        HStack(spacing: 2) {
-            ForEach(actions) { action in
-                Button(action.name) { invoke(action: action.id, item: item) }
-                    .buttonStyle(RowActionButtonStyle())
-            }
-        }
-        .fixedSize()
+        ActionButtons(actions: actions, isEnabled: { _ in canChooseActions }, onPress: { invoke(action: $0, item: item) })
+    }
+
+    private var canChooseActions: Bool {
+        instance.map(engine.canChooseWidgetActions) ?? false
     }
 
     @ViewBuilder
@@ -301,7 +346,7 @@ private struct WidgetCanvas: View {
         guard let instance else { return }
         let engine = engine
         Task { @MainActor in
-            await engine.invokeWidgetAction(instance: instance, widget: widget.id, action: action, item: item)
+            await engine.invokeRowAction(instance: instance, widget: widget.id, action: action, item: item)
         }
     }
 
@@ -368,6 +413,8 @@ private struct ConsoleWidgetView: View {
     let sessionID: UUID
     let engine: Engine
     let selection: Binding<SidebarItemID?>
+    let acceptsInput: Bool
+    let inputRefusal: String?
     let onSubmit: (String) -> Void
 
     @State private var draft: String = ""
@@ -379,52 +426,50 @@ private struct ConsoleWidgetView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            GeometryReader { geo in
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 2) {
-                            ForEach(entries) { entry in
-                                entryRow(entry)
-                                    .id(entry.id)
-                            }
-                            Color.clear
-                                .frame(height: 1)
-                                .id(Self.bottomAnchorID)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 2) {
+                        ForEach(entries) { entry in
+                            entryRow(entry)
+                                .id(entry.id)
                         }
-                        .frame(
-                            maxWidth: .infinity,
-                            minHeight: geo.size.height,
-                            alignment: .bottomLeading
-                        )
+                        Color.clear
+                            .frame(height: 1)
+                            .id(Self.bottomAnchorID)
                     }
-                    .scrollBounceBehavior(.basedOnSize)
-                    .onChange(of: entries.count) { _, _ in
-                        withAnimation(.easeOut(duration: 0.15)) {
-                            proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
-                        }
-                    }
-                    .onAppear {
+                    .frame(maxWidth: .infinity, minHeight: Self.minLogHeight, alignment: .bottomLeading)
+                }
+                .scrollBounceBehavior(.basedOnSize)
+                .frame(maxHeight: Self.maxLogHeight)
+                .fixedSize(horizontal: false, vertical: true)
+                .onChange(of: entries.count) { _, _ in
+                    withAnimation(.easeOut(duration: 0.15)) {
                         proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
                     }
                 }
+                .onAppear {
+                    proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
+                }
             }
-            .frame(minHeight: 400)
 
             HStack(spacing: 6) {
                 Text(promptGlyph)
                     .font(.system(.body, design: .monospaced))
                     .foregroundStyle(.secondary)
-                TextField(placeholder, text: $draft)
+                TextField(inputRefusal ?? placeholder, text: $draft)
                     .textFieldStyle(.roundedBorder)
                     .focused($inputFocused)
                     .onSubmit(submit)
+                    .disabled(!acceptsInput)
                 Button(runLabel, action: submit)
-                    .disabled(!canSubmit)
+                    .disabled(!canSubmit || !acceptsInput)
             }
         }
     }
 
     private static let bottomAnchorID = "luma-console-bottom"
+    private static let minLogHeight: CGFloat = 64
+    private static let maxLogHeight: CGFloat = 400
 
     private func entryRow(_ entry: WidgetConsoleEntry) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -538,6 +583,48 @@ private struct ScrollingRows<Rows: View>: View {
     }
 }
 
+private struct WidgetHeaderActions: View {
+    let actions: [InstrumentWidget.Action]
+    let isEnabled: (String) -> Bool
+    let onPress: (String) -> Void
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            ActionButtons(actions: actions, isEnabled: isEnabled, onPress: onPress)
+            Menu {
+                ForEach(actions) { action in
+                    Button(action.name) { onPress(action.id) }
+                        .disabled(!isEnabled(action.id))
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Actions")
+            .accessibilityLabel("Actions")
+        }
+    }
+}
+
+private struct ActionButtons: View {
+    let actions: [InstrumentWidget.Action]
+    let isEnabled: (String) -> Bool
+    let onPress: (String) -> Void
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(actions) { action in
+                Button(action.name) { onPress(action.id) }
+                    .buttonStyle(RowActionButtonStyle())
+                    .disabled(!isEnabled(action.id))
+            }
+        }
+        .fixedSize()
+    }
+}
+
 private struct RowActionButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         RowActionLabel(configuration: configuration)
@@ -552,11 +639,12 @@ private struct RowActionLabel: View {
 
     var body: some View {
         configuration.label
+            .font(.subheadline)
             .foregroundStyle(isEnabled ? Color.accentColor : Color.secondary)
             .padding(.horizontal, 6)
             .background {
                 RoundedRectangle(cornerRadius: 4)
-                    .fill(Color.accentColor.opacity(highlight))
+                    .fill((isEnabled ? Color.accentColor : Color.secondary).opacity(highlight))
                     .padding(.vertical, -1)
             }
             .contentShape(Rectangle())
@@ -564,8 +652,100 @@ private struct RowActionLabel: View {
     }
 
     private var highlight: Double {
-        guard isEnabled else { return 0 }
-        if configuration.isPressed { return 0.25 }
-        return isHovered ? 0.12 : 0
+        guard isEnabled else { return 0.06 }
+        if configuration.isPressed { return 0.3 }
+        return isHovered ? 0.18 : 0.1
     }
+}
+
+private struct TableColumnWidths: Equatable {
+    let natural: [CGFloat]
+
+    init(columns: [InstrumentWidget.Column], rows: [WidgetTableRow]) {
+        let advance = Self.advance
+        natural = columns.map { column in
+            let longest = rows.reduce(column.name.count) { max($0, ($1.cells[column.id] ?? "").count) }
+            return (CGFloat(longest) * advance).rounded(.up) + 1
+        }
+    }
+
+    nonisolated func fitted(to available: CGFloat) -> [CGFloat] {
+        let total = natural.reduce(0, +)
+        guard total > 0 else { return natural }
+        if total <= available {
+            return natural.map { $0 + (available - total) * $0 / total }
+        }
+        var kept: CGFloat = 0
+        var cap = available / CGFloat(natural.count)
+        for (index, width) in natural.sorted().enumerated() {
+            let share = (available - kept) / CGFloat(natural.count - index)
+            guard width <= share else {
+                cap = share
+                break
+            }
+            kept += width
+        }
+        let floor = Self.advance * Self.minimumCharacters
+        return natural.map { min($0, max(cap, floor)) }
+    }
+
+    nonisolated private static let minimumCharacters: CGFloat = 6
+
+    nonisolated private static var advance: CGFloat {
+        let size = PlatformFont.preferredFont(forTextStyle: .caption1).pointSize
+        let font = PlatformFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        return ("0" as NSString).size(withAttributes: [.font: font]).width
+    }
+}
+
+private struct TableRowLayout: Layout {
+    let widths: TableColumnWidths
+    let hasActions: Bool
+
+    private static let spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let columns = columnWidths(proposal: proposal, subviews: subviews)
+        let height = zip(subviews, columns.cells + [columns.actions]).map { subview, width in
+            subview.sizeThatFits(ProposedViewSize(width: width, height: nil)).height
+        }.max() ?? 0
+        return CGSize(width: proposal.width ?? columns.total, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let columns = columnWidths(proposal: ProposedViewSize(width: bounds.width, height: proposal.height), subviews: subviews)
+        var x = bounds.minX
+        for (subview, width) in zip(subviews, columns.cells) {
+            let cell = ProposedViewSize(width: width, height: bounds.height)
+            subview.place(at: CGPoint(x: x, y: bounds.midY), anchor: .leading, proposal: cell)
+            x += width + Self.spacing
+        }
+        if hasActions, let actions = subviews.last {
+            actions.place(at: CGPoint(x: bounds.maxX, y: bounds.midY), anchor: .trailing, proposal: .unspecified)
+        }
+    }
+
+    private func columnWidths(
+        proposal: ProposedViewSize, subviews: Subviews
+    ) -> (cells: [CGFloat], actions: CGFloat, total: CGFloat) {
+        let actions = hasActions ? (subviews.last?.sizeThatFits(.unspecified).width ?? 0) : 0
+        let count = CGFloat(widths.natural.count)
+        let gaps = Self.spacing * (count - 1 + (hasActions ? 1 : 0))
+        let natural = widths.natural.reduce(0, +) + gaps + actions
+        let available = (proposal.width ?? natural) - gaps - actions
+        return (widths.fitted(to: max(0, available)), actions, natural)
+    }
+}
+
+private enum GraphSeriesPalette {
+    static let colors: [Color] = [
+        Color(red: 0x2F / 255, green: 0x7B / 255, blue: 0xF6 / 255),
+        Color(red: 0xF0 / 255, green: 0x8A / 255, blue: 0x24 / 255),
+        Color(red: 0x2E / 255, green: 0xA4 / 255, blue: 0x4F / 255),
+        Color(red: 0xE5 / 255, green: 0x48 / 255, blue: 0x4D / 255),
+        Color(red: 0x8E / 255, green: 0x5B / 255, blue: 0xD9 / 255),
+        Color(red: 0x1A / 255, green: 0xA7 / 255, blue: 0xA1 / 255),
+        Color(red: 0xA0 / 255, green: 0x70 / 255, blue: 0x3B / 255),
+        Color(red: 0xD9 / 255, green: 0x46 / 255, blue: 0x8F / 255),
+    ]
 }

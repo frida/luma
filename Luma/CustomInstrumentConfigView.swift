@@ -18,9 +18,11 @@ struct CustomInstrumentConfigView: View {
             VStack(alignment: .leading, spacing: 12) {
                 header
 
-                GroupBox("Features") {
-                    Group {
-                        if let def, !def.features.isEmpty {
+                if let def, !def.features.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Settings")
+                            .font(.subheadline)
+                        GroupBox {
                             VStack(alignment: .leading, spacing: 12) {
                                 ForEach(def.features) { feature in
                                     InstrumentFeatureRow(
@@ -29,15 +31,11 @@ struct CustomInstrumentConfigView: View {
                                     )
                                 }
                             }
-                        } else {
-                            Text("This custom instrument does not declare any features.")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                            .padding(.leading, 12)
+                            .padding(.vertical, 4)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
-                    .padding(.leading, 12)
-                    .padding(.vertical, 4)
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
                 if let def {
