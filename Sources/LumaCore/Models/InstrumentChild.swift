@@ -148,6 +148,42 @@ public struct ChildSelectionRequest: Sendable, Equatable {
 }
 
 extension CustomInstrumentDef {
+    public var childrenProblem: InstrumentWidget.Problem? {
+        Self.childrenProblem(children, pageWidgets: widgets)
+    }
+
+    static func childrenProblem(_ templates: [InstrumentChildTemplate], pageWidgets: [InstrumentWidget]) -> InstrumentWidget.Problem? {
+        let base: [InstrumentWidget.Problem.Step] = [.key("luma"), .key("children")]
+        if let text = InstrumentChildTemplate.countProblem(templates, pageWidgets: pageWidgets.count) {
+            return .init(path: base, text: text)
+        }
+        var seen: Set<String> = []
+        if let index = templates.firstIndex(where: { !seen.insert($0.id).inserted }) {
+            return .init(path: base + [.index(index), .key("id")], text: "\"\(templates[index].id)\" is already the id of another kind of child")
+        }
+        for (index, template) in templates.enumerated() {
+            let here = base + [.index(index)]
+            if let problem = template.problem {
+                return .init(path: here + problem.path, text: problem.text)
+            }
+            for (widgetIndex, widget) in template.widgets.enumerated() {
+                if let problem = widget.problem {
+                    return .init(path: here + [.key("widgets"), .index(widgetIndex)] + problem.path, text: problem.text)
+                }
+            }
+            if let problem = template.layout?.problem(
+                placing: template.widgets, keys: .camelCase,
+                widgetsName: "luma.children[\(index)].widgets", layoutName: "luma.children[\(index)].layout")
+            {
+                return .init(path: here + [.key("layout")] + problem.path, text: problem.text)
+            }
+        }
+        guard !templates.isEmpty, let index = pageWidgets.firstIndex(where: { $0.id == "children" }) else { return nil }
+        return .init(
+            path: [.key("luma"), .key("widgets"), .index(index), .key("id")],
+            text: "\"children\" names the restored state of an instrument's children; choose another id")
+    }
+
     func widget(atSlot slot: String) -> InstrumentWidget? {
         let (child, widgetID) = WidgetSlot.split(slot)
         let widgets = child.map { child in children.first { $0.id == child.template }?.widgets ?? [] } ?? self.widgets

@@ -4818,6 +4818,12 @@ public final class Engine {
     }
 
     public func updateCustomInstrument(_ def: CustomInstrumentDef) {
+        if let problem = def.childrenProblem {
+            emitEngineError(
+                subsystem: "instruments",
+                text: "“\(def.name)” was not saved: \(InstrumentLayout.text(of: problem.path).dropFirst()): \(problem.text)")
+            return
+        }
         var updated = def
         updated.normalize()
         updated.requireLuma(given: (try? store.fetchCustomInstrumentFiles(defID: def.id)) ?? [])

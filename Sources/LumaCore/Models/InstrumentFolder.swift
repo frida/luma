@@ -576,17 +576,6 @@ public struct InstrumentFolder: Sendable {
                     symbol: symbol,
                     widgets: try c.decodeIfPresent([Widget].self, forKey: .widgets)?.map(\.widget) ?? [],
                     layout: try c.decodeIfPresent(InstrumentLayout.self, forKey: .layout))
-                if let problem = template.problem {
-                    throw DecodingError.dataCorrupted(
-                        .init(codingPath: decoder.codingPath + problem.path.map(ManifestKey.init), debugDescription: problem.text))
-                }
-                let here = InstrumentFolder.keyPath(decoder.codingPath)
-                if let problem = template.layout?.problem(
-                    placing: template.widgets, keys: .camelCase, widgetsName: "\(here).widgets", layoutName: "\(here).layout")
-                {
-                    throw DecodingError.dataCorrupted(
-                        .init(codingPath: c.codingPath + [CodingKeys.layout] + problem.path.map(ManifestKey.init), debugDescription: problem.text))
-                }
             }
 
             func encode(to encoder: Encoder) throws {
@@ -662,20 +651,9 @@ extension InstrumentFolder.Manifest.Section {
             throw DecodingError.dataCorrupted(
                 .init(codingPath: c.codingPath + [CodingKeys.layout] + problem.path.map(ManifestKey.init), debugDescription: problem.text))
         }
-        let templates = children?.map(\.template) ?? []
-        if let problem = InstrumentChildTemplate.countProblem(templates, pageWidgets: widgets?.count ?? 0) {
-            throw DecodingError.dataCorrupted(.init(codingPath: c.codingPath + [CodingKeys.children], debugDescription: problem))
-        }
-        var seen: Set<String> = []
-        if let index = templates.firstIndex(where: { !seen.insert($0.id).inserted }) {
-            throw DecodingError.dataCorrupted(.init(
-                codingPath: c.codingPath + [CodingKeys.children, ManifestKey(index), ManifestKey("id")],
-                debugDescription: "\"\(templates[index].id)\" is already the id of another kind of child"))
-        }
-        if !templates.isEmpty, let index = widgets?.firstIndex(where: { $0.widget.id == "children" }) {
-            throw DecodingError.dataCorrupted(.init(
-                codingPath: c.codingPath + [CodingKeys.widgets, ManifestKey(index), ManifestKey("id")],
-                debugDescription: "\"children\" names the restored state of an instrument's children; choose another id"))
+        if let problem = CustomInstrumentDef.childrenProblem(children?.map(\.template) ?? [], pageWidgets: pageWidgets) {
+            throw DecodingError.dataCorrupted(
+                .init(codingPath: c.codingPath + problem.path.dropFirst().map(ManifestKey.init), debugDescription: problem.text))
         }
     }
 }
