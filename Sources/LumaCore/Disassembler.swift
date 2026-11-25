@@ -68,6 +68,7 @@ public final class Disassembler {
     private var currentAppearance: Appearance?
     private var analyzedModules: Set<String> = []
     private var analyzingModules: Set<String> = []
+    private var pendingAnalyses: [String: Task<Void, Never>] = [:]
 
     public init(
         sessionID: UUID,
@@ -221,6 +222,17 @@ private func fetchFunctionEnd(hex: String) async -> UInt64? {
 
     private func ensureModuleAnalyzed(module: ProcessModule) async {
         if analyzedModules.contains(module.path) { return }
+        if let pending = pendingAnalyses[module.path] {
+            await pending.value
+            return
+        }
+        let analysis = Task { await analyzeModule(module) }
+        pendingAnalyses[module.path] = analysis
+        await analysis.value
+        pendingAnalyses[module.path] = nil
+    }
+
+    private func analyzeModule(_ module: ProcessModule) async {
         setAnalysisStatus(.analyzing, path: module.path)
 
         let identity = try? await introspector.getModuleIdentity(name: module.path)
