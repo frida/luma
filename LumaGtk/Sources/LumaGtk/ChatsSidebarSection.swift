@@ -187,7 +187,54 @@ final class ChatsSidebarSection {
             box.append(child: badge)
         }
         listRow.set(child: box)
+        ContextMenu.attach(to: listRow, anchor: box) { [weak self, box] x, y in
+            self?.presentMenu(at: box, x: x, y: y, chatID: row.id)
+        }
         return listRow
+    }
+
+    private func presentMenu(at anchor: Box, x: Double, y: Double, chatID: UUID) {
+        let chats = engine.objectChats
+        guard let chat = chats.chat(withID: chatID) ?? (chatID == chats.conversationID ? chats.openConversation() : nil) else { return }
+        var first: [ContextMenu.Item] = [
+            .init("Show Subject") { PharoObjectChatPage.showSubject?(chats.subject(of: chat)) }
+        ]
+        if chats.unreadCount(in: chatID) > 0 {
+            first.append(.init("Mark as Read") { chats.markRead(chatID) })
+        }
+        var sections = [first]
+        if chatID != chats.conversationID {
+            let canRename = chats.canRename(chatID)
+            let canDelete = chats.canDelete(chatID)
+            sections.append([
+                .init("Rename\u{2026}", detail: canRename ? nil : "This chat was deleted in the lab", enabled: canRename) {
+                    RenamePopover.present(heading: "Rename chat", title: chats.displayTitle(of: chat), at: anchor) { title in
+                        let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !title.isEmpty {
+                            chats.rename(chatID, to: title)
+                        }
+                    }
+                },
+                .init(
+                    "Delete", detail: canDelete ? nil : "Only the member who started this chat, or a lab owner, can delete it", destructive: true,
+                    enabled: canDelete
+                ) {
+                    ConfirmationPopover.present(heading: "Delete this chat?", destructiveLabel: "Delete", at: anchor) {
+                        Task { @MainActor [weak self] in
+                            if let self, self.selected == chatID {
+                                self.onSelect(chats.openConversation().id)
+                            }
+                            do {
+                                try await chats.delete(chatID)
+                            } catch {
+                                AddressActionMenu.errorReporter?("Can\u{2019}t delete the chat: \(error.localizedDescription)")
+                            }
+                        }
+                    }
+                },
+            ])
+        }
+        ContextMenu.present(sections, at: anchor, x: x, y: y)
     }
 
     private func line(_ text: String, classes: [String]) -> Label {

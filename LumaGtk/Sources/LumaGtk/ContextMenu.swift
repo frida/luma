@@ -1,4 +1,5 @@
 import CGraphene
+import Gdk
 import struct Graphene.PointRef
 import Gtk
 
@@ -32,6 +33,30 @@ enum ContextMenu {
     }
 
     private static let windowMargin = 24
+
+    static func attach(to row: Widget, anchor: Widget, present: @escaping (_ x: Double, _ y: Double) -> Void) {
+        let click = GestureClick()
+        click.set(button: 3)
+        click.onPressed { _, _, x, y in
+            MainActor.assumeIsolated { present(x, y) }
+        }
+        row.add(controller: click)
+        let longPress = GestureLongPress()
+        longPress.onPressed { _, x, y in
+            MainActor.assumeIsolated { present(x, y) }
+        }
+        row.add(controller: longPress)
+        let keys = EventControllerKey()
+        keys.onKeyPressed { [anchor] _, keyval, _, state in
+            MainActor.assumeIsolated {
+                let key = Int32(keyval)
+                guard key == Gdk.keyMenu || (key == Gdk.keyF10 && state.contains(.shiftMask)) else { return false }
+                present(0, Double(anchor.height))
+                return true
+            }
+        }
+        row.add(controller: keys)
+    }
 
     static func present(
         _ sections: [[Item]],

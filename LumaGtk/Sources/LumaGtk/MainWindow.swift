@@ -4627,10 +4627,33 @@ final class MainWindow: InstrumentUIHost {
             textColumn.append(child: versionLabel)
             content.append(child: textColumn)
             row.set(child: content)
+            ContextMenu.attach(to: row, anchor: content) { [weak self, content] x, y in
+                self?.presentPackageContextMenu(anchor: content, x: x, y: y, package: package)
+            }
             packagesList.append(child: row)
         }
         packagesHeaderLabel?.label = "Packages (\(snapshot.count))"
         packagesSidebarSection?.visible = !snapshot.isEmpty
+    }
+
+    private func presentPackageContextMenu(anchor: Widget, x: Double, y: Double, package: LumaCore.InstalledPackage) {
+        ContextMenu.present([
+            [
+                .init("Remove Package", destructive: true) { [weak self] in
+                    Task { @MainActor [weak self] in
+                        guard let self, let engine = self.engine else { return }
+                        do {
+                            try await engine.removePackage(package)
+                            if self.selection == .package(package.id) {
+                                self.select(.notebook)
+                            }
+                        } catch {
+                            self.showToast("Can\u{2019}t remove \(package.name): \(error.localizedDescription)")
+                        }
+                    }
+                }
+            ]
+        ], at: anchor, x: x, y: y)
     }
 
     func managePackages() {
