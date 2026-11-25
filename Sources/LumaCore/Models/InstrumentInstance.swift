@@ -68,9 +68,18 @@ public struct InstrumentInstance: Codable, Identifiable, Sendable, FetchableReco
         guard let config = stored.removeValue(forKey: "config"), let configJSON = storedConfig(config) else { return nil }
         stored["config_json"] = configJSON.base64EncodedString()
         guard let data = try? JSONSerialization.data(withJSONObject: stored),
-            let inst = try? wireDecoder.decode(InstrumentInstance.self, from: data)
+            let inst = try? wireDecoder.decode(InstrumentInstance.self, from: data),
+            inst.hasCurrentConfig
         else { return nil }
         return inst
+    }
+
+    var hasCurrentConfig: Bool {
+        switch kind {
+        case .tracer: (try? TracerConfig.decode(from: configJSON)) != nil
+        case .codeShare: (try? CodeShareConfig.decode(from: configJSON)) != nil
+        case .custom: true
+        }
     }
 
     public static func wireConfig(_ configJSON: Data) -> Any? {

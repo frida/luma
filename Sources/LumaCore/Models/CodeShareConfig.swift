@@ -42,6 +42,38 @@ public struct CodeShareConfig: Codable, Equatable, Sendable {
         self.allowRemoteUpdates = allowRemoteUpdates
     }
 
+    private enum CodingKeys: String, CodingKey {
+        case name
+        case description
+        case source
+        case exports
+        case project
+        case lastSyncedHash = "last_synced_hash"
+        case lastReviewedHash = "last_reviewed_hash"
+        case fridaVersion = "frida_version"
+        case allowRemoteUpdates = "allow_remote_updates"
+    }
+
+    public init(from decoder: Decoder) throws {
+        try decoder.refuseUnknownKeys(CodingKeys.self)
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decode(String.self, forKey: .name)
+        description = try c.decode(String.self, forKey: .description)
+        source = try c.decode(String.self, forKey: .source)
+        exports = try c.decode([String].self, forKey: .exports)
+        project = try c.decodeIfPresent(CodeShareProjectRef.self, forKey: .project)
+        lastSyncedHash = try c.decodeIfPresent(String.self, forKey: .lastSyncedHash)
+        lastReviewedHash = try c.decodeIfPresent(String.self, forKey: .lastReviewedHash)
+        fridaVersion = try c.decodeIfPresent(String.self, forKey: .fridaVersion)
+        allowRemoteUpdates = try c.decode(Bool.self, forKey: .allowRemoteUpdates)
+    }
+
+    public static func decode(from data: Data) throws -> CodeShareConfig {
+        let decoder = JSONDecoder()
+        decoder.userInfo[.refusesUnknownKeys] = true
+        return try decoder.decode(CodeShareConfig.self, from: data)
+    }
+
     public var currentSourceHash: String {
         let data = Data(source.utf8)
         let digest = SHA256.hash(data: data)

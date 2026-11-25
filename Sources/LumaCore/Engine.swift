@@ -1908,7 +1908,7 @@ public final class Engine {
 
     private func makeCodeShareDescriptor(for instance: InstrumentInstance) -> InstrumentDescriptor? {
         guard
-            let cfg = try? JSONDecoder().decode(CodeShareConfig.self, from: instance.configJSON)
+            let cfg = try? CodeShareConfig.decode(from: instance.configJSON)
         else {
             return nil
         }
@@ -3810,7 +3810,7 @@ public final class Engine {
                 )
 
             case .codeShare:
-                let cfg = try JSONDecoder().decode(CodeShareConfig.self, from: configJSON)
+                let cfg = try CodeShareConfig.decode(from: configJSON)
                 try await loadCodeShareInstrument(
                     instanceID: instanceID,
                     config: cfg,

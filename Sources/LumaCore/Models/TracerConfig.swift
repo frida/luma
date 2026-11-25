@@ -19,6 +19,18 @@ public struct ITraceArming: Codable, Equatable, Sendable {
         self.maxInvocations = maxInvocations
         self.maxBytesPerInvocation = maxBytesPerInvocation
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case maxInvocations = "max_invocations"
+        case maxBytesPerInvocation = "max_bytes_per_invocation"
+    }
+
+    public init(from decoder: Decoder) throws {
+        try decoder.refuseUnknownKeys(CodingKeys.self)
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        maxInvocations = try c.decode(Int.self, forKey: .maxInvocations)
+        maxBytesPerInvocation = try c.decode(Int.self, forKey: .maxBytesPerInvocation)
+    }
 }
 
 public struct TracerConfig: Codable, Equatable, Sendable {
@@ -68,6 +80,30 @@ public struct TracerConfig: Codable, Equatable, Sendable {
             code = newCode
             lastEditedAt = date
         }
+
+        private enum CodingKeys: String, CodingKey {
+            case id
+            case displayName = "display_name"
+            case addressAnchor = "address_anchor"
+            case kind
+            case state
+            case code
+            case itraceArming = "itrace_arming"
+            case lastEditedAt = "last_edited_at"
+        }
+
+        public init(from decoder: Decoder) throws {
+            try decoder.refuseUnknownKeys(CodingKeys.self)
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            id = try c.decode(UUID.self, forKey: .id)
+            displayName = try c.decode(String.self, forKey: .displayName)
+            addressAnchor = try c.decode(AddressAnchor.self, forKey: .addressAnchor)
+            kind = try c.decode(TracerHookKind.self, forKey: .kind)
+            state = try c.decode(State.self, forKey: .state)
+            code = try c.decode(String.self, forKey: .code)
+            itraceArming = try c.decodeIfPresent(ITraceArming.self, forKey: .itraceArming)
+            lastEditedAt = try c.decodeIfPresent(Date.self, forKey: .lastEditedAt)
+        }
     }
 
     public struct ThreadTrace: Codable, Equatable, Identifiable, Sendable {
@@ -80,6 +116,20 @@ public struct TracerConfig: Codable, Equatable, Sendable {
             self.threadID = threadID
             self.threadName = threadName
         }
+
+        private enum CodingKeys: String, CodingKey {
+            case id
+            case threadID = "thread_id"
+            case threadName = "thread_name"
+        }
+
+        public init(from decoder: Decoder) throws {
+            try decoder.refuseUnknownKeys(CodingKeys.self)
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            id = try c.decode(UUID.self, forKey: .id)
+            threadID = try c.decode(UInt.self, forKey: .threadID)
+            threadName = try c.decodeIfPresent(String.self, forKey: .threadName)
+        }
     }
 
     public var hooks: [Hook]
@@ -91,6 +141,18 @@ public struct TracerConfig: Codable, Equatable, Sendable {
         self.threadTraces = threadTraces
     }
 
+    private enum CodingKeys: String, CodingKey {
+        case hooks
+        case threadTraces = "thread_traces"
+    }
+
+    public init(from decoder: Decoder) throws {
+        try decoder.refuseUnknownKeys(CodingKeys.self)
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        hooks = try c.decode([Hook].self, forKey: .hooks)
+        threadTraces = try c.decode([ThreadTrace].self, forKey: .threadTraces)
+    }
+
     public func hooksByMostRecentlyEdited() -> [Hook] {
         return hooks.enumerated()
             .map { (originalIndex: $0.offset, hook: $0.element) }
@@ -99,7 +161,9 @@ public struct TracerConfig: Codable, Equatable, Sendable {
     }
 
     public static func decode(from data: Data) throws -> TracerConfig {
-        try JSONDecoder().decode(TracerConfig.self, from: data)
+        let decoder = JSONDecoder()
+        decoder.userInfo[.refusesUnknownKeys] = true
+        return try decoder.decode(TracerConfig.self, from: data)
     }
 
     public func encode() -> Data {
