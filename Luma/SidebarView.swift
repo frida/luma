@@ -55,7 +55,7 @@ struct SidebarView: View {
                     engine.setSidebarExpansion(section: .chats, chatsExpansion == .expanded ? .collapsed : .expanded)
                 }
                 ForEach(chatsExpansion == .expanded ? engine.objectChats.sidebarChatIDs : [], id: \.self) { chatID in
-                    SidebarChatRow(chatID: chatID, engine: engine)
+                    SidebarChatRow(chatID: chatID, engine: engine, selection: $selection)
                         .sidebarItemTag(SidebarItemID.chat(chatID))
                 }
                 PatternsSidebarRows(engine: engine, selection: $selection)
@@ -141,7 +141,7 @@ struct SidebarView: View {
             if !packages.isEmpty {
                 Section("Packages", isExpanded: expansionBinding(for: .packages)) {
                     ForEach(packages) { pkg in
-                        SidebarPackageRow(package: pkg)
+                        SidebarPackageRow(package: pkg, engine: engine, selection: $selection)
                             .sidebarItemTag(SidebarItemID.package(pkg.id))
                     }
                 }
@@ -325,6 +325,13 @@ private struct SidebarChatsRow: View {
 private struct SidebarChatRow: View {
     let chatID: UUID
     let engine: Engine
+    @Binding var selection: SidebarItemID?
+
+    @State private var isRenaming = false
+    @State private var renameDraft = ""
+    @State private var isDeleting = false
+
+    @Environment(\.errorPresenter) private var errorPresenter
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -353,6 +360,84 @@ private struct SidebarChatRow: View {
         .padding(.leading, sidebarChildIndent)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("sidebar.chat.\(chatID.uuidString)")
+        .contextMenu {
+            if let chat, chatID != chats.conversationID {
+                menuItems(chat)
+            }
+            if chats.unreadCount(in: chatID) > 0 {
+                Button {
+                    chats.markRead(chatID)
+                } label: {
+                    Label("Mark as Read", systemImage: "envelope.open")
+                }
+            }
+        }
+        .alert("Rename chat", isPresented: $isRenaming) {
+            TextField("Title", text: $renameDraft)
+            Button("Save") { rename() }
+            Button("Cancel", role: .cancel) {}
+        }
+        .confirmationDialog("Delete this chat?", isPresented: $isDeleting, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) { Task { await delete() } }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    @ViewBuilder
+    private func menuItems(_ chat: ObjectChat) -> some View {
+        let subject = chats.subject(of: chat)
+        Button {
+            showSubject(subject)
+        } label: {
+            Label("Show Subject", systemImage: "scope")
+        }
+        .disabled(subjectUnavailable(subject))
+        Divider()
+        Button {
+            renameDraft = chats.displayTitle(of: chat)
+            isRenaming = true
+        } label: {
+            Label("Rename\u{2026}", systemImage: "pencil")
+        }
+        .disabled(!chats.canRename(chatID))
+        Button(role: .destructive) {
+            isDeleting = true
+        } label: {
+            Label("Delete", systemImage: "trash")
+        }
+        .disabled(!chats.canDelete(chatID))
+    }
+
+    private func subjectUnavailable(_ subject: ObjectChatSubjectPlace) -> Bool {
+        if case .instruction(let place) = subject {
+            return place.unavailableReason != nil
+        }
+        return false
+    }
+
+    private func showSubject(_ subject: ObjectChatSubjectPlace) {
+        do {
+            try engine.showSubject(subject)
+        } catch {
+            errorPresenter.present("Can’t show the subject", error.localizedDescription)
+        }
+    }
+
+    private func rename() {
+        let title = renameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return }
+        chats.rename(chatID, to: title)
+    }
+
+    private func delete() async {
+        if selection == .chat(chatID) {
+            selection = .chat(chats.conversationID)
+        }
+        do {
+            try await chats.delete(chatID)
+        } catch {
+            errorPresenter.present("Can’t delete the chat", error.localizedDescription)
+        }
     }
 
     private var chats: ObjectChats {
@@ -1143,6 +1228,10 @@ private struct SidebarITraceRow: View {
 
 private struct SidebarPackageRow: View {
     let package: LumaCore.InstalledPackage
+    let engine: Engine
+    @Binding var selection: SidebarItemID?
+
+    @Environment(\.errorPresenter) private var errorPresenter
 
     var body: some View {
         HStack(spacing: 8) {
@@ -1157,6 +1246,24 @@ private struct SidebarPackageRow: View {
             Spacer()
         }
         .padding(.vertical, 2)
+        .contextMenu {
+            Button(role: .destructive) {
+                Task { await remove() }
+            } label: {
+                Label("Remove Package", systemImage: "trash")
+            }
+        }
+    }
+
+    private func remove() async {
+        do {
+            try await engine.removePackage(package)
+            if selection == .package(package.id) {
+                selection = .notebook
+            }
+        } catch {
+            errorPresenter.present("Can’t remove \(package.name)", error.localizedDescription)
+        }
     }
 }
 

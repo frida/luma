@@ -100,7 +100,11 @@ struct PharoObjectChatView: View {
     private func showSubjectButton(_ subject: ObjectChatSubjectPlace) -> some View {
         let unavailable = unavailableReason(of: subject)
         return Button {
-            show(subject)
+            do {
+                try engine.showSubject(subject)
+            } catch {
+                failure = error.localizedDescription
+            }
         } label: {
             Image(systemName: "scope")
         }
@@ -116,40 +120,6 @@ struct PharoObjectChatView: View {
             place.unavailableReason ?? subjectUnavailableReason
         case .project, .object:
             nil
-        }
-    }
-
-    private func show(_ subject: ObjectChatSubjectPlace) {
-        switch subject {
-        case .project:
-            engine.setSidePanel(.collaboration)
-        case .instruction(let place):
-            showInstruction(place)
-        case .object(let origin, _):
-            show(origin)
-        }
-    }
-
-    private func showInstruction(_ place: ObjectChatInstructionPlace) {
-        do {
-            let insight = try engine.disassemblyInsight(at: place)
-            DisassemblyJumpRequests.shared.request(place.address!, in: insight.id)
-            engine.selectedSidebarItem = .insight(place.sessionID, insight.id)
-        } catch {
-            failure = error.localizedDescription
-        }
-    }
-
-    private func show(_ origin: ObjectChat.Origin) {
-        switch origin {
-        case .snippet:
-            engine.selectedSidebarItem = .pharo
-        case .notebookEntry:
-            engine.selectedSidebarItem = .notebook
-        case .instrumentView(let instanceID, _, let sessionID):
-            engine.selectedSidebarItem = .instrument(sessionID, instanceID)
-        case .chat(let chatID, _):
-            engine.selectedSidebarItem = .chat(chatID)
         }
     }
 
@@ -193,5 +163,33 @@ struct PharoObjectChatView: View {
         let title = renameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return }
         chats.rename(chatID, to: title)
+    }
+}
+
+extension Engine {
+    func showSubject(_ subject: ObjectChatSubjectPlace) throws {
+        switch subject {
+        case .project:
+            setSidePanel(.collaboration)
+        case .instruction(let place):
+            let insight = try disassemblyInsight(at: place)
+            DisassemblyJumpRequests.shared.request(place.address!, in: insight.id)
+            selectedSidebarItem = .insight(place.sessionID, insight.id)
+        case .object(let origin, _):
+            showOrigin(origin)
+        }
+    }
+
+    private func showOrigin(_ origin: ObjectChat.Origin) {
+        switch origin {
+        case .snippet:
+            selectedSidebarItem = .pharo
+        case .notebookEntry:
+            selectedSidebarItem = .notebook
+        case .instrumentView(let instanceID, _, let sessionID):
+            selectedSidebarItem = .instrument(sessionID, instanceID)
+        case .chat(let chatID, _):
+            selectedSidebarItem = .chat(chatID)
+        }
     }
 }
