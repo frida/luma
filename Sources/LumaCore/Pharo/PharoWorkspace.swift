@@ -1,8 +1,5 @@
 import Foundation
 import SwiftyPharo
-#if os(Windows)
-    import WinSDK
-#endif
 
 /// The image as the project sees it: started once, answering what it asks
 /// about the host's sessions, notebook and events, and holding on to whatever
@@ -142,18 +139,11 @@ public final class PharoWorkspace {
 
     private nonisolated static func isRunning(_ pid: Int32) -> Bool {
         #if os(Windows)
-            guard let process = OpenProcess(DWORD(PROCESS_QUERY_LIMITED_INFORMATION), false, DWORD(pid)) else { return false }
-            defer { CloseHandle(process) }
-            var exitCode: DWORD = 0
-            return GetExitCodeProcess(process, &exitCode).boolValue && exitCode == stillActive
+            return HostProcessLookup.isAlive(HostProcessID(pid))
         #else
             return kill(pid, 0) == 0 || errno == EPERM
         #endif
     }
-
-    #if os(Windows)
-        private nonisolated static let stillActive: DWORD = 259
-    #endif
 
     /// A session that came with no icon still shows one, drawn the way the
     /// sidebar draws it.
