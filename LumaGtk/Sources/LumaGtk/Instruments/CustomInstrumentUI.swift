@@ -169,6 +169,7 @@ private final class InstrumentChildRows {
         let title = Label(str: "Show all \(all.count) \(template.name)")
         title.add(cssClass: "dim-label")
         title.halign = .start
+        title.ellipsize = .end
         let (row, anchor) = SidebarFeatureRow.make(icon: icon, content: title)
         row.selectable = false
         let sessionID = sessionID
@@ -236,31 +237,32 @@ final class InstrumentChildLine {
     init(titleStyle: String?, arrangement: Arrangement) {
         let stacked = arrangement == .subtitleBelow
         widget = Box(orientation: stacked ? .vertical : .horizontal, spacing: stacked ? 0 : 6)
-        let firstLine = Box(orientation: .horizontal, spacing: 6)
-        title.ellipsize = .end
+        title.ellipsize = stacked ? .middle : .end
         title.halign = .start
         title.xalign = 0
-        title.hexpand = stacked
         if let titleStyle {
             title.add(cssClass: titleStyle)
         }
-        firstLine.append(child: title)
         subtitle.add(cssClass: "dim-label")
         subtitle.ellipsize = .end
         subtitle.halign = .start
         subtitle.xalign = 0
+        subtitle.hexpand = stacked
         badge.add(cssClass: "caption")
         badge.add(cssClass: "luma-mission-pill")
         badge.valign = .center
         if stacked {
-            firstLine.append(child: badge)
-            widget.append(child: firstLine)
             subtitle.add(cssClass: "caption")
+            badge.ellipsize = .end
+            badge.halign = .end
+            widget.append(child: title)
+            widget.append(child: badge)
             widget.append(child: subtitle)
+            ChildRowLineLayout.install(on: widget)
         } else {
-            firstLine.append(child: subtitle)
-            firstLine.append(child: badge)
-            widget.append(child: firstLine)
+            widget.append(child: title)
+            widget.append(child: subtitle)
+            widget.append(child: badge)
         }
     }
 
@@ -274,6 +276,8 @@ final class InstrumentChildLine {
         subtitle.visible = detail != nil
         badge.label = marker?.text ?? ""
         badge.visible = marker != nil
+        badge.tooltipText = marker?.text
+        widget.setAccessibleLabel([text, marker?.text, detail].compactMap { $0 }.joined(separator: ", "))
         if let old = tone.flatMap(Self.styleClass) {
             badge.remove(cssClass: old)
         }
