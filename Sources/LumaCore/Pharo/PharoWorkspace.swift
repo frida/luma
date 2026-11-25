@@ -1,5 +1,8 @@
 import Foundation
 import SwiftyPharo
+#if os(Windows)
+    import WinSDK
+#endif
 
 /// The image as the project sees it: started once, answering what it asks
 /// about the host's sessions, notebook and events, and holding on to whatever
@@ -107,10 +110,50 @@ public final class PharoWorkspace {
     /// runs. The build stages the image, so its absence is a broken build
     /// rather than a condition to handle.
     public nonisolated static func boot() {
-        let image = Bundle.module.url(
-            forResource: "SwiftyPharo", withExtension: "image", subdirectory: "pharo-image")!
-        PharoRuntime.shared.boot(image: image)
+        PharoRuntime.shared.boot(image: imageOfThisProcess)
     }
+
+    private nonisolated static let imageOfThisProcess: URL = {
+        let fm = FileManager.default
+        let shipped = Bundle.module.url(forResource: "SwiftyPharo", withExtension: "image", subdirectory: "pharo-image")!
+        removeCopiesOfEndedProcesses()
+        try? fm.removeItem(at: copyOfThisProcess)
+        try! fm.createDirectory(at: copyOfThisProcess, withIntermediateDirectories: true)
+        for name in ["SwiftyPharo.image", "SwiftyPharo.changes"] {
+            try! fm.copyItem(at: shipped.deletingLastPathComponent().appendingPathComponent(name), to: copyOfThisProcess.appendingPathComponent(name))
+        }
+        atexit { try? FileManager.default.removeItem(at: PharoWorkspace.copyOfThisProcess) }
+        return copyOfThisProcess.appendingPathComponent("SwiftyPharo.image")
+    }()
+
+    private nonisolated static let copyPrefix = "luma-pharo-"
+
+    private nonisolated static let copyOfThisProcess = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "\(copyPrefix)\(ProcessInfo.processInfo.processIdentifier)", isDirectory: true)
+
+    private nonisolated static func removeCopiesOfEndedProcesses() {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory
+        for name in (try? fm.contentsOfDirectory(atPath: root.path)) ?? [] where name.hasPrefix(copyPrefix) {
+            guard let pid = Int32(name.dropFirst(copyPrefix.count)), !isRunning(pid) else { continue }
+            try? fm.removeItem(at: root.appendingPathComponent(name))
+        }
+    }
+
+    private nonisolated static func isRunning(_ pid: Int32) -> Bool {
+        #if os(Windows)
+            guard let process = OpenProcess(DWORD(PROCESS_QUERY_LIMITED_INFORMATION), false, DWORD(pid)) else { return false }
+            defer { CloseHandle(process) }
+            var exitCode: DWORD = 0
+            return GetExitCodeProcess(process, &exitCode).boolValue && exitCode == stillActive
+        #else
+            return kill(pid, 0) == 0 || errno == EPERM
+        #endif
+    }
+
+    #if os(Windows)
+        private nonisolated static let stillActive: DWORD = 259
+    #endif
 
     /// A session that came with no icon still shows one, drawn the way the
     /// sidebar draws it.
