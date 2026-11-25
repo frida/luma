@@ -17,6 +17,24 @@ public struct JSError: CustomStringConvertible, Codable, Sendable {
         self.stack = stack
     }
 
+    private enum CodingKeys: String, CodingKey {
+        case text
+        case fileName = "file_name"
+        case lineNumber = "line_number"
+        case columnNumber = "column_number"
+        case stack
+    }
+
+    public init(from decoder: Decoder) throws {
+        try decoder.requireKnownKeys(CodingKeys.self)
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        text = try c.decode(String.self, forKey: .text)
+        fileName = try c.decodeIfPresent(String.self, forKey: .fileName)
+        lineNumber = try c.decodeIfPresent(Int.self, forKey: .lineNumber)
+        columnNumber = try c.decodeIfPresent(Int.self, forKey: .columnNumber)
+        stack = try c.decodeIfPresent(String.self, forKey: .stack)
+    }
+
     public var description: String {
         var base = text
         if let fileName, let lineNumber {

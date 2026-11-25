@@ -1615,6 +1615,9 @@ public final class ProjectStore: Sendable {
             _ = try SessionUIState.fetchAll(db)
             _ = try ObjectChat.fetchAll(db)
             _ = try REPLCell.fetchAll(db)
+            _ = try ITrace.fetchAll(db)
+            _ = try NotebookEntry.fetchAll(db)
+            _ = try ObjectChatObject.fetchAll(db)
             for row in try ModuleAnalysisRow.fetchAll(db) {
                 _ = try JSONDecoder().decode([ProcessNode.ModuleRange].self, from: row.mappedRanges)
             }

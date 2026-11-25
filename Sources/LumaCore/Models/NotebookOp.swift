@@ -184,10 +184,8 @@ public enum NotebookOp: Sendable {
                 let changes = obj["changes"] as? [String: Any]
             else { return nil }
             var snapshot: PharoSnapshot? = nil
-            if let raw = changes["pharo_snapshot"],
-                let data = try? JSONSerialization.data(withJSONObject: raw),
-                let decoded = try? JSONDecoder().decode(PharoSnapshot.self, from: data)
-            {
+            if let raw = changes["pharo_snapshot"] {
+                guard let decoded = NotebookEntry.decodeWire(PharoSnapshot.self, from: raw) else { return nil }
                 snapshot = decoded
             }
             var jsValue: JSInspectValue? = nil

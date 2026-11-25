@@ -665,6 +665,21 @@ extension CodingUserInfoKey {
 extension Decoder {
     func refuseUnknownKeys<Key: CodingKey & Equatable>(_: Key.Type, knowing known: [Key]? = nil, renamed: [String: String] = [:]) throws {
         guard userInfo[.refusesUnknownKeys] != nil else { return }
+        try requireKnownKeys(Key.self, knowing: known, renamed: renamed)
+    }
+
+    func soleKey<Key: CodingKey & CaseIterable & Equatable>(_: Key.Type, of what: String) throws -> (KeyedDecodingContainer<Key>, Key) {
+        try requireKnownKeys(Key.self)
+        let c = try container(keyedBy: Key.self)
+        guard c.allKeys.count == 1, let key = c.allKeys.first else {
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: codingPath,
+                debugDescription: "\(what) holds exactly one of \(Key.allCases.map(\.stringValue).joined(separator: ", "))"))
+        }
+        return (c, key)
+    }
+
+    func requireKnownKeys<Key: CodingKey & Equatable>(_: Key.Type, knowing known: [Key]? = nil, renamed: [String: String] = [:]) throws {
         let unknown = try container(keyedBy: ManifestKey.self).allKeys.filter { key in
             Key(stringValue: key.stringValue).map { known?.contains($0) ?? true } != true
         }
@@ -672,6 +687,16 @@ extension Decoder {
             let problem = renamed[first.stringValue].map { "unknown key (now \($0))" } ?? "unknown key"
             throw DecodingError.dataCorrupted(.init(codingPath: codingPath + [first], debugDescription: problem))
         }
+    }
+}
+
+extension KeyedDecodingContainer {
+    func strictlyNested<Nested: CodingKey & Equatable>(
+        _: Nested.Type, forKey key: Key, knowing known: [Nested]? = nil
+    ) throws -> KeyedDecodingContainer<Nested> {
+        let decoder = try superDecoder(forKey: key)
+        try decoder.requireKnownKeys(Nested.self, knowing: known)
+        return try decoder.container(keyedBy: Nested.self)
     }
 }
 

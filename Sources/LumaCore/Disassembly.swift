@@ -10,6 +10,20 @@ public struct RGBColor: Hashable, Sendable, Codable {
         self.g = g
         self.b = b
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case r
+        case g
+        case b
+    }
+
+    public init(from decoder: Decoder) throws {
+        try decoder.requireKnownKeys(CodingKeys.self)
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        r = try c.decode(UInt8.self, forKey: .r)
+        g = try c.decode(UInt8.self, forKey: .g)
+        b = try c.decode(UInt8.self, forKey: .b)
+    }
 }
 
 public struct StyledText: Sendable, Hashable, Codable {
@@ -25,12 +39,37 @@ public struct StyledText: Sendable, Hashable, Codable {
             self.background = background
             self.isBold = isBold
         }
+
+        private enum CodingKeys: String, CodingKey {
+            case text
+            case foreground
+            case background
+            case isBold = "bold"
+        }
+
+        public init(from decoder: Decoder) throws {
+            try decoder.requireKnownKeys(CodingKeys.self)
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            text = try c.decode(String.self, forKey: .text)
+            foreground = try c.decodeIfPresent(RGBColor.self, forKey: .foreground)
+            background = try c.decodeIfPresent(RGBColor.self, forKey: .background)
+            isBold = try c.decode(Bool.self, forKey: .isBold)
+        }
     }
 
     public let spans: [Span]
 
     public init(spans: [Span]) {
         self.spans = spans
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case spans
+    }
+
+    public init(from decoder: Decoder) throws {
+        try decoder.requireKnownKeys(CodingKeys.self)
+        spans = try decoder.container(keyedBy: CodingKeys.self).decode([Span].self, forKey: .spans)
     }
 
     public init(_ plain: String) {

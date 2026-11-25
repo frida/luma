@@ -203,10 +203,8 @@ public struct NotebookEntry: Codable, Equatable, Identifiable, Sendable, Fetchab
             ?? 0
 
         var styledDetails: StyledText? = nil
-        if let raw = obj["styled_details"],
-            let data = try? JSONSerialization.data(withJSONObject: raw),
-            let decoded = try? JSONDecoder().decode(StyledText.self, from: data)
-        {
+        if let raw = obj["styled_details"] {
+            guard let decoded = decodeWire(StyledText.self, from: raw) else { return nil }
             styledDetails = decoded
         }
 
@@ -220,10 +218,8 @@ public struct NotebookEntry: Codable, Equatable, Identifiable, Sendable, Fetchab
         }
 
         var pharoSnapshot: PharoSnapshot? = nil
-        if let raw = obj["pharo_snapshot"],
-            let data = try? JSONSerialization.data(withJSONObject: raw),
-            let decoded = try? JSONDecoder().decode(PharoSnapshot.self, from: data)
-        {
+        if let raw = obj["pharo_snapshot"] {
+            guard let decoded = decodeWire(PharoSnapshot.self, from: raw) else { return nil }
             pharoSnapshot = decoded
         }
 
@@ -252,5 +248,10 @@ public struct NotebookEntry: Codable, Equatable, Identifiable, Sendable, Fetchab
             sessionID: (obj["session_id"] as? String).flatMap(UUID.init(uuidString:)),
             processName: processName
         )
+    }
+
+    static func decodeWire<Value: Decodable>(_: Value.Type, from raw: Any) -> Value? {
+        guard let data = try? JSONSerialization.data(withJSONObject: raw) else { return nil }
+        return try? JSONDecoder().decode(Value.self, from: data)
     }
 }

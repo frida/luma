@@ -64,11 +64,12 @@ public struct REPLCell: Codable, Identifiable, Sendable, FetchableRecord, Persis
             }
 
             private enum CodingKeys: String, CodingKey {
-                case typedArray
-                case baseAddress
+                case typedArray = "typed_array"
+                case baseAddress = "base_address"
             }
 
             public init(from decoder: Decoder) throws {
+                try decoder.requireKnownKeys(CodingKeys.self)
                 let c = try decoder.container(keyedBy: CodingKeys.self)
                 typedArray = try c.decodeIfPresent(String.self, forKey: .typedArray)
                 baseAddress = c.contains(.baseAddress) ? try HexAddress.decode(.baseAddress, from: c) : nil
@@ -78,6 +79,60 @@ public struct REPLCell: Codable, Identifiable, Sendable, FetchableRecord, Persis
                 var c = encoder.container(keyedBy: CodingKeys.self)
                 try c.encodeIfPresent(typedArray, forKey: .typedArray)
                 try c.encodeIfPresent(baseAddress.map(HexAddress.string), forKey: .baseAddress)
+            }
+        }
+
+        private enum CodingKeys: String, CodingKey, CaseIterable {
+            case text
+            case styled
+            case js
+            case binary
+        }
+
+        private enum TextKeys: String, CodingKey {
+            case text
+        }
+
+        private enum JSKeys: String, CodingKey {
+            case value
+        }
+
+        private enum BinaryKeys: String, CodingKey {
+            case data
+            case meta
+        }
+
+        public init(from decoder: Decoder) throws {
+            let (c, kind) = try decoder.soleKey(CodingKeys.self, of: "a REPL result")
+            switch kind {
+            case .text:
+                self = .text(try c.strictlyNested(TextKeys.self, forKey: .text).decode(String.self, forKey: .text))
+            case .styled:
+                self = .styled(try c.decode(StyledText.self, forKey: .styled))
+            case .js:
+                self = .js(try c.strictlyNested(JSKeys.self, forKey: .js).decode(JSInspectValue.self, forKey: .value))
+            case .binary:
+                let binary = try c.strictlyNested(BinaryKeys.self, forKey: .binary)
+                self = .binary(
+                    try binary.decode(Data.self, forKey: .data), meta: try binary.decodeIfPresent(BinaryMeta.self, forKey: .meta))
+            }
+        }
+
+        public func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            switch self {
+            case .text(let text):
+                var nested = c.nestedContainer(keyedBy: TextKeys.self, forKey: .text)
+                try nested.encode(text, forKey: .text)
+            case .styled(let styled):
+                try c.encode(styled, forKey: .styled)
+            case .js(let value):
+                var nested = c.nestedContainer(keyedBy: JSKeys.self, forKey: .js)
+                try nested.encode(value, forKey: .value)
+            case .binary(let data, let meta):
+                var nested = c.nestedContainer(keyedBy: BinaryKeys.self, forKey: .binary)
+                try nested.encode(data, forKey: .data)
+                try nested.encodeIfPresent(meta, forKey: .meta)
             }
         }
     }

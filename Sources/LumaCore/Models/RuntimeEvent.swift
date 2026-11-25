@@ -126,7 +126,7 @@ public struct RuntimeEvent: Identifiable, Sendable {
             "payload": logPayload,
         ]
         if let sessionID {
-            obj["sessionID"] = sessionID.uuidString
+            obj["session_id"] = sessionID.uuidString
         }
         if let data {
             obj["data"] = Data(data).base64EncodedString()
@@ -146,7 +146,7 @@ public struct RuntimeEvent: Identifiable, Sendable {
             let payloadObj = obj["payload"] as? [String: Any],
             let payload = decodePayloadForLog(payloadObj)
         else { return nil }
-        let sessionID: UUID? = (obj["sessionID"] as? String).flatMap(UUID.init)
+        let sessionID: UUID? = (obj["session_id"] as? String).flatMap(UUID.init)
         let data: [UInt8]?
         if let dataStr = obj["data"] as? String,
             let bytes = Data(base64Encoded: dataStr) {
@@ -281,7 +281,7 @@ public struct RuntimeEvent: Identifiable, Sendable {
     private static func encodePayloadForLog(_ payload: Payload) -> [String: Any] {
         if let wire = encodePayload(payload) { return wire }
         guard case .raw(let message, let data) = payload else { return ["kind": "raw", "value": ""] }
-        return ["kind": "raw", "value": serializableMessage(message), "hasInlineData": data != nil]
+        return ["kind": "raw", "value": serializableMessage(message), "has_inline_data": data != nil]
     }
 
     private static func decodePayloadForLog(_ obj: [String: Any]) -> Payload? {
