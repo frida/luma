@@ -6409,7 +6409,7 @@ public func deleteCustomInstrument(_ defID: UUID) async {
     }
 
     public func executor(of action: MissionAction) -> Author? {
-        action.executor ?? (try? store.fetchMission(id: action.missionID))?.author
+        action.executor
     }
 
     public func hold(on action: MissionAction) -> ObjectChatCallHold? {
