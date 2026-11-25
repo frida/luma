@@ -142,10 +142,11 @@ final class PatternSidebar {
 
     private func visibleRows() -> [Row] {
         let sources = engine.patterns.sources
+        guard isExpanded else { return [.header] }
         if sources.isEmpty {
             return [.header, .addPackage]
         }
-        return [.header] + (isExpanded ? sources.flatMap(rows(of:)) : [])
+        return [.header] + sources.flatMap(rows(of:))
     }
 
     private var isExpanded: Bool {
@@ -215,25 +216,25 @@ final class PatternSidebar {
             count.add(cssClass: "dim-label")
             count.add(cssClass: "caption")
             box.append(child: count)
-
-            let chevronImage = Gtk.Image(iconName: isExpanded ? "pan-down-symbolic" : "pan-end-symbolic")
-            chevronImage.pixelSize = 12
-            chevronImage.add(cssClass: "dim-label")
-            let chevron = Button()
-            chevron.set(child: chevronImage)
-            chevron.add(cssClass: "flat")
-            chevron.add(cssClass: "circular")
-            chevron.add(cssClass: "luma-sidebar-chevron")
-            chevron.tooltipText = isExpanded ? "Hide patterns" : "Show patterns"
-            chevron.onClicked { [weak self] _ in
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    self.engine.setSidebarExpansion(section: .patterns, self.isExpanded ? .collapsed : .expanded)
-                    self.render()
-                }
-            }
-            box.append(child: chevron)
         }
+
+        let chevronImage = Gtk.Image(iconName: isExpanded ? "pan-down-symbolic" : "pan-end-symbolic")
+        chevronImage.pixelSize = 12
+        chevronImage.add(cssClass: "dim-label")
+        let chevron = Button()
+        chevron.set(child: chevronImage)
+        chevron.add(cssClass: "flat")
+        chevron.add(cssClass: "circular")
+        chevron.add(cssClass: "luma-sidebar-chevron")
+        chevron.tooltipText = isExpanded ? "Hide patterns" : "Show patterns"
+        chevron.onClicked { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.engine.setSidebarExpansion(section: .patterns, self.isExpanded ? .collapsed : .expanded)
+                self.render()
+            }
+        }
+        box.append(child: chevron)
 
         let row = ListBoxRow()
         row.set(child: box)

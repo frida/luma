@@ -12,6 +12,8 @@ final class ChatsSidebarSection {
     private let headerRow = ListBoxRow()
     private let countLabel = Label(str: "")
     private let unreadBadge = Label(str: "")
+    private let chevron = Gtk.Image(iconName: "pan-down-symbolic")
+    private let chevronButton = Button()
     private var shown: [Row] = []
     private var selected: UUID?
 
@@ -54,12 +56,40 @@ final class ChatsSidebarSection {
         countLabel.add(cssClass: "dim-label")
         countLabel.add(cssClass: "caption")
         heading.append(child: countLabel)
+        chevron.pixelSize = 12
+        chevron.add(cssClass: "dim-label")
+        chevronButton.set(child: chevron)
+        chevronButton.add(cssClass: "flat")
+        chevronButton.add(cssClass: "circular")
+        chevronButton.add(cssClass: "luma-sidebar-chevron")
+        chevronButton.onClicked { [weak self] _ in
+            MainActor.assumeIsolated { self?.toggleExpansion() }
+        }
+        heading.append(child: chevronButton)
         headerRow.set(child: heading)
         headerRow.selectable = false
         headerRow.activatable = false
         listBox.append(child: headerRow)
 
         follow()
+        applyExpansion()
+    }
+
+    private var isExpanded: Bool {
+        engine.sidebarExpansion(of: .chats) == .expanded
+    }
+
+    private func toggleExpansion() {
+        engine.setSidebarExpansion(section: .chats, isExpanded ? .collapsed : .expanded)
+        applyExpansion()
+    }
+
+    private func applyExpansion() {
+        chevron.set(name: isExpanded ? "pan-down-symbolic" : "pan-end-symbolic")
+        chevronButton.tooltipText = isExpanded ? "Hide chats" : "Show chats"
+        for index in shown.indices {
+            listBox.getRowAt(index: index + 1)?.visible = isExpanded
+        }
     }
 
     func select(_ chatID: UUID?) {
@@ -97,6 +127,7 @@ final class ChatsSidebarSection {
         for row in rows {
             listBox.append(child: make(row))
         }
+        applyExpansion()
         select(selected)
     }
 
