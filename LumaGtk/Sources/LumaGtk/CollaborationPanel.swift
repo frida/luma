@@ -444,7 +444,7 @@ final class CollaborationPanel {
         guard let engine else { return }
         let chats = engine.objectChats
         withObservationTracking {
-            _ = chats.unreadCount(in: chats.conversationID)
+            _ = chats.unreadTotal
         } onChange: { [weak self] in
             Task { @MainActor in self?.followUnread() }
         }

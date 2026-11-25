@@ -1,4 +1,6 @@
 import Adw
+import CGraphene
+import CGtk
 import Foundation
 import Gtk
 import LumaCore
@@ -40,6 +42,8 @@ final class PharoObjectChatPage {
     private var failure: String?
     private var isDeleted = false
     private var isMapped = false
+    private var watchedScrollers: Set<UnsafeMutableRawPointer> = []
+    private var awaitsLayout = false
     private var isRemovedInLab = false
     private var subject: ObjectChatSubjectPlace?
     private let modelPicker: ObjectChatModelPicker
@@ -111,7 +115,8 @@ final class PharoObjectChatPage {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.isMapped = true
-                self.chats.markRead(self.chatID)
+                self.watchScrolling()
+                self.markReadIfShown()
             }
         }
         widget.onUnmap { [weak self] _ in
@@ -119,6 +124,54 @@ final class PharoObjectChatPage {
         }
 
         follow()
+    }
+
+    private func markReadIfShown() {
+        if isOnScreen {
+            chats.markRead(chatID)
+        } else if isMapped, widget.width == 0, !awaitsLayout {
+            awaitsLayout = true
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(50))
+                guard let self else { return }
+                self.awaitsLayout = false
+                self.markReadIfShown()
+            }
+        }
+    }
+
+    private var isOnScreen: Bool {
+        guard isMapped else { return false }
+        for scroller in scrollingAncestors {
+            var bounds = graphene_rect_t()
+            guard gtk_widget_compute_bounds(widget.widget_ptr, scroller, &bounds) != 0, bounds.size.width > 0 else { return false }
+            let start = max(Double(bounds.origin.x), 0)
+            let end = min(Double(bounds.origin.x + bounds.size.width), Double(gtk_widget_get_width(scroller)))
+            if (end - start) / Double(bounds.size.width) < 0.5 { return false }
+        }
+        return true
+    }
+
+    private var scrollingAncestors: [UnsafeMutablePointer<GtkWidget>] {
+        var scrollers: [UnsafeMutablePointer<GtkWidget>] = []
+        var next = gtk_widget_get_ancestor(widget.widget_ptr, gtk_scrolled_window_get_type())
+        while let scroller = next {
+            scrollers.append(scroller)
+            next = gtk_widget_get_parent(scroller).flatMap { gtk_widget_get_ancestor($0, gtk_scrolled_window_get_type()) }
+        }
+        return scrollers
+    }
+
+    private func watchScrolling() {
+        for scroller in scrollingAncestors where watchedScrollers.insert(UnsafeMutableRawPointer(scroller)).inserted {
+            let adjustment = ScrolledWindowRef(raw: UnsafeMutableRawPointer(scroller)).hadjustment
+            adjustment?.onValueChanged { [weak self] _ in
+                MainActor.assumeIsolated { self?.markReadIfShown() }
+            }
+            adjustment?.onChanged { [weak self] _ in
+                MainActor.assumeIsolated { self?.markReadIfShown() }
+            }
+        }
     }
 
     deinit {
@@ -444,7 +497,7 @@ final class PharoObjectChatPage {
         }
         offerActions()
         if isMapped {
-            chats.markRead(chatID)
+            markReadIfShown()
         }
     }
 

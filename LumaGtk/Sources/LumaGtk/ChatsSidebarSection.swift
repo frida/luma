@@ -116,7 +116,7 @@ final class ChatsSidebarSection {
             Task { @MainActor in self?.follow() }
         }
         countLabel.label = "\(rows.count)"
-        let unread = rows.map(\.unread).reduce(0, +)
+        let unread = engine.objectChats.unreadTotal
         unreadBadge.label = "\(unread)"
         unreadBadge.visible = unread > 0
         guard rows != shown else { return }
@@ -133,8 +133,7 @@ final class ChatsSidebarSection {
 
     private func rowsNow() -> [Row] {
         let chats = engine.objectChats
-        let ids = [chats.conversationID] + chats.listed.map(\.id).filter { $0 != chats.conversationID }
-        return ids.map { chatID in
+        return chats.sidebarChatIDs.map { chatID in
             let chat = chats.chat(withID: chatID)
             let latest = chats.thread(of: chatID).messages.last.map { message in
                 let author = message.role == .assistant ? "Assistant" : chats.isMine(message) ? "You" : message.author?.name ?? "You"
@@ -201,5 +200,15 @@ final class ChatsSidebarSection {
         label.ellipsize = .end
         label.maxWidthChars = 26
         return label
+    }
+}
+
+extension ObjectChats {
+    var sidebarChatIDs: [UUID] {
+        [conversationID] + listed.map(\.id).filter { $0 != conversationID }
+    }
+
+    var unreadTotal: Int {
+        sidebarChatIDs.reduce(0) { $0 + unreadCount(in: $1) }
     }
 }
