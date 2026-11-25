@@ -1165,7 +1165,9 @@ private final class TableLayout {
     }
 
     private static let measure: GtkCustomMeasureFunc = { row, orientation, _, minimum, natural, _, _ in
-        nonisolated(unsafe) let (row, minimum, natural) = (row, minimum, natural)
+        nonisolated(unsafe) let row = row
+        nonisolated(unsafe) let minimum = minimum
+        nonisolated(unsafe) let natural = natural
         MainActor.assumeIsolated {
             let children = TableLayout.children(of: row)
             if orientation == GTK_ORIENTATION_VERTICAL {
