@@ -33,7 +33,7 @@ protocol InstrumentUIKind: AnyObject {
         host: InstrumentUIHost
     ) -> [InstrumentSidebarChild]
 
-    func hasSidebarChildren(instrument: LumaCore.InstrumentInstance) -> Bool
+    func hasSidebarChildren(instrument: LumaCore.InstrumentInstance, engine: Engine) -> Bool
 }
 
 extension InstrumentUIKind {
@@ -45,7 +45,7 @@ extension InstrumentUIKind {
         []
     }
 
-    func hasSidebarChildren(instrument: LumaCore.InstrumentInstance) -> Bool {
+    func hasSidebarChildren(instrument: LumaCore.InstrumentInstance, engine: Engine) -> Bool {
         false
     }
 }
@@ -62,6 +62,7 @@ protocol InstrumentUIHost: AnyObject {
     func navigateToInstrumentComponent(sessionID: UUID, instrumentID: UUID, componentID: UUID)
     func navigateToInstrument(sessionID: UUID, instrumentID: UUID)
     func selectedComponentID(sessionID: UUID, instrumentID: UUID) -> UUID?
+    func reconcileSidebarChildren(sessionID: UUID, instrumentID: UUID)
 }
 
 @MainActor

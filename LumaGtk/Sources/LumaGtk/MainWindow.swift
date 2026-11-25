@@ -610,6 +610,7 @@ final class MainWindow: InstrumentUIHost {
         observeModuleAnalysis()
         observeLoadedPackages()
         observeInstrumentFolders()
+        followChildSelectionRequests()
         observeConnectionActivity()
         offeredFileSaver = OfferedFileSaver(engine: engine, window: window, toasts: toastOverlay)
         engine.onREPLCellSaved = { [weak self] cell in self?.currentREPLPane?.showCell(cell) }
@@ -1375,7 +1376,7 @@ final class MainWindow: InstrumentUIHost {
                     self.activateGroupChild(sessionID: sid, group: .modules, key: key)
                 case .threadChild(let sid, let key) where key == "browse":
                     self.activateGroupChild(sessionID: sid, group: .threads, key: key)
-                case .instrumentChild(let sid, let iid, let key) where key == "browse":
+                case .instrumentChild(let sid, let iid, let key) where key.hasPrefix("browse"):
                     self.activateInstrumentChild(sessionID: sid, instrumentID: iid, key: key)
                 default:
                     break
@@ -2729,6 +2730,44 @@ final class MainWindow: InstrumentUIHost {
         return cid
     }
 
+    func reconcileSidebarChildren(sessionID: UUID, instrumentID: UUID) {
+        guard let instrument = instrumentsBySession[sessionID]?.first(where: { $0.id == instrumentID }) else { return }
+        if (instrumentChevronImages[instrumentID] != nil) != hasSidebarChildren(instrument) {
+            rebuildInstrumentRow(instrument)
+        }
+        reconcileInstrumentChildren(for: instrument)
+        if case .instrumentComponent(let sid, let iid, let cid) = selection, sid == sessionID, iid == instrumentID,
+            !instrumentComponentExistsInSidebar(sessionID: sid, instrumentID: iid, componentID: cid)
+        {
+            navigateToInstrument(sessionID: sessionID, instrumentID: instrumentID)
+        }
+    }
+
+    private func followChildSelectionRequests() {
+        guard let engine else { return }
+        let request = withObservationTracking {
+            engine.childSelectionRequest
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.followChildSelectionRequests() }
+        }
+        guard let request else { return }
+        engine.consumeChildSelectionRequest()
+        show(request)
+    }
+
+    private func show(_ request: ChildSelectionRequest) {
+        expandSessionIfCollapsed(request.sessionID)
+        if engine?.hooksExpansion(forSessionID: request.sessionID, instrumentID: request.instanceID) == .collapsed {
+            toggleHooksExpansion(sessionID: request.sessionID, instrumentID: request.instanceID)
+        }
+        guard let child = request.child else {
+            return navigateToInstrument(sessionID: request.sessionID, instrumentID: request.instanceID)
+        }
+        navigateToInstrumentComponent(
+            sessionID: request.sessionID, instrumentID: request.instanceID,
+            componentID: InstrumentChildComponents.id(of: child, in: request.instanceID))
+    }
+
     func navigateToInstrumentComponent(sessionID: UUID, instrumentID: UUID, componentID: UUID) {
         if let engine, engine.sidebarExpansion(forSessionID: sessionID) == .collapsed {
             setSessionExpansion(sessionID: sessionID, .expanded)
@@ -4055,7 +4094,8 @@ final class MainWindow: InstrumentUIHost {
     }
 
     private func hasSidebarChildren(_ instrument: LumaCore.InstrumentInstance) -> Bool {
-        InstrumentUIRegistry.shared.ui(for: instrument.kind).hasSidebarChildren(instrument: instrument)
+        guard let engine else { return false }
+        return InstrumentUIRegistry.shared.ui(for: instrument.kind).hasSidebarChildren(instrument: instrument, engine: engine)
     }
 
     private func toggleHooksExpansion(sessionID: UUID, instrumentID: UUID) {

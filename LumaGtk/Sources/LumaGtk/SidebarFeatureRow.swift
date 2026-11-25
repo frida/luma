@@ -62,6 +62,16 @@ enum SidebarFeatureRow {
         return (row, rowBox)
     }
 
+    static func make(icon: Widget, content: Widget, tooltip: String? = nil, depth: Int = 0) -> (row: ListBoxRow, anchor: Box) {
+        let row = ListBoxRow()
+        let (rowBox, iconHost) = makeGrandchildRowBox(depth: depth, disclosure: nil)
+        iconHost.append(child: icon)
+        rowBox.append(child: content)
+        rowBox.tooltipText = tooltip
+        row.set(child: rowBox)
+        return (row, rowBox)
+    }
+
     static func makeBrowseAll(totalCount: Int, depth: Int = 0) -> (row: ListBoxRow, anchor: Box) {
         let icon = Gtk.Image(iconName: "view-more-symbolic")
         icon.pixelSize = 12
