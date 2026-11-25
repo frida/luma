@@ -19,7 +19,6 @@ public struct SessionUIState: Codable, Equatable, Identifiable, Sendable, Fetcha
     public var modulesExpansion: SidebarExpansion
     public var threadsExpansion: SidebarExpansion
     public var collapsedHookInstruments: Set<UUID>
-    public var expandedInstrumentSettings: Set<UUID>
     public var expandedModules: Set<String>
     public var expandedSwiftTypeLists: Set<String>
     public var lastSelectedModuleID: String?
@@ -36,7 +35,6 @@ public struct SessionUIState: Codable, Equatable, Identifiable, Sendable, Fetcha
         case modulesExpansion = "modules_expansion"
         case threadsExpansion = "threads_expansion"
         case collapsedHookInstruments = "collapsed_hook_instruments"
-        case expandedInstrumentSettings = "expanded_instrument_settings"
         case expandedModules = "expanded_modules"
         case expandedSwiftTypeLists = "expanded_swift_type_lists"
         case lastSelectedModuleID = "last_selected_module_id"
@@ -52,7 +50,6 @@ public struct SessionUIState: Codable, Equatable, Identifiable, Sendable, Fetcha
         modulesExpansion: SidebarExpansion = .collapsed,
         threadsExpansion: SidebarExpansion = .collapsed,
         collapsedHookInstruments: Set<UUID> = [],
-        expandedInstrumentSettings: Set<UUID> = [],
         expandedModules: Set<String> = [],
         expandedSwiftTypeLists: Set<String> = [],
         lastSelectedModuleID: String? = nil,
@@ -66,7 +63,6 @@ public struct SessionUIState: Codable, Equatable, Identifiable, Sendable, Fetcha
         self.modulesExpansion = modulesExpansion
         self.threadsExpansion = threadsExpansion
         self.collapsedHookInstruments = collapsedHookInstruments
-        self.expandedInstrumentSettings = expandedInstrumentSettings
         self.expandedModules = expandedModules
         self.expandedSwiftTypeLists = expandedSwiftTypeLists
         self.lastSelectedModuleID = lastSelectedModuleID
