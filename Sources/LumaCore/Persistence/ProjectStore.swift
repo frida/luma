@@ -10,7 +10,7 @@ public enum ProjectStoreError: Error, LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .madeByEarlierLuma:
-            return "This project was made with an earlier version of Luma (Luma 2 or older), which this version cannot open."
+            return "This project was made with an earlier version of Luma, which \(LumaVersion.release.map { "Luma \($0.major)" } ?? "this version") cannot open."
         case .savedByNewerLuma:
             return "This project was saved by a newer version of Luma. Update Luma to open it."
         case .savedByDevelopmentBuild:
