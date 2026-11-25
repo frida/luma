@@ -48,6 +48,9 @@ final class MainWindow: InstrumentUIHost {
     private var missionSidebarRows: [UUID: ListBoxRow] = [:]
     private var currentMissionsListPane: MissionsListPane?
     private let patternsSection = Box(orientation: .vertical, spacing: 0)
+    private let chatsSlot = Box(orientation: .vertical, spacing: 0)
+    private var chatsSection: ChatsSidebarSection?
+    private var currentChatPane: ChatColumnsPane?
     private var patternSidebar: PatternSidebar?
     private var currentPatternsListPane: PatternsListPane?
     private var currentPatternEditor: PatternEditorPane?
@@ -157,6 +160,7 @@ final class MainWindow: InstrumentUIHost {
         case customInstrumentFile(UUID, String)
         case missionsList
         case mission(UUID)
+        case chat(UUID)
         case patterns(PatternSidebarSelection)
 
         var moduleLocation: (sessionID: UUID, moduleID: String)? {
@@ -657,6 +661,7 @@ final class MainWindow: InstrumentUIHost {
             self?.renderMissions(missions)
         }
         installPatternSidebar(engine: engine)
+        installChatsSection(engine: engine)
         eventStreamPane.attach(engine: engine)
         eventStreamPane.onNavigateToHook = { [weak self] sessionID, instrumentID, hookID in
             self?.navigateToInstrumentComponent(sessionID: sessionID, instrumentID: instrumentID, componentID: hookID)
@@ -667,6 +672,9 @@ final class MainWindow: InstrumentUIHost {
         }
         AddressActionMenu.errorReporter = { [weak self] message in
             self?.showToast(message)
+        }
+        PharoObjectChatPage.showSubject = { [weak self] subject in
+            self?.showSubject(subject)
         }
         AddressActionMenu.navigateToTarget = { [weak self] target in
             self?.navigate(to: target)
@@ -709,6 +717,43 @@ final class MainWindow: InstrumentUIHost {
             select(.patterns(.source(subject.id.uuidString)))
         default:
             select(selectionForCustomInstrument(defID: subject.id))
+        }
+    }
+
+    private func showSubject(_ subject: ObjectChatSubjectPlace) {
+        switch subject {
+        case .project:
+            setCollaborationVisible(true)
+        case .instruction(let place):
+            showInstruction(place)
+        case .object(let origin, _):
+            show(origin)
+        }
+    }
+
+    private func showInstruction(_ place: ObjectChatInstructionPlace) {
+        guard let engine else { return }
+        do {
+            let insight = try engine.disassemblyInsight(at: place)
+            select(.insight(sessionID: place.sessionID, insightID: insight.id))
+            if currentInsightID == insight.id {
+                currentInsightDetail?.reveal(place.address!)
+            }
+        } catch {
+            showToast(error.localizedDescription)
+        }
+    }
+
+    private func show(_ origin: ObjectChat.Origin) {
+        switch origin {
+        case .snippet:
+            select(.pharo)
+        case .notebookEntry:
+            select(.notebook)
+        case .instrumentView(let instanceID, _, let sessionID):
+            select(.instrument(sessionID: sessionID, instrumentID: instanceID))
+        case .chat(let chatID, _):
+            select(.chat(chatID))
         }
     }
 
@@ -829,6 +874,7 @@ final class MainWindow: InstrumentUIHost {
         column.append(child: buildNotebookSection())
         column.append(child: buildPharoSection())
         column.append(child: buildMissionsSection())
+        column.append(child: chatsSlot)
         column.append(child: patternsSection)
         column.append(child: buildSessionsSection())
         column.append(child: buildCustomInstrumentsSection())
@@ -1218,6 +1264,15 @@ final class MainWindow: InstrumentUIHost {
             self?.engine?.deleteMission(missionID: mission.id)
             self?.showToast("Mission deleted")
         }
+    }
+
+    private func installChatsSection(engine: Engine) {
+        let section = ChatsSidebarSection(engine: engine)
+        section.onSelect = { [weak self] chatID in
+            self?.select(.chat(chatID))
+        }
+        chatsSlot.append(child: section.listBox)
+        chatsSection = section
     }
 
     private func installPatternSidebar(engine: Engine) {
@@ -2303,6 +2358,14 @@ final class MainWindow: InstrumentUIHost {
                     subtitle: "This package is no longer installed."
                 )
             }
+        case .chat(let chatID):
+            if let engine {
+                let pane = currentChatPane?.chatID == chatID ? currentChatPane! : ChatColumnsPane(engine: engine, chatID: chatID)
+                currentChatPane = pane
+                widget = pane.widget
+            } else {
+                widget = Box(orientation: .vertical, spacing: 0)
+            }
         case .missionsList:
             let pane = currentMissionsListPane ?? makeMissionsListPane()
             pane.refreshExternalMCP()
@@ -2712,6 +2775,9 @@ final class MainWindow: InstrumentUIHost {
     private func select(_ newValue: SidebarSelection) {
         guard selection != newValue else { return }
         selection = newValue
+        if currentChatPane.map({ newValue != .chat($0.chatID) }) == true {
+            currentChatPane = nil
+        }
         unselectSidebarLists(except: sidebarList(owning: newValue))
         switch newValue {
         case .notebook:
@@ -2755,6 +2821,8 @@ final class MainWindow: InstrumentUIHost {
             {
                 missionsListBox.select(row: row)
             }
+        case .chat(let chatID):
+            chatsSection?.select(chatID)
         case .patterns(let pattern):
             patternSidebar?.select(pattern)
         }
@@ -2784,6 +2852,7 @@ final class MainWindow: InstrumentUIHost {
             case .packages: packagesList.unselectAll()
             case .customInstruments: customInstrumentsList.unselectAll()
             case .missions: missionsListBox.unselectAll()
+            case .chats: chatsSection?.select(nil)
             case .patterns: patternSidebar?.unselectAll()
             }
         }
@@ -2799,6 +2868,7 @@ final class MainWindow: InstrumentUIHost {
         case .package: .packages
         case .customInstrumentDef, .customInstrumentFile: .customInstruments
         case .missionsList, .mission: .missions
+        case .chat: .chats
         case .patterns: .patterns
         }
     }
@@ -2810,6 +2880,7 @@ final class MainWindow: InstrumentUIHost {
         case packages
         case customInstruments
         case missions
+        case chats
         case patterns
     }
 

@@ -6,7 +6,10 @@ import SwiftyPharo
 
 @MainActor
 final class PharoViewPages {
+    var onClose: () -> Void = {}
+
     private let source: any PharoViewSource
+    private let runtime: PharoRuntime
     private weak var engine: Engine?
     private let onDrill: (PharoObject) -> Void
 
@@ -21,8 +24,9 @@ final class PharoViewPages {
         let follows: (PharoViewDeclaration) -> Bool
     }
 
-    init(source: any PharoViewSource, engine: Engine?, onDrill: @escaping (PharoObject) -> Void) {
+    init(source: any PharoViewSource, runtime: PharoRuntime, engine: Engine?, onDrill: @escaping (PharoObject) -> Void) {
         self.source = source
+        self.runtime = runtime
         self.engine = engine
         self.onDrill = onDrill
     }
@@ -71,6 +75,11 @@ final class PharoViewPages {
                 return unchanged(Self.textPage(Self.releasedPattern), while: view) { $0.text == view.text }
             }
             return patternVisualizationPage(target, while: view)
+        case "lumaDisassembly" where engine != nil:
+            let page = PharoDisassemblyPage(engine: engine!, reference: view.text ?? "", runtime: runtime) { [weak self] object in
+                self?.onDrill(object)
+            }
+            return unchanged(page.widget, owner: page, while: view) { $0.text == view.text }
         case "lumaChat" where engine != nil:
             return chatPage(UUID(uuidString: view.text ?? "")!, while: view)
         default:
@@ -184,6 +193,7 @@ final class PharoViewPages {
         let page = PharoObjectChatPage(engine: engine!, chatID: chatID, form: .column) { [weak self] object in
             self?.onDrill(object)
         }
+        page.onDiscarded = { [weak self] in self?.onClose() }
         return unchanged(page.widget, owner: page, while: view) { $0.text == view.text }
     }
 

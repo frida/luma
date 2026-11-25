@@ -7,7 +7,11 @@ import SwiftyPharo
 
 @MainActor
 final class PharoObjectChatPage {
+    static var showSubject: ((ObjectChatSubjectPlace) -> Void)?
+    private static var openPages: [UUID: Int] = [:]
+
     let widget: Box
+    var onDiscarded: () -> Void = {}
 
     private let engine: Engine
     let chatID: UUID
@@ -16,6 +20,7 @@ final class PharoObjectChatPage {
     private let titleLabel = Label(str: "")
     private let aboutLabel = Label(str: "")
     private let editorsSlot = Box(orientation: .horizontal, spacing: 0)
+    private let showSubjectButton = Button()
     private let renameButton = Button()
     private let deleteButton = Button()
     private let transcript = ConversationTranscript()
@@ -36,6 +41,10 @@ final class PharoObjectChatPage {
     private var isDeleted = false
     private var isMapped = false
     private var isRemovedInLab = false
+    private var subject: ObjectChatSubjectPlace?
+    private var checkedSubject: ObjectChatSubjectPlace?
+    private var subjectUnavailableReason: String?
+    private var subjectCheck: Task<Void, Never>?
 
     private struct Answer: Equatable {
         var body: String
@@ -60,6 +69,7 @@ final class PharoObjectChatPage {
         self.engine = engine
         self.chatID = chatID
         self.onSelect = onSelect
+        Self.openPages[chatID, default: 0] += 1
 
         widget = Box(orientation: .vertical, spacing: 0)
         widget.hexpand = true
@@ -99,6 +109,19 @@ final class PharoObjectChatPage {
         }
 
         follow()
+    }
+
+    deinit {
+        let (engine, chatID) = (self.engine, self.chatID)
+        Task { @MainActor in Self.closed(chatID, in: engine) }
+    }
+
+    private static func closed(_ chatID: UUID, in engine: Engine) {
+        openPages[chatID, default: 1] -= 1
+        guard openPages[chatID] == 0 else { return }
+        openPages[chatID] = nil
+        guard engine.objectChats.isDraft(chatID) else { return }
+        Task { await engine.objectChats.discard(chatID) }
     }
 
     private var askAction: ConversationInputBar.Action {
@@ -171,6 +194,15 @@ final class PharoObjectChatPage {
         editorsSlot.hexpand = true
         top.append(child: editorsSlot)
 
+        let subjectIcon = Gtk.Image(iconName: "find-location-symbolic")
+        subjectIcon.pixelSize = 12
+        showSubjectButton.set(child: subjectIcon)
+        showSubjectButton.add(cssClass: "flat")
+        showSubjectButton.onClicked { [weak self] _ in
+            MainActor.assumeIsolated { self?.showSubject() }
+        }
+        top.append(child: showSubjectButton)
+
         let renameIcon = Gtk.Image(iconName: "document-edit-symbolic")
         renameIcon.pixelSize = 12
         renameButton.set(child: renameIcon)
@@ -204,8 +236,13 @@ final class PharoObjectChatPage {
         return header
     }
 
+    private func showSubject() {
+        guard let chat = chats.chat(withID: chatID) else { return }
+        Self.showSubject?(chats.subject(of: chat))
+    }
+
     private func beginRenaming() {
-        let title = chats.chats.first { $0.id == chatID }.map(chats.displayTitle(of:)) ?? ""
+        let title = chats.chat(withID: chatID).map(chats.displayTitle(of:)) ?? ""
         RenamePopover.present(heading: "Rename chat", title: title, at: renameButton) { [weak self] title in
             self?.rename(to: title)
         }
@@ -389,13 +426,39 @@ final class PharoObjectChatPage {
         }
     }
 
+    private func checkSubject() {
+        subjectCheck?.cancel()
+        subjectUnavailableReason = nil
+        guard case .instruction(let place) = subject else { return }
+        subjectCheck = Task { @MainActor [weak self] in
+            guard let reason = await self?.engine.disassemblyUnavailableReason(at: place), !Task.isCancelled, let self else { return }
+            self.subjectUnavailableReason = reason
+            self.showSubjectAvailability()
+        }
+    }
+
+    private func showSubjectAvailability() {
+        let unavailable = subject.flatMap(unavailableReason(of:))
+        showSubjectButton.sensitive = unavailable == nil
+        showSubjectButton.tooltipText = unavailable ?? "Show Subject"
+    }
+
+    private func unavailableReason(of subject: ObjectChatSubjectPlace) -> String? {
+        switch subject {
+        case .instruction(let place):
+            place.unavailableReason ?? subjectUnavailableReason
+        case .project, .object:
+            nil
+        }
+    }
+
     private func about(_ chat: ObjectChat) -> String {
-        switch chat.subject {
-        case .instruction(_, let anchor):
-            "About the instruction at \(anchor.displayString)"
-        case .object(_, let label, _, _, let printString, _):
+        switch (subject, chat.subject) {
+        case (.instruction(let place), _):
+            "About the instruction at \(place.anchor.displayString) in \(place.sessionName ?? "a session not in this project")"
+        case (_, .object(_, let label, _, _, let printString, _)):
             "About \(printString), from \(label)"
-        case .project:
+        case (_, .project), (_, .instruction):
             "About the project"
         }
     }
@@ -441,7 +504,7 @@ final class PharoObjectChatPage {
         let row: ConversationMessageRow
         switch message.role {
         case .user:
-            row = ConversationMessageRow(message: message)
+            row = ConversationMessageRow(message: message, isMine: chats.isMine(message))
             let messageID = message.id
             row.offerEditing(
                 onEdit: { [weak self] in self?.beginEditing(messageID) },
@@ -449,7 +512,7 @@ final class PharoObjectChatPage {
                 canEdit: { [weak self] in self?.permits(messageID) { $0.canEdit($1) } ?? false },
                 canDelete: { [weak self] in self?.permits(messageID) { $0.canRemove($1) } ?? false })
         case .assistant:
-            row = ConversationMessageRow(message: message, content: Box(orientation: .vertical, spacing: 6))
+            row = ConversationMessageRow(message: message, isMine: false, content: Box(orientation: .vertical, spacing: 6))
         }
         rows[message.id] = row
         return row

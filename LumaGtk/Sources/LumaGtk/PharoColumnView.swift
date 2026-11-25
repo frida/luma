@@ -252,9 +252,11 @@ final class PharoColumnView {
         while notebook.getNPages() > 0 {
             notebook.removePage(pageNum: notebook.getNPages() - 1)
         }
-        let pages = PharoViewPages(source: PharoObjectViews(runtime: runtime, object: object), engine: engine) { [weak self] element in
+        let pages = PharoViewPages(source: PharoObjectViews(runtime: runtime, object: object), runtime: runtime, engine: engine) {
+            [weak self] element in
             self?.onDrill(element)
         }
+        pages.onClose = { [weak self] in self?.onClose() }
         self.pages = pages
         Task { @MainActor in
             let views: [PharoViewDeclaration]

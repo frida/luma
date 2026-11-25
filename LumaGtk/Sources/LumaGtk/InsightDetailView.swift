@@ -10,6 +10,7 @@ import Gtk
 import LumaCore
 import Observation
 import Pango
+import SwiftyPharo
 
 @MainActor
 final class InsightDetailView {
@@ -27,8 +28,11 @@ final class InsightDetailView {
     }
 
     let widget: Box
+    var onActivateLine: ((UInt64) -> Void)?
+    var openColumn: (PharoObject) -> Void = { _ in }
 
     private weak var engine: Engine?
+    private let isStored: Bool
     private let sessionID: UUID
     private var session: LumaCore.ProcessSession
     private var insight: LumaCore.AddressInsight
@@ -51,11 +55,13 @@ final class InsightDetailView {
     private var disasmRows: [Box] = []
     private var addressLabelsByAddress: [UInt64: Label] = [:]
     private var decorationsBoxesByAddress: [UInt64: Box] = [:]
-    private var noteIndicatorsByAddress: [UInt64: Gtk.Image] = [:]
+    private var chatBubblesByAddress: [UInt64: Gtk.Image] = [:]
+    private var columns: PharoColumnsView?
     private var selectedIndex: Int? = nil
     private var hoveredIndex: Int? = nil
     private var pulsingIndex: Int? = nil
     private var pulseTask: Task<Void, Never>?
+    private var pendingReveal: UInt64?
     private var loadTask: Task<Void, Never>?
     private var refreshDebounce: Task<Void, Never>?
     private var isLoadingMore = false
@@ -66,6 +72,7 @@ final class InsightDetailView {
     private var lastNodeAvailable: Bool = false
     private var refreshGeneration: Int?
 
+    private static let columnsWidth = 440
     private static let initialChunk = 64
     private static let moreChunk = 64
     private static let rowLeftGutter: Double = 54
@@ -73,8 +80,9 @@ final class InsightDetailView {
     private static let flowBaseX: Double = 12
     private static let flowLaneSpacing: Double = 6
 
-    init(engine: Engine, session: LumaCore.ProcessSession, insight: LumaCore.AddressInsight) {
+    init(engine: Engine, session: LumaCore.ProcessSession, insight: LumaCore.AddressInsight, isStored: Bool = true) {
         self.engine = engine
+        self.isStored = isStored
         self.sessionID = session.id
         self.session = session
         self.insight = insight
@@ -118,7 +126,7 @@ final class InsightDetailView {
         disasmScroll = ScrolledWindow()
         disasmScroll.hexpand = true
         disasmScroll.vexpand = true
-        disasmScroll.setPolicy(hscrollbarPolicy: .never, vscrollbarPolicy: .automatic)
+        disasmScroll.setPolicy(hscrollbarPolicy: .automatic, vscrollbarPolicy: .automatic)
 
         disasmContentOverlay = Overlay()
         disasmContentOverlay.hexpand = true
@@ -167,11 +175,11 @@ final class InsightDetailView {
         applySessionState()
         scheduleRefresh()
         observeRefreshRequests()
+        followChats()
 
-        engine.onAddressNoteChanged = { [weak self] change in
-            MainActor.assumeIsolated {
-                self?.handleAddressNoteChanged(change)
-            }
+        if isStored {
+            widget.remove(child: contentOverlay)
+            widget.append(child: besideColumns(contentOverlay, engine: engine))
         }
     }
 
@@ -179,52 +187,120 @@ final class InsightDetailView {
         ThemeWatcher.unsubscribe(handlerID: themeSignalID)
     }
 
-    private func handleAddressNoteChanged(_ change: AddressNoteChange) {
+    private func besideColumns(_ content: Widget, engine: Engine) -> Widget {
+        let overlay = Overlay()
+        overlay.hexpand = true
+        overlay.vexpand = true
+        let columns = PharoColumnsView(
+            engine: engine, runtime: PharoRuntime.shared, maximizingOver: overlay, highlight: PharoHighlighting.apply)
+        columns.widget.visible = false
+        let paned = Paned(orientation: .horizontal)
+        columns.onChanged = { [weak columns] in
+            guard let columns else { return }
+            if columns.widget.visible == columns.isEmpty {
+                columns.widget.visible = !columns.isEmpty
+                paned.position = max(paned.width - Self.columnsWidth, paned.width / 3)
+            }
+        }
+        self.columns = columns
+        openColumn = { [weak columns] object in columns?.present(object) }
+
+        paned.resizeStartChild = true
+        paned.resizeEndChild = true
+        paned.shrinkStartChild = true
+        paned.shrinkEndChild = false
+        paned.startChild = WidgetRef(content)
+        paned.endChild = WidgetRef(columns.widget)
+        overlay.set(child: paned)
+        return overlay
+    }
+
+    private func followChats() {
         guard let engine else { return }
-        let affectedNote: AddressNote?
-        switch change {
-        case .noteAdded(let note), .noteUpdated(let note), .noteRemoved(let note):
-            affectedNote = note.sessionID == sessionID ? note : nil
-        case .messageAppended, .messageEdited, .messageRemoved:
+        withObservationTracking {
+            _ = engine.addressAnnotations[sessionID]
+            _ = engine.objectChats.chats
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.followChats()
+                for address in self.decorationsBoxesByAddress.keys {
+                    self.refreshChatBubble(at: address)
+                }
+            }
+        }
+    }
+
+    private func refreshChatBubble(at address: UInt64) {
+        guard let decorationsBox = decorationsBoxesByAddress[address], let chats = engine?.objectChats else { return }
+        let titles = chats.chats(aboutInstructionAt: address, in: sessionID).map(chats.displayTitle(of:))
+        if titles.isEmpty {
+            if let bubble = chatBubblesByAddress.removeValue(forKey: address) {
+                decorationsBox.remove(child: bubble)
+            }
             return
         }
-        guard let note = affectedNote,
-            let address = engine.resolveSync(sessionID: sessionID, anchor: note.anchor)
-        else { return }
-        updateNoteIndicator(at: address)
+        let bubble = chatBubblesByAddress[address] ?? installChatBubble(in: decorationsBox, address: address)
+        bubble.tooltipText = titles.joined(separator: "\n")
     }
 
-    private func updateNoteIndicator(at address: UInt64) {
-        guard let decorationsBox = decorationsBoxesByAddress[address] else { return }
-        let noteCount = engine?.addressAnnotations[sessionID]?[address]?.noteCount ?? 0
-        if noteCount > 0 {
-            let bubble = noteIndicatorsByAddress[address] ?? installNoteIndicator(in: decorationsBox, address: address)
-            bubble.tooltipText = "\(noteCount) thread\(noteCount == 1 ? "" : "s")"
-        } else if let bubble = noteIndicatorsByAddress.removeValue(forKey: address) {
-            decorationsBox.remove(child: bubble)
-        }
-    }
-
-    private func installNoteIndicator(in decorationsBox: Box, address: UInt64) -> Gtk.Image {
-        let bubble = Gtk.Image(iconName: "mail-unread-symbolic")
+    private func installChatBubble(in decorationsBox: Box, address: UInt64) -> Gtk.Image {
+        let bubble = Gtk.Image(iconName: "chat-message-new-symbolic")
         bubble.pixelSize = 12
-        bubble.add(cssClass: "luma-disasm-note-bubble")
+        bubble.add(cssClass: "luma-disasm-chat-bubble")
+        bubble.add(cssClass: "accent")
         bubble.valign = .center
         let click = GestureClick()
         click.set(button: 1)
-        click.onPressed { [weak self] _, _, _, _ in
+        click.onPressed { [weak self, weak bubble] _, _, x, y in
             MainActor.assumeIsolated {
-                guard let self, let anchor = self.addressLabelsByAddress[address] else { return }
+                guard let self, let bubble else { return }
                 if let rowIndex = self.disasmLines.firstIndex(where: { $0.address == address }) {
                     self.selectRow(at: rowIndex, focus: true)
                 }
-                self.openNotePopover(anchoredAt: anchor, address: address)
+                self.openChats(at: address, from: bubble, x: x, y: y)
             }
         }
         bubble.add(controller: click)
         decorationsBox.append(child: bubble)
-        noteIndicatorsByAddress[address] = bubble
+        chatBubblesByAddress[address] = bubble
         return bubble
+    }
+
+    private func openChats(at address: UInt64, from anchor: Widget, x: Double, y: Double) {
+        guard let chats = engine?.objectChats else { return }
+        let found = chats.chats(aboutInstructionAt: address, in: sessionID)
+        if found.count == 1 {
+            openChat(found[0].id)
+            return
+        }
+        let titled: [ContextMenu.Item] = found.map { chat in
+            .init(chats.displayTitle(of: chat)) { [weak self] in self?.openChat(chat.id) }
+        }
+        ContextMenu.present([titled, [.init("New Chat") { [weak self] in self?.startChat(at: address) }]], at: anchor, x: x, y: y)
+    }
+
+    private func openChat(_ chatID: UUID) {
+        guard let chats = engine?.objectChats else { return }
+        Task { @MainActor in
+            do {
+                openColumn(try await chats.column(of: chatID))
+            } catch {
+                AddressActionMenu.errorReporter?("Can\u{2019}t open the chat: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func startChat(at address: UInt64) {
+        guard let engine else { return }
+        let anchor = engine.anchor(sessionID: sessionID, address: address)
+        Task { @MainActor in
+            do {
+                openColumn(try await engine.objectChats.start(aboutInstructionAt: anchor, in: sessionID).column)
+            } catch {
+                AddressActionMenu.errorReporter?("Can\u{2019}t start a chat: \(error.localizedDescription)")
+            }
+        }
     }
 
     func applySessionState() {
@@ -254,6 +330,16 @@ final class InsightDetailView {
                 }
             }
         }
+    }
+
+    func reveal(_ address: UInt64) {
+        guard let index = disasmLines.firstIndex(where: { $0.address == address }) else {
+            pendingReveal = address
+            return
+        }
+        pendingReveal = nil
+        selectRow(at: index, focus: true)
+        startPulse(index: index)
     }
 
     func requestFocus() {
@@ -300,7 +386,7 @@ final class InsightDetailView {
         disasmRows = []
         addressLabelsByAddress.removeAll()
         decorationsBoxesByAddress.removeAll()
-        noteIndicatorsByAddress.removeAll()
+        chatBubblesByAddress.removeAll()
         selectedIndex = nil
         hoveredIndex = nil
         pulsingIndex = nil
@@ -347,7 +433,9 @@ final class InsightDetailView {
             }
             if Task.isCancelled { return }
 
-            engine.recordInsightResolution(insight, resolved: resolved)
+            if isStored {
+                engine.recordInsightResolution(insight, resolved: resolved)
+            }
 
             switch kind {
             case .memory:
@@ -391,6 +479,9 @@ final class InsightDetailView {
                     self.selectRow(at: 0, focus: false)
                 }
                 _ = self.disasmBox.grabFocus()
+                if let address = self.pendingReveal {
+                    self.reveal(address)
+                }
             }
         }
     }
@@ -511,7 +602,7 @@ final class InsightDetailView {
         }
         if key == Gdk.keyReturn {
             if let idx = selectedIndex {
-                jumpFromLine(at: idx)
+                activateLine(at: idx)
             }
             return true
         }
@@ -560,6 +651,14 @@ final class InsightDetailView {
         if let t = line.branchTarget { return t }
         if let t = line.callTarget { return t }
         return nil
+    }
+
+    private func activateLine(at index: Int) {
+        if let onActivateLine {
+            onActivateLine(disasmLines[index].address)
+        } else {
+            jumpFromLine(at: index)
+        }
     }
 
     private func jumpFromLine(at index: Int) {
@@ -623,11 +722,7 @@ final class InsightDetailView {
             }
             decorationsBox.append(child: dot)
         }
-        let noteCount = annotation?.noteCount ?? 0
-        if noteCount > 0 {
-            let bubble = installNoteIndicator(in: decorationsBox, address: address)
-            bubble.tooltipText = "\(noteCount) thread\(noteCount == 1 ? "" : "s")"
-        }
+        refreshChatBubble(at: address)
         return decorationsBox
     }
 
@@ -722,7 +817,7 @@ final class InsightDetailView {
                 guard let rowIndex = self.disasmRows.firstIndex(where: { $0 === row }) else { return }
                 self.selectRow(at: rowIndex, focus: true)
                 if nPress >= 2 {
-                    self.jumpFromLine(at: rowIndex)
+                    self.activateLine(at: rowIndex)
                 }
             }
         }
@@ -806,8 +901,8 @@ final class InsightDetailView {
         guard let engine else { return }
 
         let navigation: [[ContextMenu.Item]] = [[
-            .init("Notes & AI…") { [weak self] in
-                self?.openNotePopover(anchoredAt: anchor, address: address)
+            .init("Chat about This Instruction") { [weak self] in
+                self?.startChat(at: address)
             },
             .init("Go to Function Start") { [weak self] in
                 Task { @MainActor in
@@ -819,25 +914,6 @@ final class InsightDetailView {
         AddressActionMenu.present(
             at: widget, x: x, y: y, engine: engine, sessionID: sessionID, address: address,
             value: String(format: "0x%llx", address), extraSections: navigation)
-    }
-
-    private func openNotePopover(anchoredAt anchor: Widget, address: UInt64) {
-        guard let engine else { return }
-        let popover = AddressNotePopover(engine: engine, sessionID: sessionID, address: address)
-        popover.presentAnchored(to: anchor, pointingX: anchorContentWidth(anchor))
-    }
-
-    private func anchorContentWidth(_ anchor: Widget) -> Int {
-        if let label = anchor as? Label, let text = label.label {
-            let layoutPtr = gtk_widget_create_pango_layout(anchor.widget_ptr, text)
-            defer { if let p = layoutPtr { g_object_unref(p) } }
-            var w: Int32 = 0
-            if let layoutPtr {
-                pango_layout_get_pixel_size(layoutPtr, &w, nil)
-            }
-            if w > 0 { return Int(w) }
-        }
-        return Int(anchor.width)
     }
 
     private func goToFunctionStart(address: UInt64) async {

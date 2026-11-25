@@ -225,7 +225,7 @@ final class InstrumentViewWidget {
     private func load() {
         guard let engine else { return }
         let source = InstrumentViewSource(instrumentViews: engine.instrumentViews, key: key)
-        let pages = PharoViewPages(source: source, engine: engine) { [weak self] object in
+        let pages = PharoViewPages(source: source, runtime: PharoRuntime.shared, engine: engine) { [weak self] object in
             self?.inspect(object)
         }
         self.pages = pages

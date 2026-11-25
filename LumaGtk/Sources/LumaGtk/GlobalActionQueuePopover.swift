@@ -65,8 +65,8 @@ final class GlobalActionQueuePopover {
         followChatCalls()
     }
 
-    private func apply(actions allActions: [MissionAction]) {
-        actions = allActions.filter { engine?.isAmbientMission($0.missionID) != true }
+    private func apply(actions: [MissionAction]) {
+        self.actions = actions
         refresh()
         let hasForeground = actions.contains(where: asksMe)
         if hasForeground, !hadForeground, !popover.visible {

@@ -1,0 +1,174 @@
+import Foundation
+import Gtk
+import LumaCore
+import Observation
+
+@MainActor
+final class ChatsSidebarSection {
+    let listBox = ListBox()
+    var onSelect: (UUID) -> Void = { _ in }
+
+    private let engine: Engine
+    private let headerRow = ListBoxRow()
+    private let countLabel = Label(str: "")
+    private let unreadBadge = Label(str: "")
+    private var shown: [Row] = []
+    private var selected: UUID?
+
+    private static let clock: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
+    private struct Row: Equatable {
+        let id: UUID
+        let isProject: Bool
+        let title: String
+        let about: String
+        let unread: Int
+        let latest: String?
+    }
+
+    init(engine: Engine) {
+        self.engine = engine
+        listBox.selectionMode = .single
+        listBox.add(cssClass: "navigation-sidebar")
+        listBox.add(cssClass: "luma-flush-sidebar-list")
+        listBox.onRowActivated { [weak self] _, row in
+            MainActor.assumeIsolated { self?.choose(rowIndex: Int(row.index)) }
+        }
+        listBox.onRowSelected { [weak self] _, row in
+            MainActor.assumeIsolated {
+                guard let self, let row else { return }
+                self.choose(rowIndex: Int(row.index))
+            }
+        }
+
+        let heading = SidebarFeatureRow.makeSectionHeading(iconName: "chat-message-new-symbolic", title: "Chats")
+        unreadBadge.add(cssClass: "caption")
+        unreadBadge.add(cssClass: "error")
+        unreadBadge.visible = false
+        heading.append(child: unreadBadge)
+        countLabel.add(cssClass: "dim-label")
+        countLabel.add(cssClass: "caption")
+        heading.append(child: countLabel)
+        headerRow.set(child: heading)
+        headerRow.selectable = false
+        headerRow.activatable = false
+        listBox.append(child: headerRow)
+
+        follow()
+    }
+
+    func select(_ chatID: UUID?) {
+        selected = chatID
+        guard let chatID, let index = shown.firstIndex(where: { $0.id == chatID }), let row = listBox.getRowAt(index: index + 1) else {
+            listBox.unselectAll()
+            return
+        }
+        listBox.select(row: row)
+    }
+
+    private func choose(rowIndex: Int) {
+        guard rowIndex > 0 else { return }
+        let row = shown[rowIndex - 1]
+        let chatID = row.isProject ? engine.objectChats.openConversation().id : row.id
+        guard chatID != selected else { return }
+        onSelect(chatID)
+    }
+
+    private func follow() {
+        let rows = withObservationTracking {
+            rowsNow()
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.follow() }
+        }
+        countLabel.label = "\(rows.count)"
+        let unread = rows.map(\.unread).reduce(0, +)
+        unreadBadge.label = "\(unread)"
+        unreadBadge.visible = unread > 0
+        guard rows != shown else { return }
+        shown = rows
+        while let row = listBox.getRowAt(index: 1) {
+            listBox.remove(child: row)
+        }
+        for row in rows {
+            listBox.append(child: make(row))
+        }
+        select(selected)
+    }
+
+    private func rowsNow() -> [Row] {
+        let chats = engine.objectChats
+        let ids = [chats.conversationID] + chats.listed.map(\.id).filter { $0 != chats.conversationID }
+        return ids.map { chatID in
+            let chat = chats.chat(withID: chatID)
+            let latest = chats.thread(of: chatID).messages.last.map { message in
+                let author = message.role == .assistant ? "Assistant" : chats.isMine(message) ? "You" : message.author?.name ?? "You"
+                return "\(author) \u{00B7} \(Self.clock.string(from: message.createdAt))"
+            }
+            return Row(
+                id: chatID, isProject: chatID == chats.conversationID, title: chat.map(chats.displayTitle(of:)) ?? "Project Chat",
+                about: chat.map { about($0, at: chats.subject(of: $0)) } ?? "Project", unread: chats.unreadCount(in: chatID), latest: latest)
+        }
+    }
+
+    private func about(_ chat: ObjectChat, at subject: ObjectChatSubjectPlace) -> String {
+        switch (subject, chat.subject) {
+        case (.instruction(let place), _):
+            [place.anchor.displayString, place.sessionName].compactMap { $0 }.joined(separator: " \u{00B7} ")
+        case (_, .object(_, let label, _, let className, _, _)):
+            "\(className) \u{00B7} \(label)"
+        case (_, .project), (_, .instruction):
+            "Project"
+        }
+    }
+
+    private func make(_ row: Row) -> ListBoxRow {
+        let listRow = ListBoxRow()
+        let box = Box(orientation: .horizontal, spacing: 8)
+        box.marginStart = 28
+        box.marginEnd = 12
+        box.marginTop = 4
+        box.marginBottom = 4
+
+        let icon = Gtk.Image(iconName: row.isProject ? "system-users-symbolic" : "chat-message-new-symbolic")
+        icon.add(cssClass: "dim-label")
+        icon.valign = .start
+        icon.marginTop = 2
+        box.append(child: icon)
+
+        let column = Box(orientation: .vertical, spacing: 1)
+        column.hexpand = true
+        column.append(child: line(row.title, classes: []))
+        column.append(child: line(row.about, classes: ["dim-label", "caption"]))
+        if let latest = row.latest {
+            column.append(child: line(latest, classes: ["dim-label", "caption"]))
+        }
+        box.append(child: column)
+
+        if row.unread > 0 {
+            let badge = Label(str: "\(row.unread)")
+            badge.add(cssClass: "caption")
+            badge.add(cssClass: "error")
+            badge.valign = .center
+            box.append(child: badge)
+        }
+        listRow.set(child: box)
+        return listRow
+    }
+
+    private func line(_ text: String, classes: [String]) -> Label {
+        let label = Label(str: text)
+        for each in classes {
+            label.add(cssClass: each)
+        }
+        label.halign = .start
+        label.xalign = 0
+        label.ellipsize = .end
+        label.maxWidthChars = 26
+        return label
+    }
+}

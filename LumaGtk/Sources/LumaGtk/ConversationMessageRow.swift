@@ -8,11 +8,11 @@ final class ConversationMessageRow {
     let content: Box
     private var footer: Widget?
 
-    convenience init(message: some ConversationMessage) {
-        self.init(message: message, content: Self.bubble(markdown: message.bodyMarkdown))
+    convenience init(message: some ConversationMessage, isMine: Bool) {
+        self.init(message: message, isMine: isMine, content: Self.bubble(markdown: message.bodyMarkdown))
     }
 
-    init(message: some ConversationMessage, content: Box) {
+    init(message: some ConversationMessage, isMine: Bool, content: Box) {
         self.content = content
 
         widget = Box(orientation: .vertical, spacing: 2)
@@ -25,7 +25,7 @@ final class ConversationMessageRow {
         icon.add(cssClass: "dim-label")
         head.append(child: icon)
 
-        let role = Label(str: Self.roleLabel(of: message))
+        let role = Label(str: Self.roleLabel(of: message, isMine: isMine))
         role.add(cssClass: "caption")
         role.add(cssClass: "dim-label")
         role.halign = .start
@@ -47,19 +47,17 @@ final class ConversationMessageRow {
         switch speaker {
         case .user: return "avatar-default-symbolic"
         case .assistant: return "starred-symbolic"
-        case .system: return "preferences-system-symbolic"
         }
     }
 
-    private static func roleLabel(of message: some ConversationMessage) -> String {
+    private static func roleLabel(of message: some ConversationMessage, isMine: Bool) -> String {
         switch message.speaker {
-        case .user: return message.author?.name ?? "You"
+        case .user: return isMine ? "You" : message.author?.name ?? "You"
         case .assistant:
             if let modelID = message.modelID, !modelID.isEmpty, modelID != "default" {
                 return modelID
             }
             return "Assistant"
-        case .system: return "System"
         }
     }
 
