@@ -14,40 +14,25 @@ struct CustomInstrumentConfigView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                header
-
-                if let def, !def.settings.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Settings")
-                            .font(.subheadline)
-                        GroupBox {
-                            VStack(alignment: .leading, spacing: 12) {
-                                ForEach(def.settings) { setting in
-                                    InstrumentSettingRow(
-                                        setting: setting,
-                                        state: stateBinding(for: setting)
-                                    )
-                                }
-                            }
-                            .padding(.leading, 12)
-                            .padding(.vertical, 4)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        }
+        Group {
+            if let def {
+                InstrumentWidgetPage(
+                    widgets: def.widgets,
+                    layout: def.pageLayout,
+                    gate: InstrumentPageGate(instanceID: instrumentInstance?.id, icon: def.icon, name: def.name),
+                    engine: engine,
+                    selection: $selection
+                ) {
+                    header
+                    if instrumentInstance == nil, !def.settings.isEmpty {
+                        inlineSettings(def.settings)
                     }
                 }
-
-                if let def {
-                    InstrumentWidgetsRenderer(
-                        widgets: def.widgets,
-                        engine: engine,
-                        selection: $selection
-                    )
-                }
+            } else {
+                header
+                    .padding(8)
+                    .frame(maxHeight: .infinity, alignment: .top)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(8)
         }
         .safeAreaInset(edge: .top, spacing: 0) {
             StoreUpdateBanner(defID: defID, engine: engine)
@@ -59,6 +44,9 @@ struct CustomInstrumentConfigView: View {
             if let def {
                 InstrumentIconView(icon: def.icon, pointSize: 14)
                 Text(def.name).font(.headline)
+                if instrumentInstance != nil, !def.settings.isEmpty {
+                    InstrumentSettingsPill { settingsForm(def.settings) }
+                }
             } else {
                 Text("Custom Instrument").font(.headline)
             }
@@ -76,6 +64,30 @@ struct CustomInstrumentConfigView: View {
         }
     }
 
+    private func inlineSettings(_ settings: [CustomInstrumentDef.Setting]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Settings")
+                .font(.subheadline)
+            GroupBox {
+                settingsForm(settings)
+            }
+        }
+    }
+
+    private func settingsForm(_ settings: [CustomInstrumentDef.Setting]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(settings) { setting in
+                InstrumentSettingRow(
+                    setting: setting,
+                    state: stateBinding(for: setting)
+                )
+            }
+        }
+        .padding(.leading, 12)
+        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
     private func stateBinding(for setting: CustomInstrumentDef.Setting) -> Binding<SettingState> {
         Binding(
             get: {
@@ -88,5 +100,42 @@ struct CustomInstrumentConfigView: View {
                 config = updated
             }
         )
+    }
+}
+
+private struct InstrumentSettingsPill<Form: View>: View {
+    @ViewBuilder let form: () -> Form
+
+    @State private var isPresented = false
+
+    var body: some View {
+        Button {
+            isPresented = true
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "switch.2").imageScale(.small)
+                Text("Settings")
+            }
+            .font(.caption.weight(.medium))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Color.secondary.opacity(0.10), in: Capsule())
+            .foregroundStyle(Color.secondary)
+            .overlay(Capsule().stroke(Color.secondary.opacity(0.4), lineWidth: 0.5))
+        }
+        .buttonStyle(.plain)
+        .help("Settings")
+        .accessibilityLabel("Settings")
+        .accessibilityIdentifier("customInstrument.settings")
+        .popover(isPresented: $isPresented, arrowEdge: .bottom) {
+            ScrollView {
+                form()
+                    .padding(12)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .frame(width: 400)
+            .frame(maxHeight: 500)
+            .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }

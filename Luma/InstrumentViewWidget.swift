@@ -5,7 +5,6 @@ import SwiftyPharo
 struct InstrumentViewWidget: View {
     let key: InstrumentViews.Key
     let name: String
-    let config: InstrumentWidget.ViewConfig
     let engine: Engine
 
     @State private var declarations: [PharoViewDeclaration] = []
@@ -58,7 +57,7 @@ struct InstrumentViewWidget: View {
             .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
             .pharoColumnScrolling(columnPath)
         }
-        .frame(height: CGFloat(config.height))
+        .frame(maxHeight: .infinity)
     }
 
     @ViewBuilder
