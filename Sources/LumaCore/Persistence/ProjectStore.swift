@@ -1927,7 +1927,7 @@ public final class ProjectStore: Sendable {
         try db.create(table: "custom_instrument_def_ui_state") { t in
             t.primaryKey("def_id", .blob).notNull()
                 .references("custom_instrument_def", onDelete: .cascade)
-            t.column("sidebar_expansion", .text).notNull().defaults(to: SidebarExpansion.expanded.rawValue)
+            t.column("sidebar_expansion", .text).notNull().defaults(to: SidebarExpansion.collapsed.rawValue)
         }
 
         try db.create(table: "widget_state") { t in

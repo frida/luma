@@ -16,7 +16,7 @@ public struct CustomInstrumentDefUIState: Codable, Equatable, Identifiable, Send
 
     public init(
         defID: UUID,
-        sidebarExpansion: SidebarExpansion = .expanded
+        sidebarExpansion: SidebarExpansion = .collapsed
     ) {
         self.defID = defID
         self.sidebarExpansion = sidebarExpansion

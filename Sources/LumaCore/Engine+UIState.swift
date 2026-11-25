@@ -184,7 +184,7 @@ extension Engine {
     }
 
     public func sidebarExpansion(forCustomInstrumentDefID defID: UUID) -> SidebarExpansion {
-        customInstrumentDefUIStates[defID]?.sidebarExpansion ?? .expanded
+        customInstrumentDefUIStates[defID]?.sidebarExpansion ?? .collapsed
     }
 
     public func sidebarExpansion(forSessionID sessionID: UUID, group: SessionSidebarGroup) -> SidebarExpansion {
