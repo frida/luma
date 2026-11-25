@@ -540,7 +540,7 @@ struct ProjectToolbar: ToolbarContent {
                         : "person.2.wave.2"
                 )
                 .overlay(alignment: .topTrailing) {
-                    ToolbarCountBadge(count: engine.objectChats.unreadCount(in: engine.objectChats.conversationID))
+                    ToolbarCountBadge(count: engine.objectChats.unreadTotal)
                 }
             }
             .help("Show or hide the collaboration panel")

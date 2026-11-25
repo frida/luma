@@ -15,6 +15,7 @@ struct PharoChatThreadView: View {
     @State private var answerUnavailableReason: String?
     @State private var isSettingUpProvider = false
     @State private var providerSetups = 0
+    @State private var isOnScreen = true
 
     @FocusState private var inputFocused: Bool
     @FocusState private var editFocused: Bool
@@ -62,8 +63,12 @@ struct PharoChatThreadView: View {
             ObjectChatProviderSetupSheet(engine: engine, chatID: chatID, onDone: { providerSetups += 1 })
         }
         .task(id: answerCheck) { answerUnavailableReason = await chats.answerUnavailableReason(in: chatID) }
-        .onAppear { chats.markRead(chatID) }
-        .onChange(of: thread.messages.count) { chats.markRead(chatID) }
+        .onScrollVisibilityChange(threshold: 0.5) { isShown in
+            isOnScreen = isShown
+            markReadIfShown()
+        }
+        .onAppear { markReadIfShown() }
+        .onChange(of: thread.messages.count) { markReadIfShown() }
         .confirmationDialog(
             "Delete message?",
             isPresented: Binding(
@@ -80,6 +85,12 @@ struct PharoChatThreadView: View {
 
     private var chats: ObjectChats {
         engine.objectChats
+    }
+
+    private func markReadIfShown() {
+        if isOnScreen {
+            chats.markRead(chatID)
+        }
     }
 
     private var answerCheck: String {

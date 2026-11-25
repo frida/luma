@@ -313,7 +313,7 @@ private struct SidebarChatsRow: View {
                 .frame(width: 18, alignment: .center)
             Text("Chats")
             Spacer()
-            SidebarUnreadBadge(count: chats.sidebarChatIDs.reduce(0) { $0 + chats.unreadCount(in: $1) })
+            SidebarUnreadBadge(count: chats.unreadTotal)
             Text("\(chats.sidebarChatIDs.count)").font(.caption).foregroundStyle(.secondary)
             SidebarSectionDisclosure(isExpanded: isExpanded, title: "chats", onToggle: onToggle)
         }
@@ -385,6 +385,10 @@ private struct SidebarChatRow: View {
 extension ObjectChats {
     fileprivate var sidebarChatIDs: [UUID] {
         [conversationID] + listed.map(\.id).filter { $0 != conversationID }
+    }
+
+    var unreadTotal: Int {
+        sidebarChatIDs.reduce(0) { $0 + unreadCount(in: $1) }
     }
 }
 

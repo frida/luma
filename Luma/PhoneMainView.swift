@@ -202,7 +202,7 @@ private struct PhoneContentView: View {
     }
 
     private var collabIndicator: Bool {
-        engine.objectChats.unreadCount(in: engine.objectChats.conversationID) > 0 && activeDrawer != .collab
+        engine.objectChats.unreadTotal > 0 && activeDrawer != .collab
     }
 }
 
