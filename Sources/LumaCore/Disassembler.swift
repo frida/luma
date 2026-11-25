@@ -1,5 +1,6 @@
 import Foundation
 import SwiftyR2
+import Synchronization
 
 public enum Appearance: Sendable, Hashable {
     case light
@@ -59,6 +60,7 @@ public final class Disassembler {
     private let modulesProvider: () -> [ProcessModule]
     private let introspector: ModuleIntrospector
     private let reader: MemoryReader
+    private let memory = ProcessMemoryPages()
 
     public var onAnalysisSaved: ((ModuleAnalysis) -> Void)?
     public var onAnalysisStateChanged: ((String, ModuleAnalysisStatus) -> Void)?
@@ -97,7 +99,7 @@ public final class Disassembler {
     }
 
     public func analyze(module: ProcessModule) async {
-        await ensureOpened()
+        await beginRequest()
         await ensureModuleAnalyzed(module: module)
     }
 
@@ -106,7 +108,7 @@ public final class Disassembler {
     }
 
     public func disassemblePage(_ request: DisassemblyRequest) async -> DisassemblyPage {
-        await ensureOpened()
+        await beginRequest()
         if currentAppearance != request.appearance {
             await r2.applyTheme(Self.r2ThemeName(for: request.appearance))
             currentAppearance = request.appearance
@@ -172,12 +174,12 @@ private func fetchFunctionEnd(hex: String) async -> UInt64? {
     }
 
     public func runCommand(_ command: String) async -> R2CommandResult {
-        await ensureOpened()
+        await beginRequest()
         return await r2.cmd(command)
     }
 
     public func findFunctionStart(containing address: UInt64) async -> UInt64? {
-        await ensureOpened()
+        await beginRequest()
         if let module = moduleContaining(address: address) {
             await ensureModuleAnalyzed(module: module)
         }
@@ -185,7 +187,7 @@ private func fetchFunctionEnd(hex: String) async -> UInt64? {
     }
 
     public func findFunctionEnd(containing address: UInt64) async -> UInt64? {
-        await ensureOpened()
+        await beginRequest()
         if let module = moduleContaining(address: address) {
             await ensureModuleAnalyzed(module: module)
         }
@@ -193,18 +195,18 @@ private func fetchFunctionEnd(hex: String) async -> UInt64? {
     }
 
     public func currentSeek() async -> UInt64? {
-        await ensureOpened()
+        await beginRequest()
         let raw = (await r2.cmd("?v $$").output ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         return parseHex(raw)
     }
 
     public func seek(to address: UInt64) async {
-        await ensureOpened()
+        await beginRequest()
         await r2.cmd("s 0x\(String(address, radix: 16))")
     }
 
     public func applyInsightName(at address: UInt64, title: String) async {
-        await ensureOpened()
+        await beginRequest()
         if let module = moduleContaining(address: address) {
             await ensureModuleAnalyzed(module: module)
         }
@@ -405,10 +407,15 @@ private func fetchFunctionEnd(hex: String) async -> UInt64? {
     }
 
     public func decompile(at address: UInt64) async -> R2CommandResult {
-        await ensureOpened()
+        await beginRequest()
         let hex = String(address, radix: 16)
         await r2.cmd("af @ 0x\(hex)")
         return await r2.cmd("pdc @ 0x\(hex)")
+    }
+
+    private func beginRequest() async {
+        memory.forgetAll()
+        await ensureOpened()
     }
 
     private func ensureOpened() async {
@@ -422,7 +429,7 @@ private func fetchFunctionEnd(hex: String) async -> UInt64? {
             self.r2 = r2
 
             await r2.registerIOPlugin(
-                asyncProvider: ProcessMemoryIOProvider(reader: reader),
+                provider: ProcessMemoryIOProvider(reader: reader, pages: memory),
                 uriSchemes: ["frida-mem://"]
             )
 
@@ -519,20 +526,17 @@ public final class CachingMemoryReader: MemoryReader {
     }
 
     public func read(at address: UInt64, count: Int) async throws -> [UInt8] {
-        let end = address &+ UInt64(count)
         var output: [UInt8] = []
         output.reserveCapacity(count)
 
         var cursor = address
-        while cursor < end {
+        while output.count < count {
             let page = try await pageContaining(address: cursor)
-            let pageEnd = page.base &+ UInt64(page.bytes.count)
-            let copyEnd = min(end, pageEnd)
             let offsetInPage = Int(cursor &- page.base)
-            let copyCount = Int(copyEnd &- cursor)
+            let copyCount = min(page.bytes.count - offsetInPage, count - output.count)
             let slice = page.bytes.subdata(in: offsetInPage..<(offsetInPage + copyCount))
             output.append(contentsOf: slice)
-            cursor = copyEnd
+            cursor &+= UInt64(copyCount)
         }
         return output
     }
@@ -683,22 +687,25 @@ public enum DisassemblyError: Error, LocalizedError {
     }
 }
 
-private final class ProcessMemoryIOProvider: R2IOAsyncProvider, @unchecked Sendable {
+private final class ProcessMemoryIOProvider: R2IOProvider, @unchecked Sendable {
     unowned let reader: MemoryReader
+    let pages: ProcessMemoryPages
 
-    init(reader: MemoryReader) {
+    init(reader: MemoryReader, pages: ProcessMemoryPages) {
         self.reader = reader
+        self.pages = pages
     }
 
     func supports(path: String, many: Bool) -> Bool {
         path.hasPrefix("frida-mem://")
     }
 
-    func open(path: String, access: R2IOAccess, mode: Int32) async throws -> R2IOAsyncFile {
+    func open(path: String, access: R2IOAccess, mode: Int32) throws -> R2IOFile {
         guard let req = FridaMemURI.parse(path) else {
             throw NSError(domain: "LumaCore", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid frida-mem URI"])
         }
-        return ProcessMemoryIOFile(reader: reader, baseAddress: req.baseAddress)
+        let source = R2IOAsyncFileAdapter(asyncFile: ProcessMemoryIOFile(reader: reader, baseAddress: req.baseAddress))
+        return PageCachingIOFile(source: source, pages: pages)
     }
 }
 
@@ -720,6 +727,62 @@ private final class ProcessMemoryIOFile: R2IOAsyncFile, @unchecked Sendable {
     func write(at offset: UInt64, bytes: [UInt8]) async throws -> Int { 0 }
     func size() async throws -> UInt64 { UInt64.max }
     func setSize(_ size: UInt64) async throws {}
+}
+
+private final class PageCachingIOFile: R2IOFile, @unchecked Sendable {
+    private let source: R2IOFile
+    private let pages: ProcessMemoryPages
+
+    init(source: R2IOFile, pages: ProcessMemoryPages) {
+        self.source = source
+        self.pages = pages
+    }
+
+    func close() throws {
+        try source.close()
+    }
+
+    func read(at offset: UInt64, count: Int) throws -> [UInt8] {
+        try pages.read(at: offset, count: count) { pageOffset in
+            try source.read(at: pageOffset, count: Int(MemoryPage.size))
+        }
+    }
+
+    func write(at offset: UInt64, bytes: [UInt8]) throws -> Int { 0 }
+    func size() throws -> UInt64 { UInt64.max }
+    func setSize(_ size: UInt64) throws {}
+}
+
+private final class ProcessMemoryPages: Sendable {
+    private let pages = Mutex<[UInt64: Result<[UInt8], any Error>]>([:])
+
+    func forgetAll() {
+        pages.withLock { $0.removeAll() }
+    }
+
+    func read(at offset: UInt64, count: Int, fetchingPagesWith fetch: (UInt64) throws -> [UInt8]) throws -> [UInt8] {
+        var output: [UInt8] = []
+        output.reserveCapacity(count)
+        var cursor = offset
+        while output.count < count {
+            let base = MemoryPage.base(of: cursor)
+            let page = try page(at: base, fetchingWith: fetch)
+            let start = Int(cursor &- base)
+            let length = min(page.count - start, count - output.count)
+            output.append(contentsOf: page[start..<(start + length)])
+            cursor &+= UInt64(length)
+        }
+        return output
+    }
+
+    private func page(at base: UInt64, fetchingWith fetch: (UInt64) throws -> [UInt8]) throws -> [UInt8] {
+        if let known = pages.withLock({ $0[base] }) {
+            return try known.get()
+        }
+        let fetched = Result { try fetch(base) }
+        pages.withLock { $0[base] = fetched }
+        return try fetched.get()
+    }
 }
 
 private struct FridaMemURI {
