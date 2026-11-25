@@ -5,6 +5,7 @@ import Synchronization
 public enum ProjectStoreError: Error, LocalizedError {
     case madeByEarlierLuma
     case savedByNewerLuma
+    case savedByDevelopmentBuild
 
     public var errorDescription: String? {
         switch self {
@@ -12,6 +13,8 @@ public enum ProjectStoreError: Error, LocalizedError {
             return "This project was made with an earlier version of Luma (Luma 2 or older), which this version cannot open."
         case .savedByNewerLuma:
             return "This project was saved by a newer version of Luma. Update Luma to open it."
+        case .savedByDevelopmentBuild:
+            return "This project was saved by a development build of Luma whose project format has since changed, so this build cannot open it."
         }
     }
 }
@@ -1534,12 +1537,27 @@ public final class ProjectStore: Sendable {
         case .new:
             try db.write(createSchema)
         case .current:
-            break
+            guard try db.read(columnsByTable) == expectedColumnsByTable else { throw ProjectStoreError.savedByDevelopmentBuild }
         case .earlier:
             throw ProjectStoreError.madeByEarlierLuma
         case .later:
             throw ProjectStoreError.savedByNewerLuma
         }
+    }
+
+    private static let expectedColumnsByTable: [String: Set<String>] = {
+        let fresh = try! DatabaseQueue()
+        try! fresh.write(createSchema)
+        return try! fresh.read(columnsByTable)
+    }()
+
+    private static func columnsByTable(_ db: Database) throws -> [String: Set<String>] {
+        let tables = try String.fetchAll(db, sql: "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
+        var columns: [String: Set<String>] = [:]
+        for table in tables {
+            columns[table] = Set(try db.columns(in: table).map(\.name))
+        }
+        return columns
     }
 
     private static func format(of db: Database) throws -> Format {
