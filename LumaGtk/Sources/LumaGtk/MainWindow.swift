@@ -131,6 +131,7 @@ final class MainWindow: InstrumentUIHost {
     private var eventStreamHost: Box!
     private var detailHost: Widget!
     private var toastOverlay: ToastOverlay!
+    private var offeredFileSaver: OfferedFileSaver?
     private var pendingActionsObservation: LumaCore.StoreObservation?
     private var seenPendingActionIDs: Set<UUID> = []
 
@@ -609,6 +610,7 @@ final class MainWindow: InstrumentUIHost {
         observeLoadedPackages()
         observeInstrumentFolders()
         observeConnectionActivity()
+        offeredFileSaver = OfferedFileSaver(engine: engine, window: window, toasts: toastOverlay)
         engine.onREPLCellSaved = { [weak self] cell in self?.currentREPLPane?.showCell(cell) }
         engine.onNotebookChanged = { [weak self] change in
             guard let self else { return }
