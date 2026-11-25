@@ -64,10 +64,8 @@ struct InstrumentViewWidget: View {
     @ViewBuilder
     private var content: some View {
         switch phase {
-        case .idle, .checking, .starting:
-            ProgressView()
-        case .awaitingApproval(let origin):
-            approval(origin)
+        case _ where views.approvalWanted(byInstance: key.instanceID) != nil:
+            Color.clear
         case .failed(let message):
             stopped(message)
         case .running(let generation):
@@ -76,24 +74,9 @@ struct InstrumentViewWidget: View {
             } else {
                 running(generation)
             }
+        default:
+            ProgressView()
         }
-    }
-
-    private func approval(_ origin: HostCodeOrigin) -> some View {
-        VStack(spacing: 8) {
-            Image(systemName: "lock.shield")
-                .font(.largeTitle)
-                .foregroundStyle(.secondary)
-            Text(HostCodeOrigin.request)
-                .font(.headline)
-            Text(origin.provenance)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            Button(HostCodeOrigin.allowLabel) { views.allow(key) }
-                .buttonStyle(.borderedProminent)
-                .accessibilityIdentifier("instrument.view.allow")
-        }
-        .padding()
     }
 
     private func stopped(_ message: String) -> some View {

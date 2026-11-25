@@ -1035,6 +1035,14 @@ private struct SidebarInstrumentRow: View {
                 InstrumentStatusIndicator(status: status)
                     .padding(.leading, 6)
             }
+            if let approvalWait {
+                Image(systemName: "hourglass")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.orange)
+                    .padding(.leading, 6)
+                    .help(approvalWait)
+                    .accessibilityLabel(approvalWait)
+            }
             if let newerItem = engine.storefront.newerItem(forInstrument: instance) {
                 StoreUpdateMark(item: newerItem)
                     .padding(.leading, 6)
@@ -1086,6 +1094,13 @@ private struct SidebarInstrumentRow: View {
 
     private var runtimeStatus: InstrumentStatus? {
         node?.instruments.first(where: { $0.id == instance.id })?.status
+    }
+
+    private var approvalWait: String? {
+        if engine.instrumentViews.approvalWanted(byInstance: instance.id) != nil {
+            return "Waiting for you to allow"
+        }
+        return engine.approvalAwaitedFromHost(of: instance).map { "Waiting for \($0.name) to allow" }
     }
 
     private func deleteInstrument() {
