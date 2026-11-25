@@ -217,6 +217,7 @@ private struct ProjectContentView: View {
         .safeAreaInset(edge: .top, spacing: 0) {
             PartnerContactQuestion(storefront: engine.storefront)
         }
+        .offeredFileSaving(engine: engine)
     }
 
     @ViewBuilder

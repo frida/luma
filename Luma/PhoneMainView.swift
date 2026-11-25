@@ -159,6 +159,7 @@ private struct PhoneContentView: View {
                 PartnerContactQuestion(storefront: engine.storefront)
                     .background(.bar)
             }
+            .offeredFileSaving(engine: engine)
         }
         .environment(picker)
         .gitHubSignInSheet(auth: engine.gitHubAuth, precedence: .ambient)
