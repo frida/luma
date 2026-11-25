@@ -347,13 +347,13 @@ private func fetchFunctionEnd(hex: String) async -> UInt64? {
     }
 
     private func harvestPreludeFunctions(module: ProcessModule, into functions: inout [ModuleAnalysis.Function]) async {
-        let raw = await r2.cmd("aflj").output ?? ""
-        guard let entries = try? JSONDecoder().decode([R2FunctionEntry].self, from: Data(raw.utf8)) else { return }
+        let raw = await r2.cmd("aflqj").output ?? ""
+        guard let entries = try? JSONDecoder().decode([R2Hex].self, from: Data(raw.utf8)) else { return }
         let lo = module.base
         let hi = module.base &+ module.size
         var seen = Set(functions.map(\.offset))
         for entry in entries {
-            let absolute = entry.addr.value
+            let absolute = entry.value
             guard absolute >= lo, absolute < hi else { continue }
             let offset = absolute &- lo
             if seen.contains(offset) { continue }
@@ -830,10 +830,6 @@ private struct R2Hex: Decodable {
         }
         value = try container.decode(UInt64.self)
     }
-}
-
-private struct R2FunctionEntry: Decodable {
-    let addr: R2Hex
 }
 
 private struct R2BasicBlockEntry: Decodable {
