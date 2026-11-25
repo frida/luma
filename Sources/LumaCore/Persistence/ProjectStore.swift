@@ -489,6 +489,16 @@ public final class ProjectStore: Sendable {
         }
     }
 
+    public func fetchModuleMappedRanges(sessionID: UUID, modulePath: String) throws -> [ProcessNode.ModuleRange]? {
+        try db.read { db in
+            try ModuleAnalysisRow
+                .filter(Column("session_id") == sessionID)
+                .filter(Column("module_path") == modulePath)
+                .fetchOne(db)
+                .map { try JSONDecoder().decode([ProcessNode.ModuleRange].self, from: $0.mappedRanges) }
+        }
+    }
+
     public func save(_ analysis: ModuleAnalysis) throws {
         try db.write { db in
             try writeModuleAnalysis(db, analysis: analysis)

@@ -7344,8 +7344,8 @@ final class SessionDisassemblyEnvironment: ModuleIntrospector, MemoryReader, Mem
 
     private func moduleByMappedRanges(pageBase: UInt64, modules: [ProcessModule]) -> ProcessModule? {
         for module in modules {
-            guard let analysis = try? engine.store.fetchModuleAnalysis(sessionID: sessionID, modulePath: module.path) else { continue }
-            for range in analysis.mappedRanges {
+            guard let mappedRanges = try? engine.store.fetchModuleMappedRanges(sessionID: sessionID, modulePath: module.path) else { continue }
+            for range in mappedRanges {
                 let rlo = module.base &+ range.offset
                 if pageBase >= rlo && pageBase < (rlo &+ range.size) {
                     return module
