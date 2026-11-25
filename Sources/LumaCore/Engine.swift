@@ -2063,10 +2063,14 @@ public final class Engine {
                 }
             }
 
+            let previousModules = sessions.first { $0.id == s.id }?.lastKnownModules ?? []
             updateSession(id: s.id) {
                 $0.lastKnownMainModule = nil
                 $0.lastKnownModules = nil
                 $0.lastKnownThreads = nil
+            }
+            if let sid = collabSessionID(forNode: node), !previousModules.isEmpty {
+                collaboration.enqueueUpdateSessionModules(sessionID: sid, delta: ModuleDelta(removed: previousModules))
             }
 
             subscribeToNodeStreams(node)
@@ -2692,7 +2696,7 @@ public final class Engine {
                 changed.append(updated)
             }
             for c in changed {
-                collaboration.enqueueUpdateInsight(sessionID: sessionID, insight: c)
+                shareInsightUpdate(c)
                 emitInsightUpdated(c)
             }
         }
@@ -2723,14 +2727,14 @@ public final class Engine {
         var updated = insight
         updated.lastResolvedAddress = resolved
         persistInsight(updated)
-        collaboration.enqueueUpdateInsight(sessionID: updated.sessionID, insight: updated)
+        shareInsightUpdate(updated)
     }
 
     public func renameInsight(_ insight: AddressInsight, to newTitle: String) {
         var updated = insight
         updated.userTitle = newTitle
         persistInsight(updated)
-        collaboration.enqueueUpdateInsight(sessionID: updated.sessionID, insight: updated)
+        shareInsightUpdate(updated)
         applyInsightNameToR2(updated)
         emitInsightUpdated(updated)
     }
@@ -2751,8 +2755,13 @@ public final class Engine {
         var updated = insight
         updated.byteCount = byteCount
         persistInsight(updated)
-        collaboration.enqueueUpdateInsight(sessionID: updated.sessionID, insight: updated)
+        shareInsightUpdate(updated)
         emitInsightUpdated(updated)
+    }
+
+    private func shareInsightUpdate(_ insight: AddressInsight) {
+        guard localUserHosts(insight.sessionID) else { return }
+        collaboration.enqueueUpdateInsight(sessionID: insight.sessionID, insight: insight)
     }
 
     public func placements(at origin: UInt64?, in stored: StoredValue) -> [PatternPlacement] {
@@ -5546,7 +5555,7 @@ public func deleteCustomInstrument(_ defID: UUID) async {
                 var updated = self
                 updated.parentInsightID = parent.id
                 persistInsight(updated)
-                collaboration.enqueueUpdateInsight(sessionID: sessionID, insight: updated)
+                shareInsightUpdate(updated)
                 emitInsightUpdated(updated)
             }
             return
@@ -5558,7 +5567,7 @@ public func deleteCustomInstrument(_ defID: UUID) async {
             var updated = sibling
             updated.parentInsightID = insightID
             persistInsight(updated)
-            collaboration.enqueueUpdateInsight(sessionID: sessionID, insight: updated)
+            shareInsightUpdate(updated)
             emitInsightUpdated(updated)
         }
     }
