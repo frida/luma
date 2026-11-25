@@ -32,11 +32,12 @@ final class InstrumentLayoutDesigner {
     private let unplacedEmpty = Label(str: "Every widget has a place.")
     private let problemNote = Label(str: "")
     private let sample = Box(orientation: .horizontal, spacing: 6)
-    private let sampleLine = InstrumentChildLine(titleStyle: nil)
+    private let sampleLine = InstrumentChildLine(titleStyle: nil, arrangement: .subtitleBelow)
     private let sampleIcon = Box(orientation: .horizontal, spacing: 0)
 
     private static let canvasWidth = 720.0
     private static let sideWidth = 260
+    private static let sampleRowWidth = 220
 
     init(read: @escaping () -> (widgets: [InstrumentWidget], layout: InstrumentLayout?), write: @escaping (InstrumentLayout?) -> Void) {
         self.read = read
@@ -143,6 +144,8 @@ final class InstrumentLayoutDesigner {
         caption.add(cssClass: "dim-label")
         sample.append(child: caption)
         sample.append(child: sampleIcon)
+        sampleLine.widget.hexpand = false
+        sampleLine.widget.setSizeRequest(width: Self.sampleRowWidth, height: -1)
         sample.append(child: sampleLine.widget)
         sample.visible = false
         return sample

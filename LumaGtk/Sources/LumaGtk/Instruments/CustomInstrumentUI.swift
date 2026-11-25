@@ -144,10 +144,12 @@ private final class InstrumentChildRows {
     }
 
     private func makeChildRow(_ child: InstrumentChild, template: InstrumentChildTemplate) -> InstrumentSidebarChild {
-        let line = InstrumentChildLine(child)
+        let line = InstrumentChildLine(child, arrangement: .subtitleBelow)
+        line.widget.hexpand = true
         presenters[child.ref] = line
         let icon = InstrumentIconView.makeImage(for: .symbolic(template.symbol ?? ""), pixelSize: 14)
-        let (row, _) = SidebarFeatureRow.make(icon: icon, content: line.widget)
+        let (row, anchor) = SidebarFeatureRow.make(icon: icon, content: line.widget)
+        anchor.halign = .fill
         let componentID = InstrumentChildComponents.id(of: child.ref, in: instanceID)
         let sessionID = sessionID
         let instanceID = instanceID
@@ -221,27 +223,45 @@ final class InstrumentChildLine {
     private let badge = Label(str: "")
     private var tone: ChildBadge.Tone?
 
-    convenience init(_ child: InstrumentChild, titleStyle: String? = nil) {
-        self.init(titleStyle: titleStyle)
+    enum Arrangement {
+        case oneLine
+        case subtitleBelow
+    }
+
+    convenience init(_ child: InstrumentChild, titleStyle: String? = nil, arrangement: Arrangement) {
+        self.init(titleStyle: titleStyle, arrangement: arrangement)
         show(child)
     }
 
-    init(titleStyle: String?) {
-        widget = Box(orientation: .horizontal, spacing: 6)
+    init(titleStyle: String?, arrangement: Arrangement) {
+        let stacked = arrangement == .subtitleBelow
+        widget = Box(orientation: stacked ? .vertical : .horizontal, spacing: stacked ? 0 : 6)
+        let firstLine = Box(orientation: .horizontal, spacing: 6)
         title.ellipsize = .end
         title.halign = .start
+        title.xalign = 0
+        title.hexpand = stacked
         if let titleStyle {
             title.add(cssClass: titleStyle)
         }
-        widget.append(child: title)
+        firstLine.append(child: title)
         subtitle.add(cssClass: "dim-label")
         subtitle.ellipsize = .end
         subtitle.halign = .start
-        widget.append(child: subtitle)
+        subtitle.xalign = 0
         badge.add(cssClass: "caption")
         badge.add(cssClass: "luma-mission-pill")
         badge.valign = .center
-        widget.append(child: badge)
+        if stacked {
+            firstLine.append(child: badge)
+            widget.append(child: firstLine)
+            subtitle.add(cssClass: "caption")
+            widget.append(child: subtitle)
+        } else {
+            firstLine.append(child: subtitle)
+            firstLine.append(child: badge)
+            widget.append(child: firstLine)
+        }
     }
 
     func show(_ child: InstrumentChild) {
@@ -381,7 +401,7 @@ private final class CustomDetailUI: InstrumentDetailUI {
     private func makeChildHeader(_ child: InstrumentChild, template: InstrumentChildTemplate, engine: Engine) -> Box {
         let header = Box(orientation: .horizontal, spacing: 8)
         header.append(child: InstrumentIconView.makeImage(for: .symbolic(template.symbol ?? ""), pixelSize: 16))
-        let line = InstrumentChildLine(child, titleStyle: "heading")
+        let line = InstrumentChildLine(child, titleStyle: "heading", arrangement: .oneLine)
         line.widget.valign = .center
         header.append(child: line.widget)
         childLine = line

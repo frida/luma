@@ -133,7 +133,6 @@ final class CustomInstrumentWidgetsDialog {
         intro.xalign = 0
         intro.maxWidthChars = 60
         scrollContent.append(child: intro)
-        scrollContent.append(child: templatesPanel.editor)
 
         scrollContent.append(child: listBox)
         countNote.add(cssClass: "caption")
@@ -172,6 +171,11 @@ final class CustomInstrumentWidgetsDialog {
         header.set(titleWidget: switcher)
 
         let body = Box(orientation: .vertical, spacing: 0)
+        templatesPanel.editor.marginStart = 16
+        templatesPanel.editor.marginEnd = 16
+        templatesPanel.editor.marginTop = 12
+        templatesPanel.editor.marginBottom = 4
+        body.append(child: templatesPanel.editor)
         pages.vexpand = true
         body.append(child: pages)
         layoutNote.add(cssClass: "caption")

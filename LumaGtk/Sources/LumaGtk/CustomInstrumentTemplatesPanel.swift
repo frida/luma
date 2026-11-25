@@ -79,9 +79,25 @@ final class CustomInstrumentTemplatesPanel {
     }
 
     private func makeEditor() {
-        editor.append(child: Self.fieldRow("Id", idEntry))
-        editor.append(child: Self.fieldRow("Name", nameEntry))
+        let line = Box(orientation: .horizontal, spacing: 8)
+        let popover = Popover()
+        popover.set(child: iconGrid.widget)
+        iconButton.set(popover: popover)
+        iconButton.tooltipText = "Icon"
+        iconButton.valign = .center
+        iconGrid.onChoose = { [weak self] id in
+            self?.edit { $0.symbol = id }
+        }
+        line.append(child: iconButton)
+        line.append(child: Self.fieldLabel("id"))
+        idEntry.setSizeRequest(width: 160, height: -1)
+        idEntry.setAccessibleLabel("Id")
+        line.append(child: idEntry)
+        line.append(child: Self.fieldLabel("Name"))
         nameEntry.placeholderText = "Plural, such as Bins"
+        nameEntry.hexpand = true
+        nameEntry.setAccessibleLabel("Name")
+        line.append(child: nameEntry)
         idEntry.onChanged { [weak self] entry in
             MainActor.assumeIsolated {
                 self?.edit { $0.id = entry.text ?? "" }
@@ -92,30 +108,19 @@ final class CustomInstrumentTemplatesPanel {
                 self?.edit { $0.name = entry.text ?? "" }
             }
         }
-
-        let popover = Popover()
-        popover.set(child: iconGrid.widget)
-        iconButton.set(popover: popover)
-        iconButton.tooltipText = "Icon"
-        iconGrid.onChoose = { [weak self] id in
-            self?.edit { $0.symbol = id }
-        }
-        let buttons = Box(orientation: .horizontal, spacing: 4)
-        buttons.append(child: Self.fieldRow("Icon", iconButton))
-        let spacer = Box(orientation: .horizontal, spacing: 0)
-        spacer.hexpand = true
-        buttons.append(child: spacer)
-        for (button, action) in [(moveUpButton, -1), (moveDownButton, 1)] {
+        for (button, offset) in [(moveUpButton, -1), (moveDownButton, 1)] {
+            button.valign = .center
             button.onClicked { [weak self] _ in
-                MainActor.assumeIsolated { self?.move(by: action) }
+                MainActor.assumeIsolated { self?.move(by: offset) }
             }
-            buttons.append(child: button)
+            line.append(child: button)
         }
+        removeButton.valign = .center
         removeButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated { self?.removeTemplate() }
         }
-        buttons.append(child: removeButton)
-        editor.append(child: buttons)
+        line.append(child: removeButton)
+        editor.append(child: line)
     }
 
     private func choose(_ index: Int) {
@@ -224,14 +229,9 @@ final class CustomInstrumentTemplatesPanel {
         return line
     }
 
-    private static func fieldRow(_ title: String, _ field: Widget) -> Box {
-        let row = Box(orientation: .horizontal, spacing: 8)
+    private static func fieldLabel(_ title: String) -> Label {
         let label = Label(str: title)
-        label.halign = .start
-        label.setSizeRequest(width: 96, height: -1)
-        row.append(child: label)
-        field.hexpand = !(field is MenuButton)
-        row.append(child: field)
-        return row
+        label.add(cssClass: "dim-label")
+        return label
     }
 }
