@@ -8,7 +8,7 @@ import Observation
 
 @MainActor
 final class AddInstrumentDialog {
-    typealias OnAdded = (LumaCore.InstrumentInstance) -> Void
+    typealias OnAdded = (_ instance: LumaCore.InstrumentInstance, _ opensEditor: Bool) -> Void
 
     private static let storeResultsShownAtFirst = 4
 
@@ -1114,7 +1114,7 @@ final class AddInstrumentDialog {
                 sessionID: sessionID
             )
             if let instance {
-                onAdded?(instance)
+                onAdded?(instance, false)
             }
         }
         close()
@@ -1137,7 +1137,7 @@ final class AddInstrumentDialog {
                 sessionID: sessionID
             )
             if let instance {
-                onAdded?(instance)
+                onAdded?(instance, true)
             }
         }
         close()
@@ -1228,7 +1228,7 @@ final class AddInstrumentDialog {
                     sessionID: sessionID
                 )
                 if let instance {
-                    onAdded?(instance)
+                    onAdded?(instance, false)
                 }
             }
             close()

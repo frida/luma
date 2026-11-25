@@ -2612,11 +2612,12 @@ final class MainWindow: InstrumentUIHost {
                 descriptors: engine.descriptors,
                 disabledDescriptorIDs: disabledDescriptorIDs,
                 systemParameters: systemParameters
-            ) { [weak self] instance in
+            ) { [weak self] instance, opensEditor in
                 guard let self else { return }
-                if instance.kind == .custom, let defID = UUID(uuidString: instance.sourceIdentifier) {
+                if opensEditor, let defID = UUID(uuidString: instance.sourceIdentifier) {
                     self.select(self.selectionForCustomInstrument(defID: defID))
                 } else {
+                    self.expandSessionIfCollapsed(sessionID)
                     self.select(.instrument(sessionID: sessionID, instrumentID: instance.id))
                 }
                 self.showToast("Added \(engine.descriptor(for: instance).displayName)")
