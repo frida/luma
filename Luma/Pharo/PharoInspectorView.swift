@@ -1337,20 +1337,22 @@ struct PharoOverviewStrip: View {
 
     private var squares: some View {
         HStack(spacing: previewSpacing) {
-            PharoOverviewSquare(
-                isCurrent: path.shown == nil,
-                isOnScreen: path.isOnScreen(0),
-                printString: pageName,
-                width: previewWidth,
-                height: previewHeight) {
-                path.show(slot: 0)
+            if path.includesPage {
+                PharoOverviewSquare(
+                    isCurrent: path.shown == nil,
+                    isOnScreen: path.isOnScreen(0),
+                    printString: pageName,
+                    width: previewWidth,
+                    height: previewHeight) {
+                    path.show(slot: 0)
+                }
             }
 
             ForEach(Array(path.objects.enumerated()), id: \.element.handle) { depth, object in
                 PharoOverviewSquare(
                     isCurrent: path.shown == depth,
                     isOnScreen: path.isOnScreen(path.slot(ofColumn: depth)),
-                    printString: object.printString,
+                    printString: !path.includesPage && depth == 0 ? pageName : object.printString,
                     width: previewWidth,
                     height: previewHeight) {
                     path.show(slot: path.slot(ofColumn: depth))

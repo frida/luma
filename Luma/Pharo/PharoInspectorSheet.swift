@@ -16,7 +16,7 @@ struct PharoInspectorSheet: View {
             }
             .padding(8)
             Divider()
-            PharoInspectorPane(engine: engine, first: first, onCloseAll: onDone)
+            PharoInspectorPane(engine: engine, first: first, overviewName: nil, onCloseAll: onDone)
         }
         .frame(minWidth: 640, minHeight: 480)
     }
@@ -25,6 +25,7 @@ struct PharoInspectorSheet: View {
 struct PharoInspectorPane: View {
     let engine: Engine
     let first: @MainActor () async throws -> PharoObject
+    let overviewName: String?
     let onCloseAll: () -> Void
 
     @State private var path = PharoColumnPath()
@@ -36,6 +37,10 @@ struct PharoInspectorPane: View {
         VStack(spacing: 0) {
             if let failure {
                 PharoFailureView(message: failure)
+            }
+            if let overviewName, path.objects.count > 1 {
+                PharoOverviewStrip(path: path, pageName: overviewName)
+                Divider()
             }
             columns
         }

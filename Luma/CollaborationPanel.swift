@@ -50,8 +50,10 @@ struct CollaborationPanel: View {
             ForEach(engine.labProblems) { problem in
                 LabProblemNotice(problem: problem, engine: engine, selection: $selection)
             }
-            Divider()
-            ProjectChatSection(engine: engine)
+            if engine.associatedLabID != nil {
+                Divider()
+                ProjectChatSection(engine: engine)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(12)

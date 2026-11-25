@@ -30,7 +30,11 @@ struct DetailView: View {
                     .id(missionID)
 
             case .some(.chat(let chatID)):
-                PharoInspectorPane(engine: engine, first: { try await engine.chatColumn(chatID) }, onCloseAll: {})
+                PharoInspectorPane(
+                    engine: engine,
+                    first: { try await engine.chatColumn(chatID) },
+                    overviewName: engine.objectChats.chat(withID: chatID).map(engine.objectChats.displayTitle(of:)) ?? "",
+                    onCloseAll: {})
                     .id(chatID)
 
             case .some(.patterns):
