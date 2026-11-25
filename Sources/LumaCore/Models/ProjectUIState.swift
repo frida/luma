@@ -30,7 +30,7 @@ public struct ProjectUIState: Codable, Equatable, Sendable, FetchableRecord, Per
 
     public init(
         selectedItemJSON: String? = nil,
-        collapsedSections: Set<SidebarSection> = [],
+        collapsedSections: Set<SidebarSection> = [.chats],
         expandedPatternSources: Set<String> = [],
         isEventStreamCollapsed: Bool = true,
         eventStreamBottomHeight: Double = 0,
