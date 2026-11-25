@@ -27,7 +27,6 @@ final class ChatsSidebarSection {
     private struct Row: Equatable {
         let id: UUID
         let isProject: Bool
-        let isLocalOnly: Bool
         let title: String
         let about: String
         let unread: Int
@@ -141,8 +140,7 @@ final class ChatsSidebarSection {
                 return "\(author) \u{00B7} \(Self.clock.string(from: message.createdAt))"
             }
             return Row(
-                id: chatID, isProject: chatID == chats.conversationID,
-                isLocalOnly: engine.collaboration.isCollaborative && chats.isLocalOnly(chatID), title: chat.map(chats.displayTitle(of:)) ?? "Project Chat",
+                id: chatID, isProject: chatID == chats.conversationID, title: chat.map(chats.displayTitle(of:)) ?? "Project Chat",
                 about: chat.map { about($0, at: chats.subject(of: $0)) } ?? "Project", unread: chats.unreadCount(in: chatID), latest: latest)
         }
     }
@@ -181,11 +179,6 @@ final class ChatsSidebarSection {
         }
         box.append(child: column)
 
-        if row.isLocalOnly {
-            let mark = MainWindow.makeNotInLabMark(tooltip: MainWindow.localOnlyChatTooltip)
-            mark.valign = .center
-            box.append(child: mark)
-        }
         if row.unread > 0 {
             let badge = Label(str: "\(row.unread)")
             badge.add(cssClass: "caption")
