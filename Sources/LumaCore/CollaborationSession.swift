@@ -252,6 +252,7 @@ public final class CollaborationSession {
     private var replayedOpIDs: Set<UUID> = []
     private var removedMissionIDs: Set<UUID> = []
     private var removedSessionIDs: Set<UUID> = []
+    private var sessionsHeldByLab: Set<UUID> = []
     private var replayedForSubjectsTheLabLacks: Set<UUID> = []
     private var opsOverridingJoinSnapshot: [UUID: SessionOp] = [:]
     private var pendingCreateOrJoinDispatched: Bool = false
@@ -402,6 +403,9 @@ public final class CollaborationSession {
         data: [UInt8]? = nil,
         onResult: @escaping (Result<PortalConnection.Reply, AuthFailure>) -> Void
     ) {
+        guard isHeldByLab(path) else {
+            return onResult(.failure(AuthFailure(domain: "lab", code: "local-session", message: "The lab does not hold this session.")))
+        }
         guard let portalLease else { return }
         portalLease.request(to: path, type: type, payload: payload, data: data, onReply: onResult)
     }
@@ -412,8 +416,20 @@ public final class CollaborationSession {
         payload: JSONObject,
         data: [UInt8]? = nil
     ) {
-        guard let portalLease else { return }
+        guard isHeldByLab(path), let portalLease else { return }
         portalLease.notify(to: path, type: type, payload: payload, data: data)
+    }
+
+    public func labHolds(sessionID: UUID) -> Bool {
+        sessionsHeldByLab.contains(sessionID)
+    }
+
+    private func isHeldByLab(_ path: String) -> Bool {
+        let segments = path.split(separator: "/")
+        guard segments.count >= 4, segments[0] == "labs", segments[2] == "sessions", let sessionID = UUID(uuidString: String(segments[3])) else {
+            return true
+        }
+        return labHolds(sessionID: sessionID)
     }
 
     /// True once this project has ever joined or created a lab. Local-only
@@ -836,6 +852,7 @@ public final class CollaborationSession {
         try! store.deleteLabMemberships()
         membership = nil
         await stop()
+        sessionsHeldByLab = []
         onLabLeft?()
     }
 
@@ -1261,6 +1278,10 @@ public final class CollaborationSession {
 
     private func enqueueSessionOp(_ op: SessionOp) {
         guard isCollaborative, !removedSessionIDs.contains(op.sessionID) || op.kind == "remove" else { return }
+        if case .add = op {
+            sessionsHeldByLab.insert(op.sessionID)
+        }
+        guard labHolds(sessionID: op.sessionID) || op.kind == "remove" else { return }
         try? store.saveOutboxOps([op])
         sendSessionOpIfJoined(op)
     }
@@ -1287,6 +1308,7 @@ public final class CollaborationSession {
     private func apply(_ op: SessionOp) {
         switch op {
         case .add(let a):
+            sessionsHeldByLab.insert(a.sessionID)
             let session = Session(
                 id: a.sessionID,
                 host: a.host,
@@ -1371,6 +1393,7 @@ public final class CollaborationSession {
             onSessionTraceDataProgressed?(t.sessionID, t.traceID, t.totalSize)
 
         case .remove(let r):
+            sessionsHeldByLab.remove(r.sessionID)
             onSessionRemoved?(r.sessionID)
         }
     }
@@ -1586,6 +1609,7 @@ public final class CollaborationSession {
         let dismissed = (try? store.fetchDismissedLabSessions()) ?? []
         let sessionDicts = (payload["sessions"] as? [JSONObject]) ?? []
         let sessions = sessionDicts.compactMap(Session.fromJSON).filter { !dismissed.contains($0.id) }
+        sessionsHeldByLab = Set(sessions.map(\.id)).union(((try? store.fetchOutboxOps(SessionOp.self)) ?? []).map(\.sessionID))
         let customDicts = (payload["custom_instruments"] as? [JSONObject]) ?? []
         let customBundles = customDicts.compactMap(CustomInstrumentBundle.fromJSON)
         let patternDicts = (payload["patterns"] as? [JSONObject]) ?? []
