@@ -100,11 +100,13 @@ public struct ActionInvocation: @unchecked Sendable {
     public var mission: Mission
     public var sessionID: UUID?
     public var toolCallID: String
+    public var callID: UUID?
 
-    public init(args: [String: Any], mission: Mission, sessionID: UUID?, toolCallID: String) {
+    public init(args: [String: Any], mission: Mission, sessionID: UUID?, toolCallID: String, callID: UUID?) {
         self.args = args
         self.mission = mission
         self.sessionID = sessionID
         self.toolCallID = toolCallID
+        self.callID = callID
     }
 }

@@ -198,7 +198,8 @@ public final class MissionExecutor {
             args: argsObject,
             mission: mission,
             sessionID: action.sessionID,
-            toolCallID: action.toolCallID ?? action.id.uuidString
+            toolCallID: action.toolCallID ?? action.id.uuidString,
+            callID: nil
         )
 
         var completed = running

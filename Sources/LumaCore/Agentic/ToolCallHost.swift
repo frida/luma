@@ -41,7 +41,7 @@ extension ToolCallHost {
         switch await decision(on: callID) {
         case .run:
             let invocation = ActionInvocation(
-                args: call.args, mission: call.mission, sessionID: call.sessionID, toolCallID: call.toolCallID)
+                args: call.args, mission: call.mission, sessionID: call.sessionID, toolCallID: call.toolCallID, callID: callID)
             do {
                 let result = try await catalog.execute(call.spec.name, invocation: invocation)
                 finish(callID, with: .completed(result))

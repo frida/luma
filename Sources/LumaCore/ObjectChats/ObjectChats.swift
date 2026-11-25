@@ -686,7 +686,8 @@ public final class ObjectChats {
             args: args,
             mission: mission,
             sessionID: (args["session_id"] as? String).flatMap(UUID.init(uuidString:)),
-            toolCallID: call.toolCallID
+            toolCallID: call.toolCallID,
+            callID: call.id
         )
         do {
             finishCall(call.id, with: .completed(try await engine.missionTools.execute(call.tool, invocation: invocation)))
@@ -898,7 +899,7 @@ public final class ObjectChats {
 
     func evaluate(_ invocation: ActionInvocation) async -> ActionResult {
         let chatID = invocation.mission.id
-        guard var running = thread(of: chatID).toolCalls.last(where: { $0.toolCallID == invocation.toolCallID && $0.status == .running })
+        guard var running = thread(of: chatID).toolCalls.first(where: { $0.id == invocation.callID && $0.status == .running })
         else { return MissionTools.errorResult("no chat call is running as \(invocation.toolCallID)", code: .notFound) }
         guard let code = invocation.args["code"] as? String, !code.isEmpty else {
             return MissionTools.errorResult("code is required", code: .invalidInput)
