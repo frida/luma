@@ -7,11 +7,6 @@ struct PharoInspectorSheet: View {
     let first: @MainActor () async throws -> PharoObject
     let onDone: () -> Void
 
-    @State private var path = PharoColumnPath()
-    @State private var failure: String?
-
-    private let runtime = PharoRuntime.shared
-
     var body: some View {
         VStack(spacing: 0) {
             HStack {
@@ -21,14 +16,31 @@ struct PharoInspectorSheet: View {
             }
             .padding(8)
             Divider()
+            PharoInspectorPane(engine: engine, first: first, onCloseAll: onDone)
+        }
+        .frame(minWidth: 640, minHeight: 480)
+    }
+}
+
+struct PharoInspectorPane: View {
+    let engine: Engine
+    let first: @MainActor () async throws -> PharoObject
+    let onCloseAll: () -> Void
+
+    @State private var path = PharoColumnPath()
+    @State private var failure: String?
+
+    private let runtime = PharoRuntime.shared
+
+    var body: some View {
+        VStack(spacing: 0) {
             if let failure {
                 PharoFailureView(message: failure)
             }
             columns
         }
-        .frame(minWidth: 640, minHeight: 480)
         .background(.pharoGutter)
-        .pharoMaximizedPane(runtime: runtime, path: path, onCloseAll: onDone)
+        .pharoMaximizedPane(runtime: runtime, path: path, onCloseAll: onCloseAll)
         .environment(\.engine, engine)
         .task { await open() }
     }
@@ -37,7 +49,8 @@ struct PharoInspectorSheet: View {
         GeometryReader { scroller in
             ScrollView(.horizontal) {
                 HStack(spacing: 0) {
-                    pharoColumns(runtime: runtime, path: path, width: pharoColumnWidth(fitting: scroller.size.width), onCloseAll: onDone)
+                    pharoColumns(
+                        runtime: runtime, path: path, width: pharoColumnWidth(fitting: scroller.size.width), onCloseAll: onCloseAll)
                 }
                 .frame(height: scroller.size.height - 2 * pharoColumnMargin)
                 .scrollTargetLayout()

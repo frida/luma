@@ -12,17 +12,6 @@ protocol ConversationMessage: Identifiable {
 enum ConversationSpeaker {
     case user
     case assistant
-    case system
-}
-
-extension AddressNoteMessage: ConversationMessage {
-    var speaker: ConversationSpeaker {
-        switch role {
-        case .user: .user
-        case .assistant: .assistant
-        case .system: .system
-        }
-    }
 }
 
 extension ObjectChatMessage: ConversationMessage {

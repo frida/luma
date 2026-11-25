@@ -89,7 +89,7 @@ struct ActionQueueView: View {
     private func chatCall(_ call: ObjectChatToolCall) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text(engine.objectChats.displayTitle(of: engine.objectChats.chats.first { $0.id == call.chatID }!))
+                Text(engine.objectChats.displayTitle(of: engine.objectChats.chat(withID: call.chatID)!))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)

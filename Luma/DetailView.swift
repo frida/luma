@@ -1,6 +1,7 @@
 import Combine
 import LumaCore
 import SwiftUI
+import SwiftyPharo
 
 struct DetailView: View {
     let engine: Engine
@@ -27,6 +28,10 @@ struct DetailView: View {
             case .some(.mission(let missionID)):
                 MissionView(engine: engine, missionID: missionID, selection: $selection)
                     .id(missionID)
+
+            case .some(.chat(let chatID)):
+                PharoInspectorPane(engine: engine, first: { try await engine.chatColumn(chatID) }, onCloseAll: {})
+                    .id(chatID)
 
             case .some(.patterns):
                 PatternsListView(engine: engine, selection: $selection)
@@ -176,5 +181,14 @@ struct DetailView: View {
 
     private func knownModule(sessionID: UUID, moduleID: String) -> LumaCore.ProcessModule? {
         engine.session(id: sessionID)?.lastKnownModules?.first(where: { $0.id == moduleID })
+    }
+}
+
+extension Engine {
+    fileprivate func chatColumn(_ chatID: UUID) async throws -> PharoObject {
+        if chatID == objectChats.conversationID {
+            _ = objectChats.openConversation()
+        }
+        return try await objectChats.column(of: chatID)
     }
 }

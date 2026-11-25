@@ -9,12 +9,14 @@ let conversationEditorBackground = Color(uiColor: .secondarySystemBackground)
 
 struct ConversationMessageRow<Message: ConversationMessage, Content: View>: View {
     let message: Message
+    let isMine: Bool
     let isEditing: Bool
     @Binding var editingDraft: String
     let content: Content
 
-    init(message: Message, isEditing: Bool, editingDraft: Binding<String>, @ViewBuilder content: () -> Content) {
+    init(message: Message, isMine: Bool, isEditing: Bool, editingDraft: Binding<String>, @ViewBuilder content: () -> Content) {
         self.message = message
+        self.isMine = isMine
         self.isEditing = isEditing
         _editingDraft = editingDraft
         self.content = content()
@@ -55,7 +57,6 @@ struct ConversationMessageRow<Message: ConversationMessage, Content: View>: View
         switch message.speaker {
         case .user: return "person.crop.circle"
         case .assistant: return "sparkles"
-        case .system: return "gearshape"
         }
     }
 
@@ -63,26 +64,24 @@ struct ConversationMessageRow<Message: ConversationMessage, Content: View>: View
         switch message.speaker {
         case .user: return .accentColor
         case .assistant: return .purple
-        case .system: return .secondary
         }
     }
 
     private var roleLabel: String {
         switch message.speaker {
-        case .user: return message.author?.name ?? "You"
+        case .user: return isMine ? "You" : message.author?.name ?? "You"
         case .assistant:
             if let modelID = message.modelID, !modelID.isEmpty, modelID != "default" {
                 return modelID
             }
             return "Assistant"
-        case .system: return "System"
         }
     }
 }
 
 extension ConversationMessageRow where Content == ConversationBubble {
-    init(message: Message, isEditing: Bool, editingDraft: Binding<String>) {
-        self.init(message: message, isEditing: isEditing, editingDraft: editingDraft) {
+    init(message: Message, isMine: Bool, isEditing: Bool, editingDraft: Binding<String>) {
+        self.init(message: message, isMine: isMine, isEditing: isEditing, editingDraft: editingDraft) {
             ConversationBubble(markdown: message.bodyMarkdown, speaker: message.speaker)
         }
     }
@@ -103,7 +102,6 @@ struct ConversationBubble: View {
         switch speaker {
         case .user: return AnyShapeStyle(.quaternary)
         case .assistant: return AnyShapeStyle(.tertiary)
-        case .system: return AnyShapeStyle(.quinary)
         }
     }
 }

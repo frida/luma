@@ -50,18 +50,14 @@ struct GlobalActionQueueToolbarItem: View {
     }
 
     private func applyPending(_ rows: [MissionAction]) {
-        let hadForeground = pending.contains(where: isForegroundForMe)
+        let hadForeground = pending.contains(where: engine.waitsForMe)
         pending = rows
-        let hasForeground = rows.contains(where: isForegroundForMe)
+        let hasForeground = rows.contains(where: engine.waitsForMe)
         if hasForeground, !hadForeground, !isPresented {
             isPresented = true
         } else if pending.isEmpty, engine.objectChats.callsWaitingForMe.isEmpty, isPresented {
             isPresented = false
         }
-    }
-
-    private func isForegroundForMe(_ action: MissionAction) -> Bool {
-        !engine.isAmbientMission(action.missionID) && engine.waitsForMe(action)
     }
 }
 

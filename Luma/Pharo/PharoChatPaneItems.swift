@@ -37,11 +37,7 @@ struct PharoChatPaneItems {
     }
 
     private var recentChats: [ObjectChat] {
-        Array(chats.chats.sorted { lastActivity(of: $0) > lastActivity(of: $1) }.prefix(Self.recentCount))
-    }
-
-    private func lastActivity(of chat: ObjectChat) -> Date {
-        chats.thread(of: chat.id).messages.last?.createdAt ?? chat.createdAt
+        Array(chats.listed.prefix(Self.recentCount))
     }
 
     private func additions(to chat: ObjectChat) -> [PharoPaneMenuItem] {

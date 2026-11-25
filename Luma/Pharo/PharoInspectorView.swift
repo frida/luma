@@ -416,9 +416,12 @@ struct PharoObjectColumn: View {
                 objectInspector
             }
         }
+        .environment(\.pharoColumn, PharoColumnPresence(handle: object.handle, close: onClose))
         .overlay(alignment: .topLeading) { if isMaximized { restoreButton } }
         .overlay(alignment: .topTrailing) { menuButton }
         .onHover { isPointedAt = $0 }
+        .onAppear { PharoColumnLifetimes.shared.appeared(object.handle) }
+        .onDisappear { PharoColumnLifetimes.shared.disappeared(object.handle) }
         .task(id: reloadToken) { await load() }
         .onChange(of: PharoObjectChanges.shared.generation(of: object.handle)) { reloadToken &+= 1 }
     }
@@ -637,6 +640,10 @@ struct PharoDeclaredView: View {
             PharoPatternView(kind: .bytes, reference: declaration.text ?? "")
         case "lumaPatternVisualization":
             PharoPatternView(kind: .visualization, reference: declaration.text ?? "")
+        case "lumaDisassembly":
+            if let engine {
+                PharoDisassemblyPage(reference: declaration.text ?? "", engine: engine, onSelect: onSelect)
+            }
         case "lumaChat":
             if let engine {
                 PharoObjectChatView(engine: engine, chatID: UUID(uuidString: declaration.text ?? "")!, onSelect: onSelect)

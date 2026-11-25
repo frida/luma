@@ -248,12 +248,13 @@ struct PharoChatThreadView: View {
         ) {
             if let reason = chats.unsent[message.id] {
                 VStack(alignment: .trailing, spacing: 4) {
-                    ConversationMessageRow(message: message, isEditing: isEditing, editingDraft: $editingDraft)
+                    ConversationMessageRow(
+                        message: message, isMine: chats.isMine(message), isEditing: isEditing, editingDraft: $editingDraft)
                         .opacity(0.55)
                     unsentNotice(for: message, reason: reason)
                 }
             } else {
-                ConversationMessageRow(message: message, isEditing: isEditing, editingDraft: $editingDraft)
+                ConversationMessageRow(message: message, isMine: chats.isMine(message), isEditing: isEditing, editingDraft: $editingDraft)
             }
         }
     }
@@ -279,7 +280,7 @@ struct PharoChatThreadView: View {
     }
 
     private func answer(_ message: ObjectChatMessage, calls: [ObjectChatToolCall]) -> some View {
-        ConversationMessageRow(message: message, isEditing: false, editingDraft: .constant("")) {
+        ConversationMessageRow(message: message, isMine: chats.isMine(message), isEditing: false, editingDraft: .constant("")) {
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(PharoChatSegment.split(message.bodyMarkdown, around: calls)) { segment in
                     switch segment {

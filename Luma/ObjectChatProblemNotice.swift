@@ -16,7 +16,7 @@ struct ObjectChatProblemNotice: View {
             case .refusedByLab: "The lab turned a change away: \(problem.reason)"
             case .notSaved: "A chat change could not be saved: \(problem.reason)"
             }
-        guard namesChat, let chat = chats.chats.first(where: { $0.id == problem.chatID }) else { return what }
+        guard namesChat, let chatID = problem.chatID, let chat = chats.chat(withID: chatID) else { return what }
         return "\(chats.displayTitle(of: chat)): \(what)"
     }
 }

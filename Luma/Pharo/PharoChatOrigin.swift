@@ -15,6 +15,7 @@ struct PharoChatOrigin: Sendable {
 extension EnvironmentValues {
     @Entry var engine: Engine?
     @Entry var pharoChatOrigin: PharoChatOrigin?
+    @Entry var pharoColumn: PharoColumnPresence?
 }
 
 extension View {
@@ -58,7 +59,7 @@ private struct PharoChatOriginAtDepth: ViewModifier {
         if case .string(let code) = call?.args["code"] {
             source = code
         }
-        let title = chats.displayTitle(of: chats.chats.first { $0.id == chatID }!)
+        let title = chats.displayTitle(of: chats.chat(withID: chatID)!)
         return PharoChatOrigin(origin: .chat(chatID: chatID, objectID: objectID), label: "\(objectID) in “\(title)”", source: source)
     }
 }

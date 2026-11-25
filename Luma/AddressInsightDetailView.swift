@@ -1,5 +1,6 @@
 import LumaCore
 import SwiftUI
+import SwiftyPharo
 
 struct AddressInsightDetailView: View {
     let session: LumaCore.ProcessSession
@@ -21,7 +22,10 @@ struct AddressInsightDetailView: View {
     @State private var isLoadingMore = false
     @State private var disasmScope: DisassemblyScope = .span
 
+    @State private var columnPath = PharoColumnPath(includesPage: true)
+
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.errorPresenter) private var errorPresenter
 
     private var node: LumaCore.ProcessNode? {
         engine.node(forSessionID: session.id)
@@ -51,13 +55,7 @@ struct AddressInsightDetailView: View {
                     )
                     .padding(.vertical, 2)
                 case .disassembly:
-                    DisassemblyView(
-                        lines: disasmLines,
-                        sessionID: session.id,
-                        engine: engine,
-                        selection: $selection,
-                        onNeedMore: { loadMoreDisasm() }
-                    )
+                    disassemblyColumns
                 }
             }
         }
@@ -82,6 +80,71 @@ struct AddressInsightDetailView: View {
         }
         .onChange(of: insight?.lastResolvedAddress) { _, _ in refresh() }
         .onChange(of: insight.flatMap { engine.insightRefreshGenerations[$0.id] }) { _, _ in refresh() }
+    }
+
+    private var disassemblyColumns: some View {
+        VStack(spacing: 0) {
+            if !columnPath.objects.isEmpty {
+                PharoOverviewStrip(path: columnPath, pageName: "Disassembly")
+                Divider()
+            }
+            GeometryReader { scroller in
+                ScrollView(.horizontal) {
+                    HStack(spacing: 0) {
+                        DisassemblyView(
+                            lines: disasmLines,
+                            sessionID: session.id,
+                            engine: engine,
+                            selection: $selection,
+                            onNeedMore: { loadMoreDisasm() },
+                            jumpRequest: DisassemblyJumpRequests.shared.target(in: insightID),
+                            onJumpTaken: { DisassemblyJumpRequests.shared.clear(in: insightID) },
+                            onChat: openChat,
+                            scrollsHorizontally: !columnPath.objects.isEmpty
+                        )
+                        .frame(width: pageWidth(fitting: scroller.size.width))
+                        .id(PharoColumnPath.pageID)
+                        if !columnPath.objects.isEmpty {
+                            if !columnPath.isFirstColumnCollapsed {
+                                PharoDrillArrow()
+                            }
+                            pharoColumns(
+                                runtime: PharoRuntime.shared,
+                                path: columnPath,
+                                width: pharoColumnWidth(fitting: scroller.size.width),
+                                onCloseAll: columnPath.clear)
+                        }
+                    }
+                    .frame(height: scroller.size.height - 2 * columnMargin)
+                    .scrollTargetLayout()
+                }
+                .contentMargins(columnMargin, for: .scrollContent)
+                .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+                .pharoColumnScrolling(columnPath)
+            }
+        }
+        .pharoMaximizedPane(runtime: PharoRuntime.shared, path: columnPath, onCloseAll: columnPath.clear)
+        .environment(\.engine, engine)
+    }
+
+    private func pageWidth(fitting available: CGFloat) -> CGFloat {
+        guard !columnPath.objects.isEmpty else { return available }
+        return max(pharoPreferredColumnWidth, available - pharoColumnWidth(fitting: available) - 4 * pharoColumnMargin)
+    }
+
+    private var columnMargin: CGFloat {
+        columnPath.objects.isEmpty ? 0 : pharoColumnMargin
+    }
+
+    private func openChat(about address: UInt64, chatID: UUID?) {
+        let sessionID = session.id
+        Task { @MainActor in
+            do {
+                columnPath.startOver(at: try await engine.chatColumn(chatID, aboutInstructionAt: address, in: sessionID))
+            } catch {
+                errorPresenter.present("Can’t open the chat", error.localizedDescription)
+            }
+        }
     }
 
     private func memoryWriter(of insight: LumaCore.AddressInsight) -> ((_ bytes: [UInt8], _ address: UInt64) async throws -> Void)? {
@@ -196,29 +259,16 @@ struct AddressInsightDetailView: View {
         Task { @MainActor in
             defer { isLoadingMore = false }
 
-            let decoded = await fetchDisasmPage(start: last.address, count: 64).lines
+            let page = await engine.disassemblyLines(sessionID: session.id, after: last, colorScheme: colorScheme)
 
             guard !Task.isCancelled else { return }
-            guard !decoded.isEmpty else { return }
-
-            var page = decoded
-            page.removeFirst()
-            guard !page.isEmpty else { return }
 
             disasmLines.append(contentsOf: page)
         }
     }
 
-    private func fetchDisasmPage(
-        start: UInt64,
-        count: Int = 64
-    ) async -> DisassemblyPage {
-        guard let disassembler = engine.disassembler(forSessionID: session.id) else {
-            return DisassemblyPage(lines: [], scope: .span)
-        }
-        return await disassembler.disassemblePage(
-            DisassemblyRequest(address: start, count: count, appearance: colorScheme == .dark ? .dark : .light)
-        )
+    private func fetchDisasmPage(start: UInt64, count: Int = 64) async -> DisassemblyPage {
+        await engine.disassemblyPage(sessionID: session.id, start: start, count: count, colorScheme: colorScheme)
     }
 }
 
@@ -229,6 +279,11 @@ struct DisassemblyView: View {
     let engine: Engine
     @Binding var selection: SidebarItemID?
     let onNeedMore: () -> Void
+    var jumpRequest: UInt64?
+    var onJumpTaken: () -> Void = {}
+    var onChat: ((UInt64, UUID?) -> Void)?
+    var onActivate: ((UInt64) -> Void)?
+    var scrollsHorizontally = false
 
     @State private var selectedAddr: UInt64?
     @FocusState private var isFocused: Bool
@@ -240,13 +295,12 @@ struct DisassemblyView: View {
     @State private var pulseTask: Task<Void, Never>?
 
     @State private var requestedJumpTarget: UInt64?
-    @State private var openNotePopoverAddress: UInt64?
 
     let rowHeight: CGFloat = 20
 
     var body: some View {
         ScrollViewReader { scrollProxy in
-            ScrollView {
+            ScrollView(scrollsHorizontally ? [.horizontal, .vertical] : .vertical) {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(lines) { line in
                         DisasmRow(
@@ -259,7 +313,8 @@ struct DisassemblyView: View {
                             hoveredAddr: $hoveredAddr,
                             isPulsing: pulsingAddr == line.address,
                             pulsePhase: pulsePhase,
-                            openNotePopoverAddress: $openNotePopoverAddress,
+                            onChat: onChat.map { open in { open(line.address, $0) } },
+                            onActivate: onActivate.map { activate in { activate(line.address) } },
                             onSelect: {
                                 selectedAddr = line.address
                                 isFocused = true
@@ -282,7 +337,7 @@ struct DisassemblyView: View {
                     }
                 }
                 .frame(maxWidth: 800, alignment: .leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minWidth: scrollsHorizontally ? 800 : nil, maxWidth: .infinity, alignment: .leading)
                 .padding(.leading, 54)
                 .padding(.trailing, 12)
                 .overlay(alignment: .topLeading) {
@@ -301,53 +356,58 @@ struct DisassemblyView: View {
                 isFocused = true
             }
             .onKeyPress(.upArrow) {
-                if openNotePopoverAddress != nil { return .ignored }
                 moveSelection(-1, scrollProxy: scrollProxy)
                 return .handled
             }
             .onKeyPress(.downArrow) {
-                if openNotePopoverAddress != nil { return .ignored }
                 moveSelection(1, scrollProxy: scrollProxy)
                 return .handled
             }
             .onKeyPress("k") {
-                if openNotePopoverAddress != nil { return .ignored }
                 moveSelection(-1, scrollProxy: scrollProxy)
                 return .handled
             }
             .onKeyPress("j") {
-                if openNotePopoverAddress != nil { return .ignored }
                 moveSelection(1, scrollProxy: scrollProxy)
                 return .handled
             }
             .onKeyPress(.return) {
-                if openNotePopoverAddress != nil { return .ignored }
                 jumpSelection(scrollProxy: scrollProxy)
                 return .handled
             }
             .onKeyPress(.pageUp) {
-                if openNotePopoverAddress != nil { return .ignored }
                 moveSelection(-20, scrollProxy: scrollProxy)
                 return .handled
             }
             .onKeyPress(.pageDown) {
-                if openNotePopoverAddress != nil { return .ignored }
                 moveSelection(20, scrollProxy: scrollProxy)
                 return .handled
             }
             .onKeyPress(.home) {
-                if openNotePopoverAddress != nil { return .ignored }
                 selectEdge(first: true, scrollProxy: scrollProxy)
                 return .handled
             }
             .onKeyPress(.end) {
-                if openNotePopoverAddress != nil { return .ignored }
                 selectEdge(first: false, scrollProxy: scrollProxy)
                 return .handled
             }
             .onAppear { selectFirstIfNeeded() }
             .onChange(of: lines.isEmpty) { _, _ in selectFirstIfNeeded() }
+            .onChange(of: pendingJump, initial: true) { _, request in
+                guard let target = request.target, request.isLoaded else { return }
+                onJumpTaken()
+                try? handleJump(target, scrollProxy: scrollProxy)
+            }
         }
+    }
+
+    private var pendingJump: JumpRequest {
+        JumpRequest(target: jumpRequest, isLoaded: jumpRequest.map { target in lines.contains { $0.address == target } } ?? false)
+    }
+
+    private struct JumpRequest: Equatable {
+        let target: UInt64?
+        let isLoaded: Bool
     }
 
     private func handleJump(_ target: UInt64, scrollProxy: ScrollViewProxy) throws {
@@ -356,7 +416,7 @@ struct DisassemblyView: View {
             isFocused = true
 
             withAnimation(.snappy) {
-                scrollProxy.scrollTo(target, anchor: .center)
+                scrollProxy.scrollTo(target, anchor: .leading)
             }
 
             pulseTask?.cancel()
@@ -417,7 +477,7 @@ struct DisassemblyView: View {
 
         selectedAddr = addr
         withAnimation(.snappy) {
-            scrollProxy.scrollTo(addr, anchor: .center)
+            scrollProxy.scrollTo(addr, anchor: .leading)
         }
 
         if next >= lines.count - 1 {
@@ -429,7 +489,7 @@ struct DisassemblyView: View {
         guard let addr = first ? lines.first?.address : lines.last?.address else { return }
         selectedAddr = addr
         withAnimation(.snappy) {
-            scrollProxy.scrollTo(addr, anchor: .center)
+            scrollProxy.scrollTo(addr, anchor: .leading)
         }
         if !first {
             onNeedMore()
@@ -462,7 +522,8 @@ private struct DisasmRow: View {
     @Binding var hoveredAddr: UInt64?
     let isPulsing: Bool
     let pulsePhase: Bool
-    @Binding var openNotePopoverAddress: UInt64?
+    let onChat: ((UUID?) -> Void)?
+    let onActivate: (() -> Void)?
     let onSelect: () -> Void
     let onJump: (UInt64) throws -> Void
     let requestedJumpTarget: UInt64?
@@ -473,7 +534,7 @@ private struct DisasmRow: View {
     var body: some View {
         let annotation = engine.addressAnnotations[sessionID]?[line.address]
         let decorations = annotation?.decorations ?? []
-        let noteCount = annotation?.noteCount ?? 0
+        let chatIDs = annotation?.chatIDs ?? []
 
         HStack(alignment: .center, spacing: 10) {
             HStack(spacing: 3) {
@@ -484,16 +545,8 @@ private struct DisasmRow: View {
                         .opacity(0.45)
                         .help(deco.help ?? "")
                 }
-                if noteCount > 0 {
-                    Image(systemName: "bubble.left.fill")
-                        .font(.system(size: 8))
-                        .foregroundStyle(.tint)
-                        .frame(width: 14, height: 14)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            openNotePopoverAddress = line.address
-                        }
-                        .help("\(noteCount) thread\(noteCount == 1 ? "" : "s")")
+                if !chatIDs.isEmpty, let onChat {
+                    ChatBubble(chatIDs: chatIDs, chats: engine.objectChats, onChat: onChat)
                 }
             }
             .frame(width: 24, alignment: .trailing)
@@ -514,10 +567,12 @@ private struct DisasmRow: View {
                     selection: $selection
                 ) {
                     Divider()
-                    Button {
-                        openNotePopoverAddress = line.address
-                    } label: {
-                        Label("Notes & AI…", systemImage: "bubble.left.and.text.bubble.right")
+                    if let onChat {
+                        Button {
+                            onChat(nil)
+                        } label: {
+                            Label("Chat about This Instruction", systemImage: "bubble.left.and.text.bubble.right")
+                        }
                     }
                     Button {
                         Task { @MainActor in
@@ -526,29 +581,6 @@ private struct DisasmRow: View {
                     } label: {
                         Label("Go to Function Start", systemImage: "arrow.up.left.and.arrow.down.right")
                     }
-                }
-                .popover(
-                    isPresented: Binding(
-                        get: { openNotePopoverAddress == line.address },
-                        set: { presented in
-                            if !presented, openNotePopoverAddress == line.address {
-                                openNotePopoverAddress = nil
-                            }
-                        }
-                    ),
-                    arrowEdge: .trailing
-                ) {
-                    AddressNotePopover(
-                        engine: engine,
-                        sessionID: sessionID,
-                        address: line.address,
-                        isPresented: Binding(
-                            get: { openNotePopoverAddress == line.address },
-                            set: { presented in
-                                if !presented { openNotePopoverAddress = nil }
-                            }
-                        )
-                    )
                 }
 
             Text(line.bytesText.attributed)
@@ -623,6 +655,12 @@ private struct DisasmRow: View {
         .onTapGesture {
             onSelect()
         }
+        .simultaneousGesture(TapGesture(count: 2).onEnded { onActivate?() })
+        .accessibilityActions {
+            if let onActivate {
+                Button("Open Instruction", action: onActivate)
+            }
+        }
         .onHover { isHovering in
             hoveredAddr = isHovering ? line.address : nil
         }
@@ -663,6 +701,52 @@ private struct DisasmRow: View {
         } catch {
             errorPresenter.present("Can’t open function", error.localizedDescription)
         }
+    }
+}
+
+private struct ChatBubble: View {
+    let chatIDs: [UUID]
+    let chats: ObjectChats
+    let onChat: (UUID?) -> Void
+
+    var body: some View {
+        Group {
+            if let only = chatIDs.first, chatIDs.count == 1 {
+                Button {
+                    onChat(only)
+                } label: {
+                    icon
+                }
+                .buttonStyle(.plain)
+            } else {
+                Menu {
+                    ForEach(chatIDs, id: \.self) { chatID in
+                        Button(title(of: chatID)) { onChat(chatID) }
+                    }
+                    Divider()
+                    Button("New Chat") { onChat(nil) }
+                } label: {
+                    icon
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+            }
+        }
+        .help(chatIDs.map(title(of:)).joined(separator: "\n"))
+        .accessibilityLabel(chatIDs.count == 1 ? "Open chat" : "Chats")
+    }
+
+    private var icon: some View {
+        Image(systemName: "bubble.left.fill")
+            .font(.system(size: 8))
+            .foregroundStyle(.tint)
+            .frame(width: 14, height: 14)
+            .contentShape(Rectangle())
+    }
+
+    private func title(of chatID: UUID) -> String {
+        chats.chat(withID: chatID).map(chats.displayTitle(of:)) ?? ""
     }
 }
 
@@ -832,3 +916,32 @@ private enum FlowPalette {
     ]
 }
 
+@MainActor
+@Observable
+final class DisassemblyJumpRequests {
+    static let shared = DisassemblyJumpRequests()
+
+    private var targets: [UUID: UInt64] = [:]
+
+    func request(_ address: UInt64, in insightID: UUID) {
+        targets[insightID] = address
+    }
+
+    func target(in insightID: UUID) -> UInt64? {
+        targets[insightID]
+    }
+
+    func clear(in insightID: UUID) {
+        targets[insightID] = nil
+    }
+}
+
+extension Engine {
+    func chatColumn(_ chatID: UUID?, aboutInstructionAt address: UInt64, in sessionID: UUID) async throws -> PharoObject {
+        try await PharoRuntime.shared.startBundledImage(for: self)
+        guard let chatID else {
+            return try await objectChats.start(aboutInstructionAt: anchor(sessionID: sessionID, address: address), in: sessionID).column
+        }
+        return try await objectChats.column(of: chatID)
+    }
+}

@@ -47,6 +47,11 @@ struct SidebarView: View {
                     SidebarMissionRow(mission: mission, engine: engine, selection: $selection)
                         .sidebarItemTag(SidebarItemID.mission(mission.id))
                 }
+                SidebarChatsRow(chats: engine.objectChats)
+                ForEach(engine.objectChats.sidebarChatIDs, id: \.self) { chatID in
+                    SidebarChatRow(chatID: chatID, engine: engine)
+                        .sidebarItemTag(SidebarItemID.chat(chatID))
+                }
                 PatternsSidebarRows(engine: engine, selection: $selection)
             }
 
@@ -266,6 +271,105 @@ private struct SidebarMissionsRow: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("sidebar.missions")
+    }
+}
+
+private struct SidebarChatsRow: View {
+    let chats: ObjectChats
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "bubble.left.and.text.bubble.right")
+                .frame(width: 18, alignment: .center)
+            Text("Chats")
+            Spacer()
+            SidebarUnreadBadge(count: chats.sidebarChatIDs.reduce(0) { $0 + chats.unreadCount(in: $1) })
+            Text("\(chats.sidebarChatIDs.count)").font(.caption).foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("sidebar.chats")
+    }
+}
+
+private struct SidebarChatRow: View {
+    let chatID: UUID
+    let engine: Engine
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: chatID == chats.conversationID ? "person.2" : "bubble.left")
+                .foregroundStyle(.secondary)
+                .frame(width: subrowIconWidth)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(chat.map(chats.displayTitle(of:)) ?? "Project Chat")
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Text(chat.map(about(of:)) ?? "Project")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if let last = chats.thread(of: chatID).messages.last {
+                    Text("\(speaker(of: last)) · \(last.createdAt.formatted(date: .omitted, time: .shortened))")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 0)
+            SidebarUnreadBadge(count: chats.unreadCount(in: chatID))
+        }
+        .padding(.leading, sidebarChildIndent)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("sidebar.chat.\(chatID.uuidString)")
+    }
+
+    private var chats: ObjectChats {
+        engine.objectChats
+    }
+
+    private var chat: ObjectChat? {
+        chats.chat(withID: chatID)
+    }
+
+    private func about(of chat: ObjectChat) -> String {
+        switch chats.subject(of: chat) {
+        case .project:
+            "Project"
+        case .instruction(let place):
+            [place.anchor.displayString, place.sessionName].compactMap { $0 }.joined(separator: " · ")
+        case .object(_, let label):
+            if case .object(_, _, _, let className, _, _) = chat.subject { "\(className) · \(label)" } else { label }
+        }
+    }
+
+    private func speaker(of message: ObjectChatMessage) -> String {
+        switch message.role {
+        case .assistant: "Assistant"
+        case .user: chats.isMine(message) ? "You" : message.author?.name ?? "You"
+        }
+    }
+}
+
+extension ObjectChats {
+    fileprivate var sidebarChatIDs: [UUID] {
+        [conversationID] + listed.map(\.id).filter { $0 != conversationID }
+    }
+}
+
+private struct SidebarUnreadBadge: View {
+    let count: Int
+
+    var body: some View {
+        if count > 0 {
+            Text("\(count)")
+                .font(.caption2.bold())
+                .padding(.horizontal, 5)
+                .padding(.vertical, 1)
+                .background(.red, in: Capsule())
+                .foregroundStyle(.white)
+                .accessibilityLabel("\(count) unread")
+        }
     }
 }
 
