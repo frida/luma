@@ -53,7 +53,9 @@ export function enumerateModuleRanges(name: string): ModuleRangeEntry[] {
 }
 
 export function findRangeByAddress(address: string): ProcessRangeEntry | null {
-    const r = Process.findRangeByAddress(ptr(address));
+    const target = ptr(address);
+    if (!isMapped(target)) return null;
+    const r = Process.findRangeByAddress(target);
     if (r === null) return null;
     return {
         base: r.base.toString(),
@@ -61,6 +63,15 @@ export function findRangeByAddress(address: string): ProcessRangeEntry | null {
         protection: r.protection,
         filePath: r.file ? r.file.path : null,
     };
+}
+
+function isMapped(address: NativePointer): boolean {
+    try {
+        Memory.queryProtection(address);
+        return true;
+    } catch (e) {
+        return false;
+    }
 }
 
 export function getModuleIdentity(name: string): string | null {
