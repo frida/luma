@@ -11,6 +11,7 @@ extension InstrumentLayout {
         public var boxInset: Double
         public var lineHeight: Double
         public var rowHeight: Double
+        public var twoLineRowHeight: Double
         public var counterHeight: Double
 
         public init(
@@ -20,6 +21,7 @@ extension InstrumentLayout {
             boxInset: Double = 8,
             lineHeight: Double = 17,
             rowHeight: Double = 24,
+            twoLineRowHeight: Double = 40,
             counterHeight: Double = 34
         ) {
             self.spacing = spacing
@@ -28,6 +30,7 @@ extension InstrumentLayout {
             self.boxInset = boxInset
             self.lineHeight = lineHeight
             self.rowHeight = rowHeight
+            self.twoLineRowHeight = twoLineRowHeight
             self.counterHeight = counterHeight
         }
 
@@ -62,9 +65,11 @@ extension InstrumentLayout {
         width: Double,
         height: Double,
         rowCounts: [String: Int] = [:],
+        subtitledRowCounts: [String: Int] = [:],
         metrics: Metrics = .standard
     ) -> Arrangement {
-        var arranger = Arranger(widgets: widgets, rowCounts: rowCounts, metrics: metrics, pageWidth: width.rounded(.down))
+        var arranger = Arranger(
+            widgets: widgets, rowCounts: rowCounts, subtitledRowCounts: subtitledRowCounts, metrics: metrics, pageWidth: width.rounded(.down))
         arranger.findFoldedRows(in: root, at: [])
         let page = PageColumn(root: root)
         let pageHeight = height.rounded(.down)
@@ -110,15 +115,17 @@ private struct Arranger {
 
     let widgets: [String: InstrumentWidget]
     let rowCounts: [String: Int]
+    let subtitledRowCounts: [String: Int]
     let metrics: InstrumentLayout.Metrics
     let pageWidth: Double
     var frames: [String: Frame] = [:]
     var containerFrames: [InstrumentLayout.Path: Frame] = [:]
     var foldedRows: Set<InstrumentLayout.Path> = []
 
-    init(widgets: [InstrumentWidget], rowCounts: [String: Int], metrics: InstrumentLayout.Metrics, pageWidth: Double) {
+    init(widgets: [InstrumentWidget], rowCounts: [String: Int], subtitledRowCounts: [String: Int], metrics: InstrumentLayout.Metrics, pageWidth: Double) {
         self.widgets = Dictionary(widgets.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         self.rowCounts = rowCounts
+        self.subtitledRowCounts = subtitledRowCounts
         self.metrics = metrics
         self.pageWidth = pageWidth
     }
@@ -283,7 +290,7 @@ private struct Arranger {
         let rows = min(rowCounts[widget.id] ?? 0, maxRows ?? InstrumentLayout.defaultRowCap)
         switch widget.kind {
         case .counter: return metrics.counterHeight
-        case .list: return rows == 0 ? metrics.lineHeight : Double(rows) * metrics.rowHeight
+        case .list: return rows == 0 ? metrics.lineHeight : listHeight(of: widget, rows: rows)
         case .table: return rows == 0 ? metrics.lineHeight : Double(rows + 1) * metrics.rowHeight
         case .console: return 250
         case .hex: return 16 * metrics.lineHeight
@@ -292,10 +299,15 @@ private struct Arranger {
         }
     }
 
+    private func listHeight(of widget: InstrumentWidget, rows: Int) -> Double {
+        let subtitled = min(subtitledRowCounts[widget.id] ?? 0, rows)
+        return Double(rows - subtitled) * metrics.rowHeight + Double(subtitled) * metrics.twoLineRowHeight
+    }
+
     private func minimumContentHeight(of widget: InstrumentWidget, maxRows: Int?) -> Double {
         let rows = Double(min(4, maxRows ?? InstrumentLayout.defaultRowCap))
         switch widget.kind {
-        case .list: return rows * metrics.rowHeight
+        case .list: return listHeight(of: widget, rows: Int(rows))
         case .table: return (rows + 1) * metrics.rowHeight
         case .console: return 120
         case .hex: return 6 * metrics.lineHeight
