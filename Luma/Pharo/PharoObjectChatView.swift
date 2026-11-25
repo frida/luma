@@ -61,9 +61,6 @@ struct PharoObjectChatView: View {
                 if !chat.editors.isEmpty {
                     AuthorAvatarStack(authors: chat.editors, avatarSize: 18)
                 }
-                if chats.isLocalOnly(chatID) {
-                    NotInLabMark.localOnlyChat
-                }
                 Spacer()
                 showSubjectButton(chats.subject(of: chat))
                 if chats.canRename(chatID) {
