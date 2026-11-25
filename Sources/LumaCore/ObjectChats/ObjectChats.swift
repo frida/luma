@@ -13,8 +13,13 @@ public final class ObjectChats {
         public var liveObjectIDs: Set<String> = []
     }
 
-    public private(set) var chats: [ObjectChat] = []
+    public private(set) var chats: [ObjectChat] = [] {
+        didSet { engine?.instructionChatsChanged(from: oldValue, to: chats) }
+    }
     public private(set) var threads: [UUID: Thread] = [:]
+    private var drafts: [UUID: ObjectChat] = [:]
+    private var discardedDrafts: Set<UUID> = []
+    private var deletedHere: Set<UUID> = []
     public private(set) var readThrough: [UUID: Int] = [:]
     public private(set) var unsent: [UUID: String] = [:]
     public private(set) var removedInLab: Set<UUID> = []
@@ -62,6 +67,48 @@ public final class ObjectChats {
         chats.first { $0.id == conversationID }
     }
 
+    public func chat(withID chatID: UUID) -> ObjectChat? {
+        chats.first { $0.id == chatID } ?? drafts[chatID]
+    }
+
+    public func isDraft(_ chatID: UUID) -> Bool {
+        drafts[chatID] != nil
+    }
+
+    public func wasDiscarded(_ chatID: UUID) -> Bool {
+        discardedDrafts.contains(chatID)
+    }
+
+    public func wasDeletedHere(_ chatID: UUID) -> Bool {
+        deletedHere.contains(chatID)
+    }
+
+    public var listed: [ObjectChat] {
+        chats.sorted { a, b in
+            guard (a.id == conversationID) == (b.id == conversationID) else { return a.id == conversationID }
+            return (lastActivity(of: a), b.id.uuidString) > (lastActivity(of: b), a.id.uuidString)
+        }
+    }
+
+    public func lastActivity(of chat: ObjectChat) -> Date {
+        thread(of: chat.id).messages.last?.createdAt ?? chat.createdAt
+    }
+
+    public func subject(of chat: ObjectChat) -> ObjectChatSubjectPlace {
+        switch chat.subject {
+        case .project:
+            .project
+        case .instruction(let sessionID, let anchor):
+            .instruction(engine!.place(ofInstructionChat: chat.id, sessionID: sessionID, anchor: anchor))
+        case .object(let origin, let label, _, _, _, _):
+            .object(origin: origin, label: label)
+        }
+    }
+
+    public func chats(aboutInstructionAt address: UInt64, in sessionID: UUID) -> [ObjectChat] {
+        (engine!.addressAnnotations[sessionID]?[address]?.chatIDs ?? []).compactMap { chatID in chats.first { $0.id == chatID } }
+    }
+
     public func displayTitle(of chat: ObjectChat) -> String {
         if chat.id == conversationID { return "Project Chat" }
         if let title = chat.title { return title }
@@ -78,7 +125,7 @@ public final class ObjectChats {
     }
 
     func displayTitle(ofChatWithID chatID: UUID) -> String? {
-        chats.first { $0.id == chatID }.map(displayTitle(of:))
+        chat(withID: chatID).map(displayTitle(of:))
     }
 
     private static func chatAboutChat(titled title: String) -> String {
@@ -112,12 +159,12 @@ public final class ObjectChats {
     }
 
     public func canDelete(_ chatID: UUID) -> Bool {
-        guard chatID != conversationID, let chat = chats.first(where: { $0.id == chatID }) else { return false }
+        guard chatID != conversationID, let chat = chat(withID: chatID) else { return false }
         return removedInLab.contains(chatID) || isMine(chat.creator) || isLabOwner
     }
 
     public func canRename(_ chatID: UUID) -> Bool {
-        chatID != conversationID && !removedInLab.contains(chatID) && chats.contains { $0.id == chatID }
+        chatID != conversationID && !removedInLab.contains(chatID) && chat(withID: chatID) != nil
     }
 
     public func canEdit(_ message: ObjectChatMessage) -> Bool {
@@ -227,14 +274,15 @@ public final class ObjectChats {
         in image: ObjectChatImage
     ) async throws -> (chat: ObjectChat, column: PharoObject) {
         guard chats.count < Self.chatsPerLab else { throw ObjectChatError.full("chats", Self.chatsPerLab) }
-        keep(chat)
+        drafts[chat.id] = chat
+        threads[chat.id] = Thread()
         do {
             try await image.store(object, as: "o1", named: "self")
+            try await image.retitle(displayTitle(of: chat))
         } catch {
-            await drop(chat.id)
+            await discard(chat.id)
             throw error
         }
-        enqueue(.chatUpsert(chat))
         threads[chat.id]?.liveObjectIDs.insert("o1")
         let subject = ObjectChatObject(
             chatID: chat.id,
@@ -247,8 +295,33 @@ public final class ObjectChats {
             standsFor: nil,
             addedBy: me
         )
-        if chat.subject == .project { keep(subject) } else { upsert(subject) }
+        keep(subject)
         return (chat, try await image.column())
+    }
+
+    public func discard(_ chatID: UUID) async {
+        guard drafts.removeValue(forKey: chatID) != nil else { return }
+        discardedDrafts.insert(chatID)
+        threads[chatID] = nil
+        try? await image(of: chatID).forget()
+    }
+
+    func discardDrafts(ofSession sessionID: UUID) {
+        for draft in drafts.values where draft.sessionID == sessionID {
+            Task { await self.discard(draft.id) }
+        }
+    }
+
+    private func promote(_ chatID: UUID) {
+        let draft = drafts.removeValue(forKey: chatID)!
+        keep(draft)
+        enqueue(.chatUpsert(draft))
+        for object in thread(of: chatID).objects {
+            keep(object)
+            if !(draft.subject == .project && object.objectID == "o1") {
+                enqueue(.objectUpsert(object))
+            }
+        }
     }
 
     public func column(of chatID: UUID) async throws -> PharoObject {
@@ -309,8 +382,11 @@ public final class ObjectChats {
     }
 
     private func append(_ text: String, in chatID: UUID, askingAssistant: Bool) throws -> ObjectChatMessage {
-        guard chats.contains(where: { $0.id == chatID }) else { throw ObjectChatError.gone }
+        guard chat(withID: chatID) != nil else { throw ObjectChatError.gone }
         guard text.utf8.count <= Self.bodyByteLimit else { throw ObjectChatError.tooLong }
+        if isDraft(chatID) {
+            promote(chatID)
+        }
         let message = ObjectChatMessage(
             chatID: chatID,
             index: nextMessageIndex(in: chatID),
@@ -698,6 +774,11 @@ public final class ObjectChats {
         var renamed = chat(chatID)
         renamed.title = String(title.prefix(200))
         renamed.updatedAt = Date()
+        if isDraft(chatID) {
+            drafts[chatID] = renamed
+            Task { try? await self.image(of: chatID).retitle(self.displayTitle(of: renamed)) }
+            return
+        }
         keep(renamed)
         enqueue(.chatUpsert(renamed))
     }
@@ -721,9 +802,11 @@ public final class ObjectChats {
 
     public func delete(_ chatID: UUID) async throws {
         guard chatID != conversationID else { throw ObjectChatError.conversationStays }
+        guard !isDraft(chatID) else { return await discard(chatID) }
         guard chats.contains(where: { $0.id == chatID }) else { return }
-        guard !removedInLab.contains(chatID) else { return await drop(chatID) }
         guard canDelete(chatID) else { throw ObjectChatError.notYours }
+        deletedHere.insert(chatID)
+        guard !removedInLab.contains(chatID) else { return await drop(chatID) }
         await drop(chatID)
         enqueue(.chatRemove(chatID: chatID))
     }
@@ -923,6 +1006,7 @@ public final class ObjectChats {
     }
 
     func forgetChats(ofSession sessionID: UUID) {
+        discardDrafts(ofSession: sessionID)
         for chat in chats where chat.sessionID == sessionID {
             threads[chat.id] = nil
         }
@@ -1039,17 +1123,18 @@ public final class ObjectChats {
         }
         for var message in thread.messages where isMine(message.author) {
             message.author = message.author ?? me
+            keep(message)
             enqueue(.messageAppend(message))
         }
         for var call in thread.toolCalls where isMine(call.askedBy) {
             call.askedBy = call.askedBy ?? me
             call.executor = call.executor ?? me
-            enqueue(.toolCallUpsert(call))
+            upsert(call)
         }
         for var object in thread.objects
         where isMine(object.addedBy) && (withSubject || object.objectID != "o1") && !(chat.subject == .project && object.objectID == "o1") {
             object.addedBy = object.addedBy ?? me
-            enqueue(.objectUpsert(object))
+            upsert(object)
         }
     }
 
@@ -1060,7 +1145,7 @@ public final class ObjectChats {
             chats[index] = chat
         } else {
             chats.append(chat)
-            threads[chat.id] = Thread()
+            threads[chat.id] = threads[chat.id] ?? Thread()
         }
         if chat.subject == .project, !thread(of: chat.id).objects.contains(where: { $0.objectID == "o1" }) {
             keep(Self.project(in: chat.id))
@@ -1103,7 +1188,9 @@ public final class ObjectChats {
     }
 
     private func keep(_ object: ObjectChatObject) {
-        persist(in: object.chatID) { try $0.save(object) }
+        if !isDraft(object.chatID) {
+            persist(in: object.chatID) { try $0.save(object) }
+        }
         if let index = threads[object.chatID]?.objects.firstIndex(where: { $0.objectID == object.objectID }) {
             threads[object.chatID]?.objects[index] = object
         } else {
@@ -1118,7 +1205,9 @@ public final class ObjectChats {
 
     private func upsert(_ object: ObjectChatObject) {
         keep(object)
-        enqueue(.objectUpsert(object))
+        if !isDraft(object.chatID) {
+            enqueue(.objectUpsert(object))
+        }
     }
 
     private func dropMessage(_ messageID: UUID, in chatID: UUID) {
@@ -1163,7 +1252,7 @@ public final class ObjectChats {
     }
 
     private func chat(_ chatID: UUID) -> ObjectChat {
-        chats.first { $0.id == chatID }!
+        chat(withID: chatID)!
     }
 
     private func nextObjectID(in chatID: UUID) -> String {

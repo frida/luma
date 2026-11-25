@@ -23,7 +23,6 @@ public struct SessionUIState: Codable, Equatable, Identifiable, Sendable, Fetcha
     public var expandedSwiftTypeLists: Set<String>
     public var lastSelectedModuleID: String?
     public var lastSelectedThreadID: UInt?
-    public var ambientMissionID: UUID?
     public var replLanguage: REPLLanguage
     public var replDraft: String?
     public var replSeekAnchor: AddressAnchor?
@@ -40,7 +39,6 @@ public struct SessionUIState: Codable, Equatable, Identifiable, Sendable, Fetcha
         case expandedSwiftTypeLists = "expanded_swift_type_lists"
         case lastSelectedModuleID = "last_selected_module_id"
         case lastSelectedThreadID = "last_selected_thread_id"
-        case ambientMissionID = "ambient_mission_id"
         case replLanguage = "repl_language"
         case replDraft = "repl_draft"
         case replSeekAnchor = "repl_seek_anchor"
@@ -56,7 +54,6 @@ public struct SessionUIState: Codable, Equatable, Identifiable, Sendable, Fetcha
         expandedSwiftTypeLists: Set<String> = [],
         lastSelectedModuleID: String? = nil,
         lastSelectedThreadID: UInt? = nil,
-        ambientMissionID: UUID? = nil,
         replLanguage: REPLLanguage = .javascript,
         replDraft: String? = nil,
         replSeekAnchor: AddressAnchor? = nil
@@ -70,7 +67,6 @@ public struct SessionUIState: Codable, Equatable, Identifiable, Sendable, Fetcha
         self.expandedSwiftTypeLists = expandedSwiftTypeLists
         self.lastSelectedModuleID = lastSelectedModuleID
         self.lastSelectedThreadID = lastSelectedThreadID
-        self.ambientMissionID = ambientMissionID
         self.replLanguage = replLanguage
         self.replDraft = replDraft
         self.replSeekAnchor = replSeekAnchor

@@ -11,7 +11,7 @@ enum ObjectChatSystemPrompt {
 
     static let subjectPrintLimit = 2 * 1024
 
-    static func build(for chat: ObjectChat, subject: Subject, objects: [ObjectChatObject]) -> String {
+    static func build(for chat: ObjectChat, subject: Subject, instruction: InstructionContext?, objects: [ObjectChatObject]) -> String {
         var lines = [
             "You are an interactive assistant helping a reverse engineer understand one object in a live Pharo Smalltalk image that is attached to a Frida-instrumented process. Be specific and concise. Lead with the conclusion.",
             "You work by writing Smalltalk. Each `chat_evaluate` call runs one expression in the user's own image and stores its result as a new object with an id such as `o2.alice` (a number and the id of the member whose Luma made it). `self` is `o1`, the object this chat is about, so its instance variables can be named directly.",
@@ -30,6 +30,9 @@ enum ObjectChatSystemPrompt {
             lines += subject.slots.map { "- \($0.name): \($0.value)" }
         }
         lines += origin(of: chat)
+        if let instruction {
+            lines += surroundings(of: instruction)
+        }
         if let sessionID = chat.sessionID {
             lines.append("")
             lines.append(
@@ -46,6 +49,18 @@ enum ObjectChatSystemPrompt {
         lines.append("")
         lines.append(MissionSystemPrompt.untrustedTargetOutput)
         return lines.joined(separator: "\n")
+    }
+
+    private static func surroundings(of instruction: InstructionContext) -> [String] {
+        var lines = [""]
+        if let name = instruction.insightName {
+            lines.append("The user calls this address \"\(name)\"; refer to it by that name.")
+        }
+        lines += ["Disassembly around it:", "```", instruction.disassembly, "```"]
+        if !instruction.decompilation.isEmpty {
+            lines += ["Its function, decompiled:", "```c", instruction.decompilation, "```"]
+        }
+        return lines
     }
 
     private static func origin(of chat: ObjectChat) -> [String] {

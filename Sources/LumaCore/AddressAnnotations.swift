@@ -13,15 +13,15 @@ public struct InstrumentAddressDecoration: Identifiable, Hashable, Sendable {
 public struct AddressAnnotation: Sendable {
     public var decorations: [InstrumentAddressDecoration] = []
     public var tracerHookID: UUID? = nil
-    public var noteCount: Int = 0
+    public var chatIDs: [UUID] = []
 
     public init(
         decorations: [InstrumentAddressDecoration] = [],
         tracerHookID: UUID? = nil,
-        noteCount: Int = 0
+        chatIDs: [UUID] = []
     ) {
         self.decorations = decorations
         self.tracerHookID = tracerHookID
-        self.noteCount = noteCount
+        self.chatIDs = chatIDs
     }
 }

@@ -320,7 +320,6 @@ public final class CollaborationSession {
     public var onSessionRemoved: ((UUID) -> Void)?
     public var onCustomInstrumentOpReceived: ((CustomInstrumentOp, UserInfo?) -> Void)?
     public var onMissionOpReceived: ((MissionOp) -> Void)?
-    public var onAddressNoteOpReceived: ((AddressNoteOp) -> Void)?
     public var onObjectChatOpReceived: ((ObjectChatOp) -> Void)?
     public var onObjectChatMessageRefused: ((ObjectChatMessage, String) -> Void)?
     public var onObjectChatOpRefused: ((ObjectChatOp, String) -> Void)?
@@ -335,7 +334,6 @@ public final class CollaborationSession {
     public var onLabCreated: (() -> Void)?
     public var onWidgetStatesSnapshot: (([WidgetStateSnapshot]) -> Void)?
     public var onWidgetPlacementsSnapshot: (([UUID: [String: [PatternPlacement]]]) -> Void)?
-    public var onAddressNotesSnapshot: (([AddressNoteThread], Set<UUID>) -> Void)?
     public var onObjectChatsSnapshot: (([ObjectChatThread]) -> Void)?
 
     public var onAuthRejected: ((AuthFailure) async -> Void)?
@@ -552,45 +550,6 @@ public final class CollaborationSession {
         )
     }
 
-    public func enqueueAddressNoteUpsert(_ note: AddressNote) {
-        enqueueAddressNoteOp(.noteUpsert(.init(note: note)))
-    }
-
-    public func enqueueAddressNoteRemove(noteID: UUID) {
-        enqueueAddressNoteOp(.noteRemove(.init(noteID: noteID)))
-    }
-
-    public func enqueueAddressNoteMessageAppend(_ message: AddressNoteMessage) {
-        enqueueAddressNoteOp(.messageAppend(.init(message: message)))
-    }
-
-    public func enqueueAddressNoteMessageEdit(noteID: UUID, messageID: UUID, bodyMarkdown: String) {
-        enqueueAddressNoteOp(.messageEdit(.init(noteID: noteID, messageID: messageID, bodyMarkdown: bodyMarkdown)))
-    }
-
-    public func enqueueAddressNoteMessageRemove(noteID: UUID, messageID: UUID) {
-        enqueueAddressNoteOp(.messageRemove(.init(noteID: noteID, messageID: messageID)))
-    }
-
-    private func enqueueAddressNoteOp(_ op: AddressNoteOp) {
-        guard isCollaborative else { return }
-        try? store.saveOutboxOps([op])
-        sendAddressNoteOpIfJoined(op)
-    }
-
-    private func sendAddressNoteOpIfJoined(_ op: AddressNoteOp) {
-        guard case .joined(let labID) = status else { return }
-        sendAddressNoteOpOverWire(op, labID: labID)
-    }
-
-    private func sendAddressNoteOpOverWire(_ op: AddressNoteOp, labID: String) {
-        sendNotification(
-            to: "/labs/\(labID)/address-notes",
-            type: "+op",
-            payload: op.toJSON()
-        )
-    }
-
     public func enqueueObjectChat(_ change: ObjectChatOp.Change) throws {
         guard isCollaborative else { return }
         let op = ObjectChatOp(change)
@@ -671,9 +630,6 @@ public final class CollaborationSession {
         case .mission(let op):
             replayedOpIDs.insert(op.opID)
             sendMissionOpOverWire(op, labID: labID)
-        case .addressNote(let op):
-            replayedOpIDs.insert(op.opID)
-            sendAddressNoteOpOverWire(op, labID: labID)
         case .objectChat(let op):
             replayedOpIDs.insert(op.opID)
             sendObjectChatOpOverWire(op, labID: labID)
@@ -1620,8 +1576,6 @@ public final class CollaborationSession {
         let customBundles = customDicts.compactMap(CustomInstrumentBundle.fromJSON)
         let patternDicts = (payload["patterns"] as? [JSONObject]) ?? []
         let patterns = patternDicts.compactMap(PatternSourceRecord.fromWireJSON)
-        let noteDicts = (payload["address_notes"] as? [JSONObject]) ?? []
-        let notes = noteDicts.compactMap(AddressNoteThread.fromWireJSON)
         let missionDicts = (payload["missions"] as? [JSONObject]) ?? []
         let missions = missionDicts.compactMap(Mission.fromWireJSON)
         let objectChatDicts = (payload["object_chats"] as? [JSONObject]) ?? []
@@ -1630,7 +1584,6 @@ public final class CollaborationSession {
         heldByLab += sessions.flatMap(\.labSubjects)
         heldByLab += customBundles.map { LabSubject(.definition, $0.def.id) }
         heldByLab += patterns.map { LabSubject(.pattern, $0.id) }
-        heldByLab += notes.map { LabSubject(.addressNote, $0.note.id) }
         heldByLab += missions.map { LabSubject(.mission, $0.id) }
         heldByLab += objectChats.flatMap {
             [LabSubject(.objectChat, $0.chat.id)] + $0.messages.map { LabSubject(.objectChatMessage, $0.id) }
@@ -1657,7 +1610,6 @@ public final class CollaborationSession {
         let widgetPlacementDicts = (payload["widget_placements"] as? [JSONObject]) ?? []
         onWidgetPlacementsSnapshot?(Self.widgetPlacements(of: sessions, from: widgetPlacementDicts))
 
-        onAddressNotesSnapshot?(notes, Set(sessions.map(\.id)))
         onObjectChatsSnapshot?(objectChats)
 
         let turnsArr = (payload["mission_turns"] as? [JSONObject]) ?? []
@@ -1859,11 +1811,6 @@ public final class CollaborationSession {
             markKnown(QueuedOp.mission(op).labSubject)
             onMissionOpReceived?(op)
 
-        case ("+op", let s) where s.count == 3 && s[0] == "labs" && s[2] == "address-notes":
-            guard let op = AddressNoteOp.fromJSON(payload) else { return }
-            markKnown(QueuedOp.addressNote(op).labSubject)
-            onAddressNoteOpReceived?(op)
-
         case ("+op", let s) where s.count == 3 && s[0] == "labs" && s[2] == "object-chats":
             guard let op = ObjectChatOp.fromJSON(payload) else { return }
             markKnown(QueuedOp.objectChat(op).labSubject)
@@ -2019,7 +1966,7 @@ public final class CollaborationSession {
     }
 
     private static func stampsWhatItEchoes(_ segs: [String]) -> Bool {
-        segs.count >= 3 && ["notebook", "missions", "address-notes", "object-chats"].contains(segs[2])
+        segs.count >= 3 && ["notebook", "missions", "object-chats"].contains(segs[2])
     }
 
     private func isEchoOfOpAlreadyApplied(_ payload: JSONObject) -> Bool {

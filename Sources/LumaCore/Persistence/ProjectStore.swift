@@ -447,42 +447,6 @@ public final class ProjectStore: Sendable {
         }
     }
 
-    public func fetchAddressNote(id: UUID) throws -> AddressNote? {
-        try db.read { db in
-            try AddressNote.fetchOne(db, key: id)
-        }
-    }
-
-    public func fetchAddressNoteMessage(id: UUID) throws -> AddressNoteMessage? {
-        try db.read { db in
-            try AddressNoteMessage.fetchOne(db, key: id)
-        }
-    }
-
-    public func fetchAddressNotes(sessionID: UUID) throws -> [AddressNote] {
-        try db.read { db in
-            try AddressNote
-                .filter(Column("session_id") == sessionID)
-                .order(Column("created_at"))
-                .fetchAll(db)
-        }
-    }
-
-    public func fetchAddressNoteMessages(noteID: UUID) throws -> [AddressNoteMessage] {
-        try db.read { db in
-            try AddressNoteMessage
-                .filter(Column("note_id") == noteID)
-                .order(Column("index"))
-                .fetchAll(db)
-        }
-    }
-
-    public func save(_ note: AddressNote) throws {
-        try db.write { db in
-            try note.save(db)
-        }
-    }
-
     public func fetchModuleAnalysis(sessionID: UUID, modulePath: String) throws -> ModuleAnalysis? {
         try db.read { db in
             try loadModuleAnalysis(db, sessionID: sessionID, modulePath: modulePath)
@@ -709,24 +673,6 @@ public final class ProjectStore: Sendable {
                 .filter(Column("session_id") == sessionID)
                 .filter(Column("process_identity") != exceptIdentity)
                 .deleteAll(db)
-        }
-    }
-
-    public func save(_ message: AddressNoteMessage) throws {
-        try db.write { db in
-            try message.save(db)
-        }
-    }
-
-    public func deleteAddressNote(id: UUID) throws {
-        try db.write { db in
-            _ = try AddressNote.deleteOne(db, key: id)
-        }
-    }
-
-    public func deleteAddressNoteMessage(id: UUID) throws {
-        try db.write { db in
-            _ = try AddressNoteMessage.deleteOne(db, key: id)
         }
     }
 
@@ -1687,7 +1633,6 @@ public final class ProjectStore: Sendable {
             t.column("expanded_swift_type_lists", .text).notNull().defaults(to: "[]")
             t.column("last_selected_module_id", .text)
             t.column("last_selected_thread_id", .integer)
-            t.column("ambient_mission_id", .blob)
             t.column("repl_language", .text).notNull().defaults(to: REPLLanguage.javascript.rawValue)
             t.column("repl_draft", .text)
             t.column("repl_seek_anchor", .text)
@@ -1706,33 +1651,6 @@ public final class ProjectStore: Sendable {
             t.column("placements", .blob)
             t.column("last_resolved_address", .integer)
             t.column("parent_insight_id", .blob)
-        }
-
-        try db.create(table: "address_note") { t in
-            t.primaryKey("id", .blob).notNull()
-            t.column("session_id", .blob).notNull()
-                .references("process_session", onDelete: .cascade)
-                .indexed()
-            t.column("anchor", .blob).notNull()
-            t.column("title", .text)
-            t.column("editors", .blob).notNull()
-            t.column("created_at", .datetime).notNull()
-            t.column("updated_at", .datetime).notNull()
-        }
-
-        try db.create(table: "address_note_message") { t in
-            t.primaryKey("id", .blob).notNull()
-            t.column("note_id", .blob).notNull()
-                .references("address_note", onDelete: .cascade)
-                .indexed()
-            t.column("index", .integer).notNull()
-            t.column("role", .text).notNull()
-            t.column("author", .blob)
-            t.column("body_markdown", .text).notNull()
-            t.column("provider_id", .text)
-            t.column("model_id", .text)
-            t.column("action_id", .blob)
-            t.column("created_at", .datetime).notNull()
         }
 
         try db.create(table: "object_chat") { t in

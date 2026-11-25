@@ -64,7 +64,7 @@ struct ObjectChatImage {
         let anchorJSON = String(decoding: try JSONSerialization.data(withJSONObject: anchor.toJSON()), as: UTF8.self)
         return try await runtime.evaluate(
             """
-            (LumaProject sessions items detect: [ :each | each id = '\(sessionID.uuidString)' ])
+            \(Engine.pharoSession(sessionID))
                 instructionAnchoredTo: (STONJSON fromString: \(Self.literal(anchorJSON)))
             """)
     }

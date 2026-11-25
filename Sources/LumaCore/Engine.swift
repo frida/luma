@@ -35,8 +35,6 @@ public final class Engine {
     public var imageProcessor: ImageProcessor?
     private let missionExecutor: MissionExecutor
 
-    private var activeNoteReplyTasks: [UUID: Task<AddressNoteMessage?, Never>] = [:]
-    private(set) public var noteReplyProgress: [UUID: NoteReplyProgress] = [:]
     private var missionLiveTextByID: [UUID: String] = [:]
     private var externalMissionLiveDeltaSink: (@MainActor (UUID, LLMTurnEvent) -> Void)?
 
@@ -149,7 +147,6 @@ public final class Engine {
     @ObservationIgnored public var onSessionListChanged: (@MainActor (SessionListChange) -> Void)?
     @ObservationIgnored public var onREPLCellSaved: (@MainActor (REPLCell) -> Void)?
     @ObservationIgnored public var onNotebookChanged: (@MainActor (NotebookChange) -> Void)?
-    @ObservationIgnored public var onAddressNoteChanged: (@MainActor (AddressNoteChange) -> Void)?
     @ObservationIgnored public var onInstalledPackagesChanged: (@MainActor ([InstalledPackage]) -> Void)?
     @ObservationIgnored public var onUserNotification: (@MainActor (UserNotification) -> Void)?
     @ObservationIgnored public var onMissionsChanged: (@MainActor ([Mission]) -> Void)?
@@ -494,383 +491,6 @@ public final class Engine {
         collaboration.enqueueRemove(entryID: entry.id)
     }
 
-    public func createAddressNote(
-        sessionID: UUID,
-        address: UInt64,
-        title: String? = nil
-    ) -> AddressNote? {
-        guard let node = node(forSessionID: sessionID) else { return nil }
-        let anchor = node.anchor(for: address)
-        let note = AddressNote(sessionID: sessionID, anchor: anchor, title: title)
-        try? store.save(note)
-        rebuildAddressAnnotations(sessionID: sessionID)
-        onAddressNoteChanged?(.noteAdded(note))
-        collaboration.enqueueAddressNoteUpsert(note)
-        return note
-    }
-
-    public func updateAddressNote(_ note: AddressNote) {
-        var updated = note
-        updated.updatedAt = Date()
-        try? store.save(updated)
-        onAddressNoteChanged?(.noteUpdated(updated))
-        collaboration.enqueueAddressNoteUpsert(updated)
-    }
-
-    public func deleteAddressNote(_ note: AddressNote) {
-        try? store.deleteAddressNote(id: note.id)
-        rebuildAddressAnnotations(sessionID: note.sessionID)
-        onAddressNoteChanged?(.noteRemoved(note))
-        collaboration.enqueueAddressNoteRemove(noteID: note.id)
-    }
-
-    public func appendUserMessage(noteID: UUID, body: String) -> AddressNoteMessage? {
-        guard let note = try? store.fetchAddressNote(id: noteID) else { return nil }
-        let existing = (try? store.fetchAddressNoteMessages(noteID: noteID)) ?? []
-        let nextIndex = (existing.last?.index ?? -1) + 1
-        let message = AddressNoteMessage(
-            noteID: noteID,
-            index: nextIndex,
-            role: .user,
-            bodyMarkdown: body
-        )
-        try? store.save(message)
-        bumpNoteUpdatedAt(note)
-        onAddressNoteChanged?(.messageAppended(message))
-        collaboration.enqueueAddressNoteMessageAppend(message)
-        return message
-    }
-
-    public func deleteAddressNoteMessage(_ message: AddressNoteMessage) {
-        try? store.deleteAddressNoteMessage(id: message.id)
-        if let note = try? store.fetchAddressNote(id: message.noteID) {
-            bumpNoteUpdatedAt(note)
-        }
-        onAddressNoteChanged?(.messageRemoved(message))
-        collaboration.enqueueAddressNoteMessageRemove(noteID: message.noteID, messageID: message.id)
-    }
-
-    public func editUserMessage(noteID: UUID, messageID: UUID, body: String) -> AddressNoteMessage? {
-        guard var message = try? store.fetchAddressNoteMessage(id: messageID),
-            message.noteID == noteID,
-            message.role == .user
-        else { return nil }
-        message.bodyMarkdown = body
-        try? store.save(message)
-        if let note = try? store.fetchAddressNote(id: noteID) {
-            bumpNoteUpdatedAt(note)
-        }
-        onAddressNoteChanged?(.messageEdited(message))
-        collaboration.enqueueAddressNoteMessageEdit(noteID: noteID, messageID: messageID, bodyMarkdown: body)
-        return message
-    }
-
-    public func addressNotes(sessionID: UUID, anchor: AddressAnchor? = nil) -> [AddressNote] {
-        let all = (try? store.fetchAddressNotes(sessionID: sessionID)) ?? []
-        guard let anchor else { return all }
-        return all.filter { $0.anchor == anchor }
-    }
-
-    public func addressNoteMessages(noteID: UUID) -> [AddressNoteMessage] {
-        (try? store.fetchAddressNoteMessages(noteID: noteID)) ?? []
-    }
-
-    private func bumpNoteUpdatedAt(_ note: AddressNote) {
-        var updated = note
-        updated.updatedAt = Date()
-        try? store.save(updated)
-    }
-
-    public struct NoteReplyProgress: Equatable {
-        public let noteID: UUID
-        public var text: String
-    }
-
-    public func requestAIReply(
-        noteID: UUID,
-        providerID: String,
-        modelID: String,
-        onDelta: (@MainActor (String) -> Void)? = nil
-    ) async -> AddressNoteMessage? {
-        guard let sessionID = (try? store.fetchAddressNote(id: noteID))?.sessionID else { return nil }
-        activeNoteReplyTasks[sessionID]?.cancel()
-        let task = Task<AddressNoteMessage?, Never> { @MainActor [weak self] in
-            await self?.runNoteReply(noteID: noteID, providerID: providerID, modelID: modelID, onDelta: onDelta) ?? nil
-        }
-        activeNoteReplyTasks[sessionID] = task
-        let reply = await task.value
-        if activeNoteReplyTasks[sessionID] == task {
-            activeNoteReplyTasks.removeValue(forKey: sessionID)
-        }
-        return reply
-    }
-
-    private func runNoteReply(
-        noteID: UUID,
-        providerID: String,
-        modelID: String,
-        onDelta: (@MainActor (String) -> Void)?
-    ) async -> AddressNoteMessage? {
-        guard let note = try? store.fetchAddressNote(id: noteID),
-            let provider = llmRegistry.provider(id: providerID)
-        else { return nil }
-
-        let thread = (try? store.fetchAddressNoteMessages(noteID: noteID)) ?? []
-        guard !thread.isEmpty else { return nil }
-
-        noteReplyProgress[note.sessionID] = NoteReplyProgress(noteID: noteID, text: "")
-        defer { noteReplyProgress.removeValue(forKey: note.sessionID) }
-        let liveDelta: @MainActor (String) -> Void = { [weak self] delta in
-            self?.noteReplyProgress[note.sessionID]?.text += delta
-            onDelta?(delta)
-        }
-
-        let mission = getOrCreateAmbientMission(
-            sessionID: note.sessionID,
-            providerID: providerID,
-            modelID: modelID
-        )
-        guard let mission else { return nil }
-
-        let system = await buildAddressNoteSystemPrompt(note: note)
-        let messages = thread.map { msg -> LLMMessage in
-            let role: LLMRole = (msg.role == .assistant) ? .assistant : .user
-            return LLMMessage(role: role, blocks: [.text(msg.bodyMarkdown)])
-        }
-
-        let toolCallID = "n\(thread.count)"
-        let argsJSON: String = {
-            let payload: [String: Any] = [
-                "note_id": noteID.uuidString,
-                "address_anchor": note.anchor.displayString,
-                "thread_length": thread.count,
-            ]
-            let data = (try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])) ?? Data("{}".utf8)
-            return String(data: data, encoding: .utf8) ?? "{}"
-        }()
-
-        var action = MissionAction(
-            missionID: mission.id,
-            turnID: nil,
-            toolName: "address_note_reply",
-            argsJSON: argsJSON,
-            isObserve: true,
-            sessionID: note.sessionID,
-            toolCallID: toolCallID
-        )
-        action.executor = localUser
-        action.status = .running
-        action.decidedAt = Date()
-        try? store.save(action)
-        collaboration.enqueueMissionAction(action)
-
-        let loop = ReplyLoop(
-            provider: provider,
-            modelID: modelID,
-            credentials: llmCredentials,
-            mission: mission,
-            limits: Self.noteReplyLimits
-        )
-        let responseText: String
-        let usage: LLMUsage
-        do {
-            let reply = try await loop.run(system: system, messages: messages, tools: noteTurnToolSpecs(), onDelta: liveDelta) { toolUses in
-                await self.runNoteToolUses(toolUses, sessionID: note.sessionID, mission: mission)
-            }
-            responseText = reply.text
-            usage = reply.usage
-        } catch {
-            action.status = .failed
-            action.error = (error is CancellationError) ? "Reply canceled by user." : error.localizedDescription
-            action.completedAt = Date()
-            try? store.save(action)
-            collaboration.enqueueMissionAction(action)
-            return nil
-        }
-
-        let trimmed = responseText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            action.status = .failed
-            action.error = "model returned empty response"
-            action.completedAt = Date()
-            try? store.save(action)
-            collaboration.enqueueMissionAction(action)
-            return nil
-        }
-
-        action.status = .succeeded
-        action.resultJSON = trimmed
-        action.resultSummary = String(trimmed.prefix(120))
-        action.completedAt = Date()
-        try? store.save(action)
-        collaboration.enqueueMissionAction(action)
-
-        var updatedMission = mission
-        updatedMission.tokensUsedInput += usage.inputTokens
-        updatedMission.tokensUsedOutput += usage.outputTokens
-        updatedMission.cacheReadTokens += usage.cacheReadTokens
-        updatedMission.cacheCreateTokens += usage.cacheCreateTokens
-        updatedMission.updatedAt = Date()
-        try? store.save(updatedMission)
-        collaboration.enqueueMissionUpsert(updatedMission)
-
-        let nextIndex = (thread.last?.index ?? -1) + 1
-        let message = AddressNoteMessage(
-            noteID: noteID,
-            index: nextIndex,
-            role: .assistant,
-            bodyMarkdown: trimmed,
-            providerID: providerID,
-            modelID: modelID,
-            actionID: action.id
-        )
-        try? store.save(message)
-        bumpNoteUpdatedAt(note)
-        onAddressNoteChanged?(.messageAppended(message))
-        collaboration.enqueueAddressNoteMessageAppend(message)
-        return message
-    }
-
-    private func getOrCreateAmbientMission(
-        sessionID: UUID,
-        providerID: String,
-        modelID: String
-    ) -> Mission? {
-        var state = sessionUIStates[sessionID] ?? SessionUIState(sessionID: sessionID)
-        if let existingID = state.ambientMissionID,
-            let mission = try? store.fetchMission(id: existingID)
-        {
-            return mission
-        }
-
-        var mission = Mission(
-            goalText: "Address notes for this session.",
-            providerID: providerID,
-            modelID: modelID,
-            tokenBudgetInput: 0,
-            tokenBudgetOutput: 0
-        )
-        mission.title = "Ambient — address notes"
-        mission.status = .running
-        try? store.save(mission)
-        collaboration.enqueueMissionUpsert(mission)
-
-        state.ambientMissionID = mission.id
-        sessionUIStates[sessionID] = state
-        try? store.save(state)
-        return mission
-    }
-
-    public func ambientMissionID(sessionID: UUID) -> UUID? {
-        sessionUIStates[sessionID]?.ambientMissionID
-    }
-
-    public func isAmbientMission(_ missionID: UUID) -> Bool {
-        sessionUIStates.values.contains { $0.ambientMissionID == missionID }
-    }
-
-    private static let noteReplyLimits = ReplyLoop.Limits(iterations: 6, maxOutputTokens: 1024, temperature: 0.3)
-
-    private func noteTurnToolSpecs() -> [LLMToolSpec] {
-        missionExecutor.catalog.toolSpecs(in: ToolNeed.missionContext)
-    }
-
-    private func runNoteToolUses(
-        _ blocks: [LLMContentBlock],
-        sessionID: UUID,
-        mission: Mission
-    ) async -> [LLMContentBlock] {
-        var results: [LLMContentBlock] = []
-        for block in blocks {
-            guard case .toolUse(let id, let name, let inputJSON) = block.content else { continue }
-            let (json, isError) = await runNoteToolUse(
-                name: name,
-                inputJSON: inputJSON,
-                toolCallID: id,
-                sessionID: sessionID,
-                mission: mission
-            )
-            results.append(LLMContentBlock(content: .toolResult(
-                toolUseID: id,
-                contentJSON: json,
-                isError: isError,
-                attachments: []
-            )))
-        }
-        return results
-    }
-
-    private func runNoteToolUse(
-        name: String,
-        inputJSON: String,
-        toolCallID: String,
-        sessionID: UUID,
-        mission: Mission
-    ) async -> (json: String, isError: Bool) {
-        let args = (try? JSONSerialization.jsonObject(with: Data(inputJSON.utf8))) as? [String: Any] ?? [:]
-        let spec = missionExecutor.catalog.spec(named: name)
-
-        if spec?.isObserve == true {
-            let invocation = ActionInvocation(args: args, mission: mission, sessionID: sessionID, toolCallID: toolCallID)
-            do {
-                let result = try await missionExecutor.catalog.execute(name, invocation: invocation)
-                return (result.resultJSON, result.isError)
-            } catch {
-                return (#"{"error": "\#(error.localizedDescription)"}"#, true)
-            }
-        }
-
-        var action = MissionAction(
-            missionID: mission.id,
-            turnID: nil,
-            toolName: name,
-            argsJSON: inputJSON,
-            isObserve: false,
-            sessionID: sessionID,
-            toolCallID: toolCallID
-        )
-        assignExecutor(to: &action, askedBy: localUser)
-        try? store.save(action)
-        collaboration.enqueueMissionAction(action)
-
-        let completed = await awaitActionTerminalStatus(actionID: action.id, missionID: mission.id)
-        return noteToolResultPayload(for: completed)
-    }
-
-    private func awaitActionTerminalStatus(actionID: UUID, missionID: UUID) async -> MissionAction {
-        if let cached = try? store.fetchMissionAction(id: actionID), isTerminal(cached.status) {
-            return cached
-        }
-        let (stream, continuation) = AsyncStream.makeStream(of: MissionAction.self)
-        let observation = store.observeMissionActions(missionID: missionID) { rows in
-            if let action = rows.first(where: { $0.id == actionID }) {
-                continuation.yield(action)
-            }
-        }
-        let settled: MissionAction? = await withTaskCancellationHandler {
-            var result: MissionAction?
-            for await action in stream {
-                if isTerminal(action.status) {
-                    result = action
-                    break
-                }
-            }
-            continuation.finish()
-            _ = observation
-            return result
-        } onCancel: {
-            continuation.finish()
-        }
-        return settled ?? (try? store.fetchMissionAction(id: actionID)) ?? MissionAction(
-            missionID: missionID,
-            turnID: nil,
-            toolName: "",
-            argsJSON: "{}",
-            isObserve: false,
-            sessionID: nil
-        )
-    }
-
     private func isTerminal(_ status: MissionActionStatus) -> Bool {
         switch status {
         case .succeeded, .failed, .rejected: return true
@@ -892,53 +512,18 @@ public final class Engine {
         }
     }
 
-    private func noteToolResultPayload(for action: MissionAction) -> (json: String, isError: Bool) {
-        switch action.status {
-        case .rejected:
-            let reason = action.rejectionReason ?? "User declined to run this tool."
-            return (#"{"error": "\#(reason)"}"#, true)
-        case .failed:
-            return (action.resultJSON ?? #"{"error": "\#(action.error ?? "failed")"}"#, true)
-        case .succeeded:
-            return (action.resultJSON ?? "{}", false)
-        default:
-            return (#"{"error": "no result"}"#, true)
-        }
-    }
-
-    private func buildAddressNoteSystemPrompt(note: AddressNote) async -> String {
-        var lines = [
-            "You are an interactive reverse-engineering assistant pinned to one address. Be specific and concise. Lead with the conclusion; cite registers/strings/calls when relevant.",
-            "You may call any tool. Observe (read-only) and auto-run tools execute immediately. Approval-gated tools queue in the global Action Queue popover and the user must approve them; your reply pauses until each one settles, so propose mutations only when they're clearly warranted, and always say in plain text what you're about to do before the call.",
-            "Anchor: \(note.anchor.displayString)",
-            "Session: \(note.sessionID.uuidString) — pass this as `session_id` to tools that require it.",
-            "",
-            MissionSystemPrompt.codeStyle,
-        ]
-        if let dis = disassembler(forSessionID: note.sessionID),
-            let node = node(forSessionID: note.sessionID),
-            let address = try? node.resolveSyncIfReady(note.anchor)
-        {
-            let matchingInsights = (insightsBySession[note.sessionID] ?? []).filter {
-                $0.lastResolvedAddress == address
-            }
-            let named = matchingInsights.first(where: { hasUserTitle($0) }) ?? matchingInsights.first
-            if let named {
-                lines.append("Insight: \"\(displayTitle(for: named))\" — refer to this address by that name.")
-            }
-            let lines64 = await dis.disassemble(DisassemblyRequest(address: address, count: 32, appearance: .light))
-            let disasm = lines64.map {
-                String(format: "0x%llx", $0.address) + "  " + $0.asmText.plainText
-            }.joined(separator: "\n")
-            let pdc = await dis.decompile(at: address).output ?? ""
-            lines.append("")
-            lines.append("Disassembly window:")
-            lines.append(disasm)
-            lines.append("")
-            lines.append("Pseudo-C:")
-            lines.append(pdc)
-        }
-        return lines.joined(separator: "\n")
+    func instructionContext(sessionID: UUID, anchor: AddressAnchor) async -> InstructionContext? {
+        guard let dis = disassembler(forSessionID: sessionID),
+            let address = await resolve(sessionID: sessionID, anchor: anchor)
+        else { return nil }
+        let atAddress = (insightsBySession[sessionID] ?? []).filter { $0.lastResolvedAddress == address }
+        let named = atAddress.first(where: { hasUserTitle($0) }) ?? atAddress.first
+        let window = await dis.disassemble(DisassemblyRequest(address: address, count: 32, appearance: .light))
+        return InstructionContext(
+            insightName: named.map { displayTitle(for: $0) },
+            disassembly: window.map { String(format: "0x%llx", $0.address) + "  " + $0.asmText.plainText }.joined(separator: "\n"),
+            decompilation: await dis.decompile(at: address).output ?? ""
+        )
     }
 
     /// Move `entry` into the slot between `previous` and `next` (either may
@@ -1025,16 +610,8 @@ public final class Engine {
             self?.applyRemoteMissionOp(op)
         }
 
-        collaboration.onAddressNoteOpReceived = { [weak self] op in
-            self?.applyRemoteAddressNoteOp(op)
-        }
-
         collaboration.onMissionSnapshot = { [weak self] snapshot in
             self?.applyRemoteMissionSnapshot(snapshot)
-        }
-
-        collaboration.onAddressNotesSnapshot = { [weak self] threads, labSessions in
-            self?.adoptAddressNotes(threads, ofLabSessions: labSessions)
         }
 
         collaboration.onObjectChatOpReceived = { [weak self] op in
@@ -1713,9 +1290,6 @@ public final class Engine {
         for trace in (try? store.fetchITraces(sessionID: sessionID)) ?? [] {
             announce(trace, sessionID: sessionID)
         }
-        for note in addressNotes(sessionID: sessionID) {
-            announce(note)
-        }
     }
 
     private func announce(_ instance: InstrumentInstance, sessionID: UUID) {
@@ -1730,13 +1304,6 @@ public final class Engine {
         collaboration.enqueueUpsertTrace(sessionID: sessionID, trace: trace)
         Task { @MainActor [weak self] in
             await self?.uploadTraceDelta(trace, collabSessionID: sessionID)
-        }
-    }
-
-    private func announce(_ note: AddressNote) {
-        collaboration.enqueueAddressNoteUpsert(note)
-        for message in addressNoteMessages(noteID: note.id) {
-            collaboration.enqueueAddressNoteMessageAppend(message)
         }
     }
 
@@ -1790,6 +1357,7 @@ public final class Engine {
             record.processInfo = session.processInfo
             try? store.save(record)
             sessions.insert(record, at: 0)
+            rebuildAddressAnnotations(sessionID: record.id)
             onSessionListChanged?(.sessionAdded(record))
         }
 
@@ -3749,7 +3317,14 @@ public final class Engine {
     private func saveSession(_ session: ProcessSession) {
         try? store.save(session)
         if let i = sessions.firstIndex(where: { $0.id == session.id }) {
+            if sessions[i].phase == .attached, session.phase != .attached {
+                objectChats.discardDrafts(ofSession: session.id)
+            }
+            let modulesChanged = sessions[i].lastKnownModules != session.lastKnownModules
             sessions[i] = session
+            if modulesChanged {
+                rebuildAddressAnnotations(sessionID: session.id)
+            }
         }
         onSessionListChanged?(.sessionUpdated(session))
     }
@@ -4566,14 +4141,67 @@ public final class Engine {
             tracerInstanceIDBySession[sessionID] = nil
         }
 
-        for note in (try? store.fetchAddressNotes(sessionID: sessionID)) ?? [] {
-            guard let addr = resolve(note.anchor) else { continue }
-            var ann = map[addr] ?? AddressAnnotation()
-            ann.noteCount += 1
-            map[addr] = ann
+        for chat in objectChats.listed {
+            guard case .instruction(sessionID, let anchor) = chat.subject, let addr = resolve(anchor) else { continue }
+            map[addr, default: AddressAnnotation()].chatIDs.append(chat.id)
         }
 
         addressAnnotations[sessionID] = map
+    }
+
+    func instructionChatsChanged(from old: [ObjectChat], to new: [ObjectChat]) {
+        let before = Self.instructionChatIDsBySession(in: old)
+        let after = Self.instructionChatIDsBySession(in: new)
+        for sessionID in Set(before.keys).union(after.keys) where before[sessionID] != after[sessionID] {
+            rebuildAddressAnnotations(sessionID: sessionID)
+        }
+    }
+
+    private static func instructionChatIDsBySession(in chats: [ObjectChat]) -> [UUID: Set<UUID>] {
+        var bySession: [UUID: Set<UUID>] = [:]
+        for chat in chats {
+            if case .instruction(let sessionID, _) = chat.subject {
+                bySession[sessionID, default: []].insert(chat.id)
+            }
+        }
+        return bySession
+    }
+
+    func place(ofInstructionChat chatID: UUID, sessionID: UUID, anchor: AddressAnchor) -> ObjectChatInstructionPlace {
+        ObjectChatInstructionPlace(
+            sessionID: sessionID,
+            anchor: anchor,
+            address: addressAnnotations[sessionID]?.first { $0.value.chatIDs.contains(chatID) }?.key
+                ?? resolveSync(sessionID: sessionID, anchor: anchor),
+            sessionName: sessions.first { $0.id == sessionID }?.processName,
+            presence: presence(ofSession: sessionID)
+        )
+    }
+
+    public func presence(ofSession sessionID: UUID) -> SessionPresence {
+        guard let session = sessions.first(where: { $0.id == sessionID }) else { return .unknown }
+        return session.phase == .attached ? .attached : .detached
+    }
+
+    public func disassemblyUnavailableReason(at place: ObjectChatInstructionPlace) async -> String? {
+        if let reason = place.unavailableReason { return reason }
+        return await disassemblyUnavailableReason(sessionID: place.sessionID, address: place.address!)
+    }
+
+    public func disassemblyUnavailableReason(sessionID: UUID, address: UInt64) async -> String? {
+        guard let session = sessions.first(where: { $0.id == sessionID }) else {
+            return "The session this instruction is in is not in the project."
+        }
+        guard (try? await memoryReader(forSessionID: sessionID).read(at: address, count: 4)) == nil else { return nil }
+        let at = anchor(sessionID: sessionID, address: address).displayString
+        guard let host = session.host, host.id != localUserID else {
+            return "The memory at \(at) was not read while \(session.processName) was attached."
+        }
+        return "\(host.name) has not shared the memory at \(at) with the lab yet."
+    }
+
+    public func disassemblyInsight(at place: ObjectChatInstructionPlace) throws -> AddressInsight {
+        try getOrCreateInsight(sessionID: place.sessionID, pointer: place.address!, kind: .disassembly, preferredAnchor: place.anchor)
     }
 
     public func resolveSync(sessionID: UUID, anchor: AddressAnchor) -> UInt64? {
@@ -6148,7 +5776,6 @@ public func deleteCustomInstrument(_ defID: UUID) async {
                 self?.updateSession(id: sessionID) { session in
                     session.lastKnownModules = delta.applied(to: session.lastKnownModules)
                 }
-                self?.rebuildAddressAnnotations(sessionID: sessionID)
                 self?.restoreReplSeek(sessionID: sessionID)
                 if let sid = self?.collabSessionID(forNode: node) {
                     self?.collaboration.enqueueUpdateSessionModules(sessionID: sid, delta: delta)
@@ -6881,15 +6508,6 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         resumeMissionHere(action.missionID)
     }
 
-    public func cancelAddressNoteReply(sessionID: UUID) async {
-        activeNoteReplyTasks[sessionID]?.cancel()
-        guard let missionID = sessionUIStates[sessionID]?.ambientMissionID else { return }
-        let pending = (try? store.fetchPendingMissionActions(missionID: missionID)) ?? []
-        for action in pending {
-            await rejectMissionAction(actionID: action.id, reason: "User canceled the note reply.")
-        }
-    }
-
     public func rejectMissionAction(actionID: UUID, reason: String? = nil) async {
         guard var action = try? store.fetchMissionAction(id: actionID),
             action.status == .pending
@@ -6965,14 +6583,6 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         #endif
         if !turnEndsOnItsOwn {
             missionExecutor.cancel(missionID: missionID)
-        }
-        for (sessionID, state) in sessionUIStates where state.ambientMissionID == missionID {
-            wasRunningHere = wasRunningHere || activeNoteReplyTasks[sessionID] != nil
-            activeNoteReplyTasks[sessionID]?.cancel()
-            var cleared = state
-            cleared.ambientMissionID = nil
-            sessionUIStates[sessionID] = cleared
-            try? store.save(cleared)
         }
         return wasRunningHere
     }
@@ -7121,76 +6731,6 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         return blocks.compactMap { block in
             if case .text(let text) = block.content { return text }
             return nil
-        }
-    }
-
-    private func adoptAddressNotes(_ threads: [AddressNoteThread], ofLabSessions labSessions: Set<UUID>) {
-        let labNoteIDs = Set(threads.map(\.note.id))
-        let pending = subjectsOfPendingOps(AddressNoteOp.self)
-        let known = knownToLab(.addressNote)
-        for sessionID in labSessions {
-            for absent in addressNotes(sessionID: sessionID) where !labNoteIDs.contains(absent.id) && !pending.contains(absent.id) {
-                if known.contains(absent.id) {
-                    try? store.deleteAddressNote(id: absent.id)
-                    onAddressNoteChanged?(.noteRemoved(absent))
-                } else {
-                    announce(absent)
-                }
-            }
-        }
-        for thread in threads {
-            adoptAddressNote(thread)
-        }
-        for sessionID in labSessions {
-            rebuildAddressAnnotations(sessionID: sessionID)
-        }
-    }
-
-    private func adoptAddressNote(_ thread: AddressNoteThread) {
-        let existed = (try? store.fetchAddressNote(id: thread.note.id)) != nil
-        try? store.save(thread.note)
-        onAddressNoteChanged?(existed ? .noteUpdated(thread.note) : .noteAdded(thread.note))
-        let local = addressNoteMessages(noteID: thread.note.id)
-        let labMessageIDs = Set(thread.messages.map(\.id))
-        for stale in local where !labMessageIDs.contains(stale.id) {
-            try? store.deleteAddressNoteMessage(id: stale.id)
-            onAddressNoteChanged?(.messageRemoved(stale))
-        }
-        for message in thread.messages {
-            try? store.save(message)
-            onAddressNoteChanged?(local.contains { $0.id == message.id } ? .messageEdited(message) : .messageAppended(message))
-        }
-    }
-
-    private func applyRemoteAddressNoteOp(_ op: AddressNoteOp) {
-        switch op {
-        case .noteUpsert(let u):
-            let held = (try? store.fetchAddressNote(id: u.note.id)).flatMap { $0 }
-            guard Self.asSent(held) != u.note else { return }
-            let existed = held != nil
-            try? store.save(u.note)
-            rebuildAddressAnnotations(sessionID: u.note.sessionID)
-            onAddressNoteChanged?(existed ? .noteUpdated(u.note) : .noteAdded(u.note))
-        case .noteRemove(let r):
-            guard let prior = try? store.fetchAddressNote(id: r.noteID) else { return }
-            try? store.deleteAddressNote(id: r.noteID)
-            rebuildAddressAnnotations(sessionID: prior.sessionID)
-            onAddressNoteChanged?(.noteRemoved(prior))
-        case .messageAppend(let a):
-            let held = (try? store.fetchAddressNoteMessage(id: a.message.id)).flatMap { $0 }
-            guard Self.asSent(held) != a.message else { return }
-            let existed = held != nil
-            try? store.save(a.message)
-            onAddressNoteChanged?(existed ? .messageEdited(a.message) : .messageAppended(a.message))
-        case .messageEdit(let e):
-            guard var message = try? store.fetchAddressNoteMessage(id: e.messageID), message.bodyMarkdown != e.bodyMarkdown else { return }
-            message.bodyMarkdown = e.bodyMarkdown
-            try? store.save(message)
-            onAddressNoteChanged?(.messageEdited(message))
-        case .messageRemove(let r):
-            guard let prior = try? store.fetchAddressNoteMessage(id: r.messageID) else { return }
-            try? store.deleteAddressNoteMessage(id: r.messageID)
-            onAddressNoteChanged?(.messageRemoved(prior))
         }
     }
 
