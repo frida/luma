@@ -336,6 +336,7 @@ struct DisassemblyView: View {
                         .errorPopoverHost()
                     }
                 }
+                .background { activationCatcher }
                 .frame(maxWidth: 800, alignment: .leading)
                 .frame(minWidth: scrollsHorizontally ? 800 : nil, maxWidth: .infinity, alignment: .leading)
                 .padding(.leading, 54)
@@ -409,6 +410,30 @@ struct DisassemblyView: View {
         let target: UInt64?
         let isLoaded: Bool
     }
+
+    @ViewBuilder
+    private var activationCatcher: some View {
+        #if canImport(AppKit)
+            PharoDoubleClickCatcher(row: lineIndex) { index in
+                let line = lines[index]
+                selectedAddr = line.address
+                if let onActivate {
+                    onActivate(line.address)
+                } else {
+                    follow(line)
+                }
+            }
+        #endif
+    }
+
+    #if canImport(AppKit)
+        private func lineIndex(_ catcher: NSView, _ point: NSPoint) -> Int? {
+            let local = catcher.convert(point, from: nil)
+            let fromTop = catcher.isFlipped ? local.y : catcher.bounds.height - local.y
+            let index = Int(fromTop / rowHeight)
+            return lines.indices.contains(index) ? index : nil
+        }
+    #endif
 
     private func handleJump(_ target: UInt64, scrollProxy: ScrollViewProxy) throws {
         if lines.contains(where: { $0.address == target }) {
@@ -505,6 +530,10 @@ struct DisassemblyView: View {
     private func jumpSelection(scrollProxy: ScrollViewProxy) {
         guard let sel = selectedAddr else { return }
         guard let line = lines.first(where: { $0.address == sel }) else { return }
+        follow(line)
+    }
+
+    private func follow(_ line: DisassemblyLine) {
         guard let target = line.branchTarget ?? line.callTarget else { return }
         requestedJumpTarget = target
     }
@@ -655,7 +684,9 @@ private struct DisasmRow: View {
         .onTapGesture {
             onSelect()
         }
-        .simultaneousGesture(TapGesture(count: 2).onEnded { onActivate?() })
+        #if !canImport(AppKit)
+            .simultaneousGesture(TapGesture(count: 2).onEnded { onActivate?() })
+        #endif
         .accessibilityActions {
             if let onActivate {
                 Button("Open Instruction", action: onActivate)

@@ -1237,7 +1237,7 @@ extension View {
     @ViewBuilder
     func pharoRowActivation(selection: Binding<Int?>, activate: @escaping (Int) -> Void) -> some View {
         #if canImport(AppKit)
-            background(PharoDoubleClickCatcher { row in
+            background(PharoDoubleClickCatcher(row: pharoTableRow) { row in
                 selection.wrappedValue = row
                 activate(row)
             })
@@ -1252,19 +1252,18 @@ extension View {
 #if canImport(AppKit)
 /// Notices a double-click over the list without taking the click, so the list
 /// keeps handling selection and keyboard travel itself.
-/// Reports which row a double-click landed on, read from the table under the
-/// pointer rather than from the selection, which the first click of the two has
-/// not always finished settling by the time the second arrives.
-private struct PharoDoubleClickCatcher: NSViewRepresentable {
+struct PharoDoubleClickCatcher: NSViewRepresentable {
+    let row: (NSView, NSPoint) -> Int?
     let activate: (Int) -> Void
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
-        context.coordinator.watch(view, activate: activate)
+        context.coordinator.watch(view, row: row, activate: activate)
         return view
     }
 
     func updateNSView(_ view: NSView, context: Context) {
+        context.coordinator.row = row
         context.coordinator.activate = activate
     }
 
@@ -1277,12 +1276,14 @@ private struct PharoDoubleClickCatcher: NSViewRepresentable {
     }
 
     final class Coordinator {
+        var row: (NSView, NSPoint) -> Int? = { _, _ in nil }
         var activate: (Int) -> Void = { _ in }
         private var monitor: Any?
         private weak var view: NSView?
 
-        func watch(_ view: NSView, activate: @escaping (Int) -> Void) {
+        func watch(_ view: NSView, row: @escaping (NSView, NSPoint) -> Int?, activate: @escaping (Int) -> Void) {
             self.view = view
+            self.row = row
             self.activate = activate
             monitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
                 self?.noticed(event)
@@ -1293,23 +1294,10 @@ private struct PharoDoubleClickCatcher: NSViewRepresentable {
         private func noticed(_ event: NSEvent) {
             guard event.clickCount == 2, let view, let window = view.window, event.window === window,
                 view.bounds.contains(view.convert(event.locationInWindow, from: nil)),
-                let table = table(under: event.locationInWindow, in: window)
+                let row = row(view, event.locationInWindow)
             else { return }
 
-            let row = table.row(at: table.convert(event.locationInWindow, from: nil))
-            guard row >= 0 else { return }
             activate(row)
-        }
-
-        private func table(under point: NSPoint, in window: NSWindow) -> NSTableView? {
-            var hit = window.contentView?.hitTest(point)
-            while let view = hit {
-                if let table = view as? NSTableView {
-                    return table
-                }
-                hit = view.superview
-            }
-            return nil
         }
 
         func stop() {
@@ -1317,6 +1305,21 @@ private struct PharoDoubleClickCatcher: NSViewRepresentable {
             monitor = nil
         }
     }
+}
+
+/// Reports which row a double-click landed on, read from the table under the
+/// pointer rather than from the selection, which the first click of the two has
+/// not always finished settling by the time the second arrives.
+private func pharoTableRow(_ catcher: NSView, _ point: NSPoint) -> Int? {
+    var hit = catcher.window?.contentView?.hitTest(point)
+    while let view = hit {
+        if let table = view as? NSTableView {
+            let row = table.row(at: table.convert(point, from: nil))
+            return row >= 0 ? row : nil
+        }
+        hit = view.superview
+    }
+    return nil
 }
 #endif
 
