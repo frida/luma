@@ -1,4 +1,3 @@
-import Adw
 import CGtk
 import Foundation
 import Gtk
@@ -100,14 +99,23 @@ final class InstrumentViewWidget {
 
     private func follow() {
         guard let views = engine?.instrumentViews else { return }
-        let phase = withObservationTracking {
-            views.phase(of: key)
+        let state = withObservationTracking { () -> (phase: InstrumentViews.Phase, gated: Bool) in
+            (views.phase(of: key), views.approvalWanted(byInstance: key.instanceID) != nil)
         } onChange: { [weak self] in
             Task { @MainActor in self?.follow() }
         }
-        guard phase != shown else { return }
-        shown = phase
-        show(phase)
+        guard !state.gated else { return showNothing() }
+        guard state.phase != shown else { return }
+        shown = state.phase
+        show(state.phase)
+    }
+
+    private func showNothing() {
+        shown = nil
+        pages = nil
+        while let child = page.firstChild {
+            page.remove(child: child)
+        }
     }
 
     private func show(_ phase: InstrumentViews.Phase) {
@@ -125,12 +133,12 @@ final class InstrumentViewWidget {
             spinner.valign = .center
             spinner.vexpand = true
             page.append(child: spinner)
-        case .awaitingApproval(let origin):
-            page.append(child: approval(origin))
         case .failed(let message):
             page.append(child: stopped(message))
         case .running:
             load()
+        default:
+            break
         }
     }
 
@@ -170,26 +178,6 @@ final class InstrumentViewWidget {
         notebook.removePage(pageNum: index)
         _ = notebook.insertPage(child: new, tabLabel: Label(str: title), position: index)
         notebook.currentPage = current
-    }
-
-    private func approval(_ origin: HostCodeOrigin) -> Widget {
-        let page = Adw.StatusPage()
-        page.iconName = "security-medium-symbolic"
-        page.title = HostCodeOrigin.request
-        page.description = origin.provenance
-        page.vexpand = true
-        let allow = Button(label: HostCodeOrigin.allowLabel)
-        allow.add(cssClass: "suggested-action")
-        allow.add(cssClass: "pill")
-        allow.halign = .center
-        allow.onClicked { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                self.engine?.instrumentViews.allow(self.key)
-            }
-        }
-        page.set(child: allow)
-        return page
     }
 
     private func stopped(_ message: String) -> Widget {

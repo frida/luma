@@ -101,6 +101,7 @@ final class MainWindow: InstrumentUIHost {
     private var sessionChevronImages: [UUID: Gtk.Image] = [:]
     private var instrumentChevronImages: [UUID: Gtk.Image] = [:]
     private var instrumentChildActions: [String: @MainActor () -> Void] = [:]
+    private var instrumentWaitingMarks: [UUID: InstrumentWaitingMark] = [:]
     private var instrumentChildKeyByComponent: [InstrumentComponentReference: String] = [:]
     private var groupChildActions: [String: @MainActor (WidgetProtocol) -> Void] = [:]
     private var groupChevronImages: [String: Gtk.Image] = [:]
@@ -3044,6 +3045,7 @@ final class MainWindow: InstrumentUIHost {
             instrumentRowLabels.removeValue(forKey: id)
             instrumentRowIconHosts.removeValue(forKey: id)
             instrumentRowWarningHosts.removeValue(forKey: id)
+            instrumentWaitingMarks.removeValue(forKey: id)
             instrumentUpdateMarks.removeValue(forKey: id)
             instrumentChevronImages.removeValue(forKey: id)
             removeInstrumentChildRows(sessionID: sessionID, instrumentID: id)
@@ -4023,6 +4025,9 @@ final class MainWindow: InstrumentUIHost {
             rowBox.append(child: updateMark.widget)
             instrumentUpdateMarks[instrument.id] = updateMark
         }
+        let waitingMark = InstrumentWaitingMark(engine: engine!, instance: instrument)
+        rowBox.append(child: waitingMark.widget)
+        instrumentWaitingMarks[instrument.id] = waitingMark
         let warningHost = Box(orientation: .horizontal, spacing: 0)
         rowBox.append(child: warningHost)
         populateStatusWarning(host: warningHost, status: instrumentRuntimeStatus(for: instrument))

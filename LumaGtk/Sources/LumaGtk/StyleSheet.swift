@@ -737,6 +737,12 @@ enum StyleSheet {
     box.luma-pharo-class-body {
         margin: 2px 0;
     }
+    box.luma-approval-scrim {
+        background-color: alpha(black, 0.35);
+    }
+    box.luma-approval-card {
+        padding: 20px;
+    }
     box.luma-drop-zone {
         border: 2px dashed \(accentColor);
         border-radius: 12px;
