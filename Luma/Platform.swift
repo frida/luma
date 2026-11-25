@@ -111,12 +111,19 @@ struct PlatformHSplit<Left: View, Right: View>: View {
         self.right = tuple.1
     }
 
+    #if os(macOS)
+        @State private var safeArea = EdgeInsets()
+    #endif
+
     var body: some View {
         #if os(macOS)
             HSplitView {
                 left
+                    .padding(.leading, safeArea.leading)
                 right
+                    .padding(.trailing, safeArea.trailing)
             }
+            .onGeometryChange(for: EdgeInsets.self, of: \.safeAreaInsets) { safeArea = $0 }
         #else
             HStack(spacing: 0) {
                 left
