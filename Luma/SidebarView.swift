@@ -339,9 +339,14 @@ private struct SidebarChatRow: View {
                 .foregroundStyle(.secondary)
                 .frame(width: subrowIconWidth)
             VStack(alignment: .leading, spacing: 1) {
-                Text(chat.map(chats.displayTitle(of:)) ?? "Project Chat")
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                HStack(spacing: 4) {
+                    Text(chat.map(chats.displayTitle(of:)) ?? "Project Chat")
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    if chats.isLocalOnly(chatID) {
+                        NotInLabMark.localOnlyChat
+                    }
+                }
                 Text(chat.map(about(of:)) ?? "Project")
                     .font(.caption)
                     .foregroundStyle(.secondary)
