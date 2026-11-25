@@ -11,8 +11,7 @@ final class CustomInstrumentRenameDialog {
     private let nameEntry: Entry
     private let dialog: Adw.AlertDialog
     private let parentWindow: Gtk.Window
-    private let conceptGrid: FlowBox
-    private let conceptChildren: [(InstrumentIconConcept, FlowBoxChild)]
+    private let conceptGrid = InstrumentIconConceptGrid()
     private let bitmapPreview: Box
     private var draftIcon: InstrumentIcon
 
@@ -31,24 +30,6 @@ final class CustomInstrumentRenameDialog {
 
         bitmapPreview = Box(orientation: .horizontal, spacing: 0)
 
-        conceptGrid = FlowBox()
-        conceptGrid.selectionMode = .single
-        conceptGrid.maxChildrenPerLine = 8
-        conceptGrid.minChildrenPerLine = 8
-        conceptGrid.homogeneous = true
-        conceptGrid.columnSpacing = 4
-        conceptGrid.rowSpacing = 4
-
-        var children: [(InstrumentIconConcept, FlowBoxChild)] = []
-        for concept in InstrumentIconCatalog.all {
-            let child = FlowBoxChild()
-            child.tooltipText = concept.displayName
-            child.set(child: InstrumentIconView.makeImage(for: .symbolic(concept.id), pixelSize: 20))
-            conceptGrid.append(child: child)
-            children.append((concept, child))
-        }
-        conceptChildren = children
-
         dialog = Adw.AlertDialog(heading: "Rename & Icon", body: nil)
         dialog.addResponse(id: "cancel", label: "_Cancel")
         dialog.addResponse(id: "save", label: "_Save")
@@ -60,8 +41,8 @@ final class CustomInstrumentRenameDialog {
         nameEntry.onChanged { [weak self] _ in
             MainActor.assumeIsolated { self?.refreshSaveEnabled() }
         }
-        conceptGrid.onSelectedChildrenChanged { [weak self] _ in
-            MainActor.assumeIsolated { self?.applyGridSelection() }
+        conceptGrid.onChoose = { [weak self] id in
+            self?.applyGridSelection(id)
         }
         dialog.onResponse { [weak self] _, responseID in
             MainActor.assumeIsolated {
@@ -89,7 +70,7 @@ final class CustomInstrumentRenameDialog {
         let column = Box(orientation: .vertical, spacing: 12)
         column.append(child: nameRow())
         column.append(child: iconSectionLabel())
-        column.append(child: conceptGrid)
+        column.append(child: conceptGrid.widget)
         column.append(child: customRow())
         return column
     }
@@ -139,20 +120,17 @@ final class CustomInstrumentRenameDialog {
     }
 
     private func applyDraftToVisuals() {
-        if case .symbolic(let id) = draftIcon,
-            let child = conceptChildren.first(where: { $0.0.id == id })?.1
-        {
-            conceptGrid.select(child: child)
+        if case .symbolic(let id) = draftIcon {
+            conceptGrid.show(id)
         } else {
-            conceptGrid.unselectAll()
+            conceptGrid.show(nil)
         }
         renderBitmapPreview()
     }
 
-    private func applyGridSelection() {
-        guard let match = conceptChildren.first(where: { $0.1.isSelected })?.0 else { return }
-        if case .symbolic(let id) = draftIcon, id == match.id { return }
-        draftIcon = .symbolic(match.id)
+    private func applyGridSelection(_ id: String) {
+        if case .symbolic(let current) = draftIcon, current == id { return }
+        draftIcon = .symbolic(id)
         renderBitmapPreview()
     }
 

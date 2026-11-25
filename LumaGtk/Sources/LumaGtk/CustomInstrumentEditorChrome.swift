@@ -4,7 +4,9 @@ import LumaCore
 
 @MainActor
 enum CustomInstrumentEditorChrome {
-    static func header(onCancel: @escaping () -> Void, onSave: @escaping () -> Void) -> Adw.HeaderBar {
+    static func header(
+        onCancel: @escaping () -> Void, onSave: @escaping () -> Void, saveButton: Button = Button(label: "Save")
+    ) -> Adw.HeaderBar {
         let header = Adw.HeaderBar()
         header.showStartTitleButtons = false
         header.showEndTitleButtons = false
@@ -13,7 +15,6 @@ enum CustomInstrumentEditorChrome {
             MainActor.assumeIsolated { onCancel() }
         }
         header.packStart(child: cancelButton)
-        let saveButton = Button(label: "Save")
         saveButton.add(cssClass: "suggested-action")
         saveButton.onClicked { _ in
             MainActor.assumeIsolated { onSave() }

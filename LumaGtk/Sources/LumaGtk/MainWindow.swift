@@ -1797,7 +1797,8 @@ final class MainWindow: InstrumentUIHost {
                 .init("Rename & Icon\u{2026}") { [weak self] in self?.presentCustomInstrumentRenameDialog(def: def) },
                 .init("Compatibility\u{2026}") { [weak self] in self?.presentCustomInstrumentCompatibilityDialog(def: def) },
                 .init("Settings\u{2026}") { [weak self] in self?.presentCustomInstrumentSettingsDialog(def: def) },
-                .init("Widgets\u{2026}") { [weak self] in self?.presentCustomInstrumentWidgetsDialog(def: def) },
+                .init("Widgets\u{2026}") { [weak self] in self?.presentCustomInstrumentWidgetsDialog(def: def, page: .widgets) },
+                .init("Layout\u{2026}") { [weak self] in self?.presentCustomInstrumentWidgetsDialog(def: def, page: .layout) },
                 .init("Packages\u{2026}") { [weak self] in self?.presentCustomInstrumentPackagesDialog(def: def) },
             ],
             [
@@ -2025,9 +2026,9 @@ final class MainWindow: InstrumentUIHost {
         CustomInstrumentSettingsDialog(engine: engine, def: def).present(parent: window)
     }
 
-    private func presentCustomInstrumentWidgetsDialog(def: LumaCore.CustomInstrumentDef) {
+    private func presentCustomInstrumentWidgetsDialog(def: LumaCore.CustomInstrumentDef, page: CustomInstrumentWidgetsDialog.Page) {
         guard let engine else { return }
-        CustomInstrumentWidgetsDialog(engine: engine, def: def).present(parent: window)
+        CustomInstrumentWidgetsDialog(engine: engine, def: def, page: page).present(parent: window)
     }
 
     private func presentCustomInstrumentPackagesDialog(def: LumaCore.CustomInstrumentDef) {

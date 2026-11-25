@@ -9,7 +9,10 @@ import LumaCore
 final class CustomInstrumentWidgetsDialog {
     private let engine: Engine
     private let def: CustomInstrumentDef
-    private var draftWidgets: [InstrumentWidget]
+    private var pageWidgets: [InstrumentWidget]
+    private var pageLayout: InstrumentLayout?
+    private var templates: [InstrumentChildTemplate]
+    private var templatesPanel: CustomInstrumentTemplatesPanel!
     private let dialog: Adw.Dialog
     private let listBox: Box
     private let addRowBox: Box
@@ -27,11 +30,22 @@ final class CustomInstrumentWidgetsDialog {
     private var subRowDrafts: [IDNameDraft] = []
     private var problemNotes: [Int: Label] = [:]
     private let countNote = Label(str: "")
+    private let layoutNote = Label(str: "")
+    private let saveButton = Button(label: "Save")
+    private let pages = Adw.ViewStack()
+    private var designer: InstrumentLayoutDesigner!
 
-    init(engine: Engine, def: CustomInstrumentDef) {
+    enum Page: String {
+        case widgets
+        case layout
+    }
+
+    init(engine: Engine, def: CustomInstrumentDef, page: Page) {
         self.engine = engine
         self.def = def
-        self.draftWidgets = def.widgets
+        pageWidgets = def.widgets
+        pageLayout = def.layout
+        templates = def.children
 
         dialog = Adw.Dialog()
         dialog.set(title: "Widgets")
@@ -50,8 +64,54 @@ final class CustomInstrumentWidgetsDialog {
         nameEntry.placeholderText = "Name (leave empty for no title)"
         nameEntry.hexpand = true
 
+        templatesPanel = CustomInstrumentTemplatesPanel(
+            read: { [weak self] in self?.templates ?? [] },
+            write: { [weak self] templates in self?.templates = templates })
+        designer = InstrumentLayoutDesigner(
+            read: { [weak self] () -> (widgets: [InstrumentWidget], layout: InstrumentLayout?) in
+                (self?.draftWidgets ?? [], self?.draftLayout)
+            },
+            write: { [weak self] layout in
+                self?.draftLayout = layout
+            })
+        designer.onChange = { [weak self] in
+            self?.refreshLayoutNote()
+        }
+        templatesPanel.onTargetChanged = { [weak self] in
+            self?.showTarget()
+        }
+        templatesPanel.onTemplatesChanged = { [weak self] in
+            self?.refreshLayoutNote()
+        }
         layout()
         rebuildList()
+        pages.visibleChildName = page.rawValue
+    }
+
+    private var draftWidgets: [InstrumentWidget] {
+        get {
+            templatesPanel.target.map { templates[$0].widgets } ?? pageWidgets
+        }
+        set {
+            guard let target = templatesPanel.target else {
+                pageWidgets = newValue
+                return
+            }
+            templates[target].widgets = newValue
+        }
+    }
+
+    private var draftLayout: InstrumentLayout? {
+        get {
+            templatesPanel.target.map { templates[$0].layout } ?? pageLayout
+        }
+        set {
+            guard let target = templatesPanel.target else {
+                pageLayout = newValue
+                return
+            }
+            templates[target].layout = newValue
+        }
     }
 
     func present(parent: Gtk.Window) {
@@ -73,6 +133,7 @@ final class CustomInstrumentWidgetsDialog {
         intro.xalign = 0
         intro.maxWidthChars = 60
         scrollContent.append(child: intro)
+        scrollContent.append(child: templatesPanel.editor)
 
         scrollContent.append(child: listBox)
         countNote.add(cssClass: "caption")
@@ -96,12 +157,42 @@ final class CustomInstrumentWidgetsDialog {
 
         let header = CustomInstrumentEditorChrome.header(
             onCancel: { [weak self] in self?.close() },
-            onSave: { [weak self] in self?.commit() }
+            onSave: { [weak self] in self?.commit() },
+            saveButton: saveButton
         )
+
+        _ = pages.addTitledWithIcon(child: scroll, name: Page.widgets.rawValue, title: "Widgets", iconName: "view-list-symbolic")
+        _ = pages.addTitledWithIcon(child: designer.widget, name: Page.layout.rawValue, title: "Layout", iconName: "view-grid-symbolic")
+        pages.onNotifyVisibleChild { [weak self] _, _ in
+            MainActor.assumeIsolated { self?.designer.refresh() }
+        }
+        let switcher = Adw.ViewSwitcher()
+        switcher.policy = .wide
+        switcher.set(stack: pages)
+        header.set(titleWidget: switcher)
+
+        let body = Box(orientation: .vertical, spacing: 0)
+        pages.vexpand = true
+        body.append(child: pages)
+        layoutNote.add(cssClass: "caption")
+        layoutNote.add(cssClass: "error")
+        layoutNote.halign = .start
+        layoutNote.xalign = 0
+        layoutNote.wrap = true
+        layoutNote.marginStart = 16
+        layoutNote.marginEnd = 16
+        layoutNote.marginBottom = 12
+        body.append(child: layoutNote)
+
+        let content = Box(orientation: .horizontal, spacing: 0)
+        content.append(child: templatesPanel.widget)
+        content.append(child: Separator(orientation: .vertical))
+        body.hexpand = true
+        content.append(child: body)
 
         let toolbarView = Adw.ToolbarView()
         toolbarView.addTopBar(widget: header)
-        toolbarView.set(content: scroll)
+        toolbarView.set(content: content)
 
         dialog.set(child: toolbarView)
     }
@@ -216,8 +307,16 @@ final class CustomInstrumentWidgetsDialog {
             applyExpansion(to: troubled.id)
             return
         }
-        let widgets = draftWidgets
-        engine.updateCustomInstrument(def.id) { $0.widgets = widgets }
+        guard savingProblem == nil else {
+            refreshLayoutNote()
+            return
+        }
+        let saved = candidate
+        engine.updateCustomInstrument(def.id) {
+            $0.widgets = saved.widgets
+            $0.layout = saved.layout
+            $0.children = saved.children
+        }
         close()
     }
 
@@ -235,6 +334,7 @@ final class CustomInstrumentWidgetsDialog {
         let countProblem = InstrumentWidget.countProblem(draftWidgets.count)
         countNote.label = countProblem.map { "widgets: \($0)" } ?? ""
         countNote.visible = countProblem != nil
+        refreshLayoutNote()
         if draftWidgets.isEmpty {
             let empty = Label(str: "No widgets defined.")
             empty.add(cssClass: "dim-label")
@@ -245,6 +345,39 @@ final class CustomInstrumentWidgetsDialog {
         for (index, widget) in draftWidgets.enumerated() {
             listBox.append(child: widgetRow(widget: widget, index: index))
         }
+    }
+
+    private func showTarget() {
+        expandedID = nil
+        designer.setSample(templatesPanel.target.map { templates[$0] })
+        rebuildList()
+        designer.refresh()
+    }
+
+    private func refreshLayoutNote() {
+        let problem = savingProblem
+        layoutNote.label = problem ?? ""
+        layoutNote.visible = problem != nil
+        saveButton.sensitive = problem == nil
+    }
+
+    private var savingProblem: String? {
+        if let text = InstrumentLayoutDesigner.savingProblem(layout: pageLayout, widgets: pageWidgets) {
+            return text
+        }
+        return candidate.childrenProblem.map { "\(Self.describe($0.path)): \($0.text)" }
+    }
+
+    private var candidate: CustomInstrumentDef {
+        var candidate = def
+        candidate.widgets = pageWidgets
+        candidate.layout = pageLayout?.savable(for: pageWidgets)
+        candidate.children = templates.map { template -> InstrumentChildTemplate in
+            var saved = template
+            saved.layout = template.layout?.savable(for: template.widgets)
+            return saved
+        }
+        return candidate
     }
 
     private func widgetRow(widget: InstrumentWidget, index: Int) -> Box {
@@ -307,6 +440,7 @@ final class CustomInstrumentWidgetsDialog {
         let kindDropdown = makeWidgetKindDropdown(initial: WidgetKindChoice(from: widget.kind)) { [weak self] kind in
             guard let self, index < self.draftWidgets.count else { return }
             self.draftWidgets[index].kind = kind.defaultKind()
+            self.dropRowCapIfUnsupported(of: self.draftWidgets[index])
             self.expandedID = self.draftWidgets[index].id
             self.rebuildList()
         }
@@ -318,6 +452,7 @@ final class CustomInstrumentWidgetsDialog {
                 guard let self, index < self.draftWidgets.count else { return }
                 let removedID = self.draftWidgets[index].id
                 self.draftWidgets.remove(at: index)
+                self.draftLayout = self.draftLayout?.removing(removedID)
                 if self.expandedID == removedID { self.expandedID = nil }
                 self.rebuildList()
             }
@@ -353,6 +488,19 @@ final class CustomInstrumentWidgetsDialog {
 
         widgetBodies[widgetID] = (body, chevronButton)
         return card
+    }
+
+    private func dropRowCapIfUnsupported(of widget: InstrumentWidget) {
+        guard let layout = draftLayout, let path = layout.path(of: widget.id), layout[path].maxRows != nil, !Self.takesRowCap(widget.kind)
+        else { return }
+        draftLayout = try! layout.setting(.maxRows, to: nil, at: path, widgets: draftWidgets)
+    }
+
+    private static func takesRowCap(_ kind: InstrumentWidget.Kind) -> Bool {
+        switch kind {
+        case .list, .table: return true
+        default: return false
+        }
     }
 
     private func titleRow(widget: InstrumentWidget, index: Int, onChange: @escaping (String?) -> Void) -> Box {

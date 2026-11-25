@@ -707,6 +707,43 @@ enum StyleSheet {
         margin-left: 6px;
         margin-right: 6px;
     }
+    box.luma-layout-page {
+        background-color: alpha(@window_fg_color, 0.035);
+        border-radius: 8px;
+    }
+    box.luma-layout-page-line {
+        border-top: 1px dashed @warning_color;
+    }
+    button.luma-layout-box,
+    button.luma-layout-container {
+        min-height: 0;
+        min-width: 0;
+        padding: 2px 6px;
+        border-radius: 6px;
+        box-shadow: none;
+        font-weight: normal;
+    }
+    button.luma-layout-box {
+        background-color: alpha(@accent_bg_color, 0.12);
+        border: 1px solid alpha(@accent_bg_color, 0.35);
+    }
+    button.luma-layout-box:hover {
+        background-color: alpha(@accent_bg_color, 0.2);
+    }
+    button.luma-layout-container {
+        background: none;
+        border: 1px dashed alpha(@window_fg_color, 0.35);
+    }
+    button.luma-layout-container.luma-layout-folded {
+        border-color: @warning_color;
+    }
+    button.luma-layout-box.luma-layout-selected,
+    button.luma-layout-container.luma-layout-selected {
+        border: 2px solid @accent_color;
+    }
+    label.luma-layout-tag {
+        font-size: 10px;
+    }
     listview.luma-widget-rows {
         background: none;
     }
