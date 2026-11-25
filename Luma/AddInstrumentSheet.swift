@@ -520,8 +520,9 @@ struct AddInstrumentSheet: View {
                 )
                 if let added {
                     onInstrumentAdded?(added)
+                } else {
+                    selection = .customInstrumentFile(def.id, def.entrypoint)
                 }
-                selection = .customInstrumentFile(def.id, def.entrypoint)
                 dismiss()
             }
         } catch {

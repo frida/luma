@@ -465,7 +465,7 @@ struct ProjectToolbar: ToolbarContent {
                     engine: engine,
                     selection: $selection,
                     onInstrumentAdded: { instrument in
-                        selection = .instrument(session.id, instrument.id)
+                        showAdded(instrument, in: session)
                     },
                     onBrowseCodeShare: {
                         pendingCodeShareAfterAddInstrumentDismiss = session
@@ -478,7 +478,7 @@ struct ProjectToolbar: ToolbarContent {
                     engine: engine,
                     onInstrumentAdded: { instrument in
                         showingCodeShareSheetForProcess = nil
-                        selection = .instrument(session.id, instrument.id)
+                        showAdded(instrument, in: session)
                     }
                 )
             }
@@ -546,6 +546,11 @@ struct ProjectToolbar: ToolbarContent {
             .help("Show or hide the collaboration panel")
             .keyboardShortcut("c", modifiers: [.command, .option])
         }
+    }
+
+    private func showAdded(_ instrument: LumaCore.InstrumentInstance, in session: LumaCore.ProcessSession) {
+        engine.setSidebarExpansion(sessionID: session.id, .expanded)
+        selection = .instrument(session.id, instrument.id)
     }
 
     var selectedProcessSession: LumaCore.ProcessSession? {
