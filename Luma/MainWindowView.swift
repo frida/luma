@@ -218,6 +218,7 @@ private struct ProjectContentView: View {
             PartnerContactQuestion(storefront: engine.storefront)
         }
         .offeredFileSaving(engine: engine)
+        .childSelectionRequests(engine: engine)
     }
 
     @ViewBuilder
@@ -572,6 +573,7 @@ struct ProjectToolbar: ToolbarContent {
             .thread(let sessionID, _),
             .instrument(let sessionID, _),
             .instrumentComponent(let sessionID, _, _),
+            .instrumentChild(let sessionID, _, _),
             .insight(let sessionID, _),
             .itrace(let sessionID, _):
             return engine.session(id: sessionID)
@@ -595,6 +597,7 @@ struct ProjectToolbar: ToolbarContent {
             .thread(let sessionID, _),
             .instrument(let sessionID, _),
             .instrumentComponent(let sessionID, _, _),
+            .instrumentChild(let sessionID, _, _),
             .insight(let sessionID, _),
             .itrace(let sessionID, _):
             return engine.node(forSessionID: sessionID)

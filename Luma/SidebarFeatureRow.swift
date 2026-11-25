@@ -42,6 +42,7 @@ extension SidebarFeatureRowLabel where Accessory == EmptyView {
 
 struct SidebarBrowseAllRow<Popover: View>: View {
     let count: Int
+    var title: String? = nil
     var indent: CGFloat = sidebarGrandchildIndent
     @ViewBuilder var popover: (_ dismiss: @escaping () -> Void) -> Popover
 
@@ -55,7 +56,7 @@ struct SidebarBrowseAllRow<Popover: View>: View {
                 Image(systemName: "ellipsis.circle")
                     .frame(width: sidebarChildIconWidth, alignment: .center)
                     .foregroundStyle(.secondary)
-                Text("Browse all \(count)\u{2026}")
+                Text(title ?? "Browse all \(count)\u{2026}")
                     .foregroundStyle(.secondary)
                 Spacer()
             }

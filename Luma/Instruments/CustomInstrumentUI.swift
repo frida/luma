@@ -47,4 +47,17 @@ struct CustomInstrumentUI: InstrumentUI {
         }
         return AnyView(Text(String(describing: event.payload)))
     }
+
+    func sidebarChildren(
+        sessionID: UUID,
+        instance: LumaCore.InstrumentInstance,
+        engine: Engine,
+        selection: Binding<SidebarItemID?>
+    ) -> AnyView {
+        AnyView(CustomInstrumentChildRows(sessionID: sessionID, instance: instance, engine: engine, selection: selection))
+    }
+
+    func hasSidebarChildren(instance: LumaCore.InstrumentInstance, engine: Engine) -> Bool {
+        !engine.children(of: instance.id).isEmpty
+    }
 }

@@ -20,6 +20,7 @@ enum SidebarItemID: Codable, Hashable {
     case thread(UUID, UInt)
     case instrument(UUID, UUID)
     case instrumentComponent(UUID, UUID, UUID)
+    case instrumentChild(UUID, UUID, ChildRef)
     case insight(UUID, UUID)
     case itrace(UUID, UUID)
     case package(UUID)
@@ -40,6 +41,7 @@ extension SidebarItemID {
             .thread(let id, _),
             .instrument(let id, _),
             .instrumentComponent(let id, _, _),
+            .instrumentChild(let id, _, _),
             .insight(let id, _),
             .itrace(let id, _):
             return id

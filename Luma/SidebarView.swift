@@ -225,7 +225,7 @@ struct SidebarView: View {
     }
 
     private func hasInstrumentChildren(instance: LumaCore.InstrumentInstance) -> Bool {
-        InstrumentUIRegistry.shared.ui(for: instance)?.hasSidebarChildren(instance: instance) ?? false
+        InstrumentUIRegistry.shared.ui(for: instance)?.hasSidebarChildren(instance: instance, engine: engine) ?? false
     }
 
     private func toggleHooksExpansion(sessionID: UUID, instrumentID: UUID) {

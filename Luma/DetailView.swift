@@ -125,6 +125,18 @@ struct DetailView: View {
                     .id(instID)
                 }
 
+            case .some(.instrumentChild(let sessionID, let instID, let child)):
+                SessionContent(sessionID: sessionID, engine: engine) {
+                    InstrumentChildPage(
+                        instanceID: instID,
+                        sessionID: sessionID,
+                        child: child,
+                        engine: engine,
+                        selection: $selection
+                    )
+                }
+                .id(selection)
+
             case .some(.itrace(let sessionID, let traceID)):
                 let session = engine.sessions.first(where: { $0.id == sessionID })
                 if let session,

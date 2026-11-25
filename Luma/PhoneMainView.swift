@@ -107,6 +107,19 @@ private struct PhoneContentView: View {
                             .toolbar { drawerTriggers }
                         }
 
+                    case .instrumentChild(let sessionID, let instrumentID, let child):
+                        SessionContent(sessionID: sessionID, engine: engine) {
+                            InstrumentChildPage(
+                                instanceID: instrumentID,
+                                sessionID: sessionID,
+                                child: child,
+                                engine: engine,
+                                selection: $path.asSidebarSelection()
+                            )
+                        }
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar { drawerTriggers }
+
                     case .insight(let sessionID, let insightID):
                         if let session = engine.sessions.first(where: { $0.id == sessionID }),
                            let insight = (engine.insightsBySession[sessionID] ?? []).first(where: { $0.id == insightID })
@@ -210,6 +223,7 @@ private struct PhoneContentView: View {
 enum PhoneRoute: Hashable {
     case session(UUID)
     case instrument(UUID, UUID)
+    case instrumentChild(UUID, UUID, ChildRef)
     case insight(UUID, UUID)
     case trace(UUID, UUID)
     case customInstrument(UUID, String?)
@@ -227,6 +241,8 @@ extension Binding where Value == [PhoneRoute] {
                 case .instrument(let sid, let iid),
                      .instrumentComponent(let sid, let iid, _):
                     self.wrappedValue.append(.instrument(sid, iid))
+                case .instrumentChild(let sid, let iid, let child):
+                    self.wrappedValue.append(.instrumentChild(sid, iid, child))
                 case .itrace(let sid, let tid):
                     self.wrappedValue.append(.trace(sid, tid))
                 case .customInstrumentDef(let defID):

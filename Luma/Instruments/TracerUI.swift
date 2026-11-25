@@ -118,7 +118,7 @@ struct TracerUI: InstrumentUI {
         )
     }
 
-    func hasSidebarChildren(instance: LumaCore.InstrumentInstance) -> Bool {
+    func hasSidebarChildren(instance: LumaCore.InstrumentInstance, engine: Engine) -> Bool {
         guard let config = try? TracerConfig.decode(from: instance.configJSON) else { return false }
         return !config.hooksByMostRecentlyEdited().isEmpty
     }

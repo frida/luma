@@ -320,6 +320,14 @@ struct PhoneSessionView: View {
                         }
                         .tint(instance.state == .enabled ? .orange : .green)
                     }
+                    ForEach(engine.children(of: instance.id)) { child in
+                        Button {
+                            path.append(.instrumentChild(sessionID, instance.id, child.ref))
+                        } label: {
+                            PhoneChildRow(child: child, template: engine.childTemplate(child.ref.template, of: instance))
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             }
             .listStyle(.plain)
@@ -495,6 +503,38 @@ private struct InstrumentRow: View {
         }
         .padding(.vertical, 4)
         .opacity(instance.state == .enabled ? 1 : 0.55)
+        .contentShape(Rectangle())
+    }
+}
+
+private struct PhoneChildRow: View {
+    let child: InstrumentChild
+    let template: InstrumentChildTemplate?
+
+    var body: some View {
+        HStack(spacing: 12) {
+            InstrumentIconView(icon: .symbolic(template?.symbol ?? InstrumentIconCatalog.default.id), pointSize: 16)
+                .frame(width: 28, height: 28)
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(child.title)
+                    .font(.body)
+                if let subtitle = child.subtitle {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if let badge = child.badge {
+                ChildBadgeView(text: badge.text, tone: badge.tone)
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.leading, 28)
+        .padding(.vertical, 4)
         .contentShape(Rectangle())
     }
 }
