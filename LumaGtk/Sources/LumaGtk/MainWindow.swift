@@ -4177,13 +4177,16 @@ final class MainWindow: InstrumentUIHost {
     private func presentSessionContextMenu(anchor: Widget, x: Double, y: Double, session: LumaCore.ProcessSession) {
         let node = engine?.node(forSessionID: session.id)
         if engine?.localUserHosts(session.id) == false {
+            var hosting: [ContextMenu.Item] = []
             if engine?.canTakeHosting(session) == true {
-                ContextMenu.present([
-                    [.init("Run on My Device…") { [weak self] in
-                        self?.rehost(sessionID: session.id)
-                    }]
-                ], at: anchor, x: x, y: y)
+                hosting.append(.init("Run on My Device…") { [weak self] in
+                    self?.rehost(sessionID: session.id)
+                })
             }
+            ContextMenu.present([
+                hosting,
+                [.init("Delete Session", destructive: true) { [weak self] in self?.confirmDeleteSession(session) }],
+            ], at: anchor, x: x, y: y)
             return
         }
 
@@ -4491,7 +4494,7 @@ final class MainWindow: InstrumentUIHost {
         confirmDestructive(
             message: "Delete session “\(session.processName)”?",
             detail: "This removes the session and its history from the project.",
-            destructiveLabel: "Delete"
+            destructiveLabel: engine?.canRemoveFromLab(session) == true ? "Delete for Everyone in the Lab" : "Remove from This Project"
         ) { [weak self] in
             self?.engine?.deleteSession(id: session.id)
             self?.showToast("Deleted \(session.processName)")
