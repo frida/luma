@@ -774,10 +774,6 @@ final class MainWindow: InstrumentUIHost {
         }
     }
 
-    func showFatalError(_ message: String) {
-        replaceDetail(with: Label(str: message))
-    }
-
     func newSession() {
         requestNewSession()
     }

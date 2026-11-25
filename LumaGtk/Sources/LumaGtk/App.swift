@@ -203,10 +203,20 @@ final class LumaApplication {
             let document = try LumaDocumentLoader.open(at: url)
             openWindow(for: document)
         } catch {
-            FileHandle.standardError.write(
-                "Failed to open \(url.path): \(error)\n".data(using: .utf8)!
-            )
+            presentOpenFailure(error)
         }
+    }
+
+    private func presentOpenFailure(_ error: Error) {
+        if openDocuments.isEmpty {
+            showWelcome()
+        }
+        guard let parent = activeWelcome?.window ?? openDocuments.values.first?.window.window else { return }
+        let alert = Adw.AlertDialog(heading: "Failed to open project", body: error.localizedDescription)
+        alert.addResponse(id: "ok", label: "_OK")
+        alert.setDefault(response: "ok")
+        alert.setClose(response: "ok")
+        alert.present(parent: parent)
     }
 
     func openWindow(for document: LumaDocument) {
@@ -231,9 +241,9 @@ final class LumaApplication {
 
             recordDocumentOpened(document)
         } catch {
-            window.present()
-            window.showFatalError("Failed to open project: \(error.localizedDescription)")
             openDocuments[key] = nil
+            window.destroyWindow()
+            presentOpenFailure(error)
         }
     }
 
