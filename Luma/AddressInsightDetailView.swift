@@ -294,7 +294,8 @@ struct DisassemblyView: View {
     @State private var pulsePhase: Bool = false
     @State private var pulseTask: Task<Void, Never>?
 
-    @State private var requestedJumpTarget: UInt64?
+    @State private var followRequest: FollowRequest?
+    @Environment(\.errorPresenter) private var errorPresenter
 
     let rowHeight: CGFloat = 20
 
@@ -321,10 +322,6 @@ struct DisassemblyView: View {
                             },
                             onJump: { target in
                                 try handleJump(target, scrollProxy: scrollProxy)
-                            },
-                            requestedJumpTarget: requestedJumpTarget,
-                            clearRequestedJump: {
-                                requestedJumpTarget = nil
                             }
                         )
                         .id(line.address)
@@ -399,6 +396,15 @@ struct DisassemblyView: View {
                 onJumpTaken()
                 try? handleJump(target, scrollProxy: scrollProxy)
             }
+            .onChange(of: followRequest) { _, request in
+                guard let request else { return }
+                followRequest = nil
+                do {
+                    try handleJump(request.target, scrollProxy: scrollProxy)
+                } catch {
+                    errorPresenter.present("Can\u{2019}t jump here", error.localizedDescription)
+                }
+            }
         }
     }
 
@@ -409,6 +415,11 @@ struct DisassemblyView: View {
     private struct JumpRequest: Equatable {
         let target: UInt64?
         let isLoaded: Bool
+    }
+
+    private struct FollowRequest: Equatable {
+        let target: UInt64
+        let id = UUID()
     }
 
     @ViewBuilder
@@ -441,7 +452,7 @@ struct DisassemblyView: View {
             isFocused = true
 
             withAnimation(.snappy) {
-                scrollProxy.scrollTo(target, anchor: .leading)
+                scrollProxy.scrollTo(target, anchor: .center)
             }
 
             pulseTask?.cancel()
@@ -535,7 +546,7 @@ struct DisassemblyView: View {
 
     private func follow(_ line: DisassemblyLine) {
         guard let target = line.branchTarget ?? line.callTarget else { return }
-        requestedJumpTarget = target
+        followRequest = FollowRequest(target: target)
     }
 }
 
@@ -555,8 +566,6 @@ private struct DisasmRow: View {
     let onActivate: (() -> Void)?
     let onSelect: () -> Void
     let onJump: (UInt64) throws -> Void
-    let requestedJumpTarget: UInt64?
-    let clearRequestedJump: () -> Void
 
     @Environment(\.errorPresenter) private var errorPresenter
 
@@ -694,12 +703,6 @@ private struct DisasmRow: View {
         }
         .onHover { isHovering in
             hoveredAddr = isHovering ? line.address : nil
-        }
-        .onChange(of: requestedJumpTarget) { _, newValue in
-            guard isSelected else { return }
-            guard let target = newValue else { return }
-            clearRequestedJump()
-            jump(target)
         }
     }
 
