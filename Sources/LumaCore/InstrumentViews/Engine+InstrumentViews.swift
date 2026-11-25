@@ -33,7 +33,7 @@ extension Engine {
             instance.kind == .custom,
             let defID = UUID(uuidString: instance.sourceIdentifier),
             let def = try? store.fetchCustomInstrumentDef(id: defID),
-            let widget = def.widgets.first(where: { $0.id == key.widget }),
+            let widget = def.widget(atSlot: key.widget),
             case .view(let config) = widget.kind,
             let files = try? store.fetchCustomInstrumentFiles(defID: defID)
         else { return nil }
