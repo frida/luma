@@ -3494,6 +3494,7 @@ public final class Engine {
         guard let analysis = try? store.fetchModuleAnalysis(sessionID: sessionID, modulePath: modulePath) else { return }
         if let uuid = analysis.moduleUUID {
             try? store.deleteMemoryPagesModule(sessionID: sessionID, moduleUUID: uuid)
+            memoryReaders[sessionID]?.forgetPages(ofModuleUUID: uuid)
         }
         try? store.deleteModuleAnalysis(sessionID: sessionID, modulePath: modulePath)
         disassemblers[sessionID]?.forgetModule(path: modulePath)

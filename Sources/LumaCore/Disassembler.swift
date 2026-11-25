@@ -516,6 +516,7 @@ public final class CachingMemoryReader: MemoryReader {
     public var fetchRemote: ((MemoryPageRegion) async -> Data?)?
 
     private var ephemeralCache: [UInt64: Data] = [:]
+    private var residentPages: [MemoryPageRegion: Data] = [:]
     private var unreadablePages: Set<UInt64> = []
 
     public init(sessionID: UUID, store: ProjectStore, keying: PageKeying, live: (MemoryReader & MemoryWriter)?) {
@@ -555,6 +556,13 @@ public final class CachingMemoryReader: MemoryReader {
         while cursor < end {
             forget(await pageKey(for: cursor))
             cursor = cursor &+ MemoryPage.size
+        }
+    }
+
+    public func forgetPages(ofModuleUUID uuid: String) {
+        residentPages = residentPages.filter { region, _ in
+            guard case .module(let pageUUID, _) = region else { return true }
+            return pageUUID != uuid
         }
     }
 
@@ -616,6 +624,15 @@ public final class CachingMemoryReader: MemoryReader {
         guard case .mapped(let region) = key.region else {
             return ephemeralBytes(at: key.pageBase)
         }
+        if let resident = residentPages[region] {
+            return resident
+        }
+        let stored = storedBytes(for: region)
+        residentPages[region] = stored
+        return stored
+    }
+
+    private func storedBytes(for region: MemoryPageRegion) -> Data? {
         switch region {
         case .module(let uuid, let offset):
             return (try? store.fetchMemoryPage(sessionID: sessionID, moduleUUID: uuid, offset: offset))?.bytes
@@ -630,6 +647,7 @@ public final class CachingMemoryReader: MemoryReader {
             ephemeralCache[key.pageBase] = nil
             return
         }
+        residentPages[region] = nil
         switch region {
         case .module(let uuid, let offset):
             try? store.deleteMemoryPage(sessionID: sessionID, moduleUUID: uuid, offset: offset)
@@ -643,6 +661,7 @@ public final class CachingMemoryReader: MemoryReader {
             ephemeralCache[key.pageBase] = bytes
             return
         }
+        residentPages[region] = bytes
         switch region {
         case .module(let uuid, let offset):
             try? store.save(MemoryPageModule(sessionID: sessionID, moduleUUID: uuid, offset: offset, bytes: bytes))

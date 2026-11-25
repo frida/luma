@@ -10,7 +10,7 @@ public enum MemoryPage {
     }
 }
 
-public enum MemoryPageRegion: Sendable, Equatable {
+public enum MemoryPageRegion: Sendable, Hashable {
     case module(uuid: String, offset: UInt64)
     case anonymous(identity: String, address: UInt64)
 }
