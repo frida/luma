@@ -53,6 +53,7 @@ public struct ProjectUIState: Codable, Equatable, Sendable, FetchableRecord, Per
 
 public enum SidebarSection: String, Codable, Sendable {
     case missions
+    case chats
     case patterns
     case sessions
     case customInstruments = "custom_instruments"
