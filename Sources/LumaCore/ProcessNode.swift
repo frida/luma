@@ -1519,6 +1519,32 @@ public final class ProcessNode: Identifiable {
         public let offset: UInt64
         public let size: UInt64
         public let protection: String
+
+        public init(offset: UInt64, size: UInt64, protection: String) {
+            self.offset = offset
+            self.size = size
+            self.protection = protection
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case offset
+            case size
+            case protection
+        }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            offset = try ModuleOffset.decode(.offset, from: c)
+            size = try c.decode(UInt64.self, forKey: .size)
+            protection = try c.decode(String.self, forKey: .protection)
+        }
+
+        public func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(ModuleOffset.number(offset), forKey: .offset)
+            try c.encode(size, forKey: .size)
+            try c.encode(protection, forKey: .protection)
+        }
     }
 
     public struct ProcessRange: Sendable, Hashable {

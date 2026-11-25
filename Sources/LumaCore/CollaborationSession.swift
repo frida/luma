@@ -198,11 +198,8 @@ public final class CollaborationSession {
                 guard let modulePath = entry["module_path"] as? String,
                     let name = entry["name"] as? String
                 else { return nil }
-                let rawOffset: Int64
-                if let n = entry["offset"] as? Int64 { rawOffset = n }
-                else if let n = entry["offset"] as? Int { rawOffset = Int64(n) }
-                else { return nil }
-                return .init(modulePath: modulePath, offset: UInt64(bitPattern: rawOffset), name: name)
+                guard let offset = ModuleOffset.value(entry["offset"]) else { return nil }
+                return .init(modulePath: modulePath, offset: offset, name: name)
             }
 
             let armingState: ProcessSession.ArmingState
@@ -1057,11 +1054,11 @@ public final class CollaborationSession {
         case .module(let uuid, let offset):
             payload["region"] = "module"
             payload["module_uuid"] = uuid
-            payload["offset"] = Int64(bitPattern: offset)
+            payload["offset"] = ModuleOffset.number(offset)
         case .anonymous(let identity, let address):
             payload["region"] = "anonymous"
             payload["process_identity"] = identity
-            payload["address"] = Int64(bitPattern: address)
+            payload["address"] = HexAddress.string(address)
         }
         sendNotification(
             to: "/labs/\(labID)/sessions/\(sessionID.uuidString)",
@@ -1078,11 +1075,11 @@ public final class CollaborationSession {
         case .module(let uuid, let offset):
             payload["region"] = "module"
             payload["module_uuid"] = uuid
-            payload["offset"] = Int64(bitPattern: offset)
+            payload["offset"] = ModuleOffset.number(offset)
         case .anonymous(let identity, let address):
             payload["region"] = "anonymous"
             payload["process_identity"] = identity
-            payload["address"] = Int64(bitPattern: address)
+            payload["address"] = HexAddress.string(address)
         }
         return await withCheckedContinuation { continuation in
             sendRequest(

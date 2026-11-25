@@ -522,7 +522,7 @@ public enum SessionOp: Sendable {
             obj["entries"] = u.entries.map { entry -> [String: Any] in
                 [
                     "module_path": entry.modulePath,
-                    "offset": Int64(bitPattern: entry.offset),
+                    "offset": ModuleOffset.number(entry.offset),
                     "name": entry.name,
                 ]
             }
@@ -683,12 +683,12 @@ public enum SessionOp: Sendable {
             let raw = (obj["entries"] as? [[String: Any]]) ?? []
             let entries: [UpdateModuleSymbols.Entry] = raw.compactMap { entry in
                 guard let modulePath = entry["module_path"] as? String,
-                    let rawOffset = entry["offset"] as? Int64 ?? (entry["offset"] as? Int).map(Int64.init),
+                    let offset = ModuleOffset.value(entry["offset"]),
                     let name = entry["name"] as? String
                 else { return nil }
                 return UpdateModuleSymbols.Entry(
                     modulePath: modulePath,
-                    offset: UInt64(bitPattern: rawOffset),
+                    offset: offset,
                     name: name
                 )
             }

@@ -99,15 +99,21 @@ public struct AddressInsight: Codable, Identifiable, Sendable, FetchableRecord, 
 
     public func toWireJSON() -> [String: Any]? {
         guard let data = try? Self.wireEncoder.encode(self),
-            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            var obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return nil }
+        obj["last_resolved_address"] = lastResolvedAddress.map(HexAddress.string)
         return obj
     }
 
     public static func fromWireJSON(_ obj: [String: Any]) -> AddressInsight? {
-        guard let data = try? JSONSerialization.data(withJSONObject: obj),
-            let insight = try? wireDecoder.decode(AddressInsight.self, from: data)
+        var fields = obj
+        let wireAddress = fields.removeValue(forKey: "last_resolved_address")
+        let address = (wireAddress as? String).flatMap(HexAddress.parse)
+        guard wireAddress == nil || address != nil,
+            let data = try? JSONSerialization.data(withJSONObject: fields),
+            var insight = try? wireDecoder.decode(AddressInsight.self, from: data)
         else { return nil }
+        insight.lastResolvedAddress = address
         return insight
     }
 }

@@ -110,9 +110,9 @@ public struct WidgetUpdate: Sendable, Identifiable {
         case "hex-set":
             guard let hex = obj["hex"] as? [String: Any],
                 let b64 = hex["bytes"] as? String,
-                let bytes = Data(base64Encoded: b64)
+                let bytes = Data(base64Encoded: b64),
+                let baseAddress = (hex["base_address"] as? String).flatMap(HexAddress.parse)
             else { return nil }
-            let baseAddress: UInt64 = (hex["base_address"] as? NSNumber)?.uint64Value ?? 0
             return .hexSet(WidgetHexState(bytes: bytes, baseAddress: baseAddress))
         case "console-append":
             guard let entryObj = obj["entry"] as? [String: Any],
@@ -177,7 +177,7 @@ extension WidgetUpdate.Kind {
             obj["kind"] = "hex-set"
             obj["hex"] = [
                 "bytes": state.bytes.base64EncodedString(),
-                "base_address": state.baseAddress,
+                "base_address": HexAddress.string(state.baseAddress),
             ]
         case .consoleAppend(let entry):
             obj["kind"] = "console-append"
@@ -552,12 +552,10 @@ public struct WidgetState: Codable, Sendable, Equatable {
         var hex: WidgetHexState?
         if let h = stateObj["hex"] as? [String: Any],
             let b64 = h["bytes"] as? String,
-            let bytes = Data(base64Encoded: b64)
+            let bytes = Data(base64Encoded: b64),
+            let baseAddress = (h["base_address"] as? String).flatMap(HexAddress.parse)
         {
-            hex = WidgetHexState(
-                bytes: bytes,
-                baseAddress: (h["base_address"] as? NSNumber)?.uint64Value ?? 0
-            )
+            hex = WidgetHexState(bytes: bytes, baseAddress: baseAddress)
         }
 
         var consoleEntries: [WidgetConsoleEntry] = []

@@ -1598,11 +1598,29 @@ public final class ProjectStore: Sendable {
         case .new:
             try db.write(createSchema)
         case .current:
-            guard try db.read(columnsByTable) == expectedColumnsByTable else { throw ProjectStoreError.savedByDevelopmentBuild }
+            guard try db.read(columnsByTable) == expectedColumnsByTable, try db.read(holdsOnlyCurrentEncodings) else {
+                throw ProjectStoreError.savedByDevelopmentBuild
+            }
         case .earlier:
             throw ProjectStoreError.madeByEarlierLuma
         case .later:
             throw ProjectStoreError.savedByNewerLuma
+        }
+    }
+
+    private static func holdsOnlyCurrentEncodings(_ db: Database) throws -> Bool {
+        guard try InstrumentInstance.fetchAll(db).allSatisfy(\.hasCurrentConfig) else { return false }
+        do {
+            _ = try AddressInsight.fetchAll(db)
+            _ = try SessionUIState.fetchAll(db)
+            _ = try ObjectChat.fetchAll(db)
+            _ = try REPLCell.fetchAll(db)
+            for row in try ModuleAnalysisRow.fetchAll(db) {
+                _ = try JSONDecoder().decode([ProcessNode.ModuleRange].self, from: row.mappedRanges)
+            }
+            return true
+        } catch {
+            return false
         }
     }
 

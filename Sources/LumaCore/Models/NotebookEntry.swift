@@ -231,7 +231,7 @@ public struct NotebookEntry: Codable, Equatable, Identifiable, Sendable, Fetchab
 
         let processName = obj["process_name"] as? String
 
-        let baseAddress = (obj["base_address"] as? String).flatMap { UInt64($0.dropFirst(2), radix: 16) }
+        let baseAddress = (obj["base_address"] as? String).flatMap(HexAddress.parse)
         let placements = [PatternPlacement](wireJSON: obj["placements"] as? [[String: Any]] ?? [])
 
         return NotebookEntry(

@@ -62,6 +62,23 @@ public struct REPLCell: Codable, Identifiable, Sendable, FetchableRecord, Persis
                 self.typedArray = typedArray
                 self.baseAddress = baseAddress
             }
+
+            private enum CodingKeys: String, CodingKey {
+                case typedArray
+                case baseAddress
+            }
+
+            public init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                typedArray = try c.decodeIfPresent(String.self, forKey: .typedArray)
+                baseAddress = c.contains(.baseAddress) ? try HexAddress.decode(.baseAddress, from: c) : nil
+            }
+
+            public func encode(to encoder: Encoder) throws {
+                var c = encoder.container(keyedBy: CodingKeys.self)
+                try c.encodeIfPresent(typedArray, forKey: .typedArray)
+                try c.encodeIfPresent(baseAddress.map(HexAddress.string), forKey: .baseAddress)
+            }
         }
     }
 

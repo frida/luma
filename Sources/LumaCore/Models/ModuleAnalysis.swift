@@ -50,6 +50,23 @@ public struct ModuleAnalysis: Codable, Sendable {
                 self.offset = offset
                 self.size = size
             }
+
+            private enum CodingKeys: String, CodingKey {
+                case offset
+                case size
+            }
+
+            public init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                offset = try ModuleOffset.decode(.offset, from: c)
+                size = try c.decode(UInt64.self, forKey: .size)
+            }
+
+            public func encode(to encoder: Encoder) throws {
+                var c = encoder.container(keyedBy: CodingKeys.self)
+                try c.encode(ModuleOffset.number(offset), forKey: .offset)
+                try c.encode(size, forKey: .size)
+            }
         }
 
         public var offset: UInt64
@@ -62,6 +79,29 @@ public struct ModuleAnalysis: Codable, Sendable {
             self.name = name
             self.source = source
             self.blocks = blocks
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case offset
+            case name
+            case source
+            case blocks
+        }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            offset = try ModuleOffset.decode(.offset, from: c)
+            name = try c.decodeIfPresent(String.self, forKey: .name)
+            source = try c.decode(Source.self, forKey: .source)
+            blocks = try c.decode([Block].self, forKey: .blocks)
+        }
+
+        public func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(ModuleOffset.number(offset), forKey: .offset)
+            try c.encodeIfPresent(name, forKey: .name)
+            try c.encode(source, forKey: .source)
+            try c.encode(blocks, forKey: .blocks)
         }
     }
 }

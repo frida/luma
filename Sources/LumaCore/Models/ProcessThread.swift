@@ -92,18 +92,13 @@ public struct ProcessThread: Hashable, Identifiable, Codable, Sendable {
         var entry: Entrypoint?
         if let ep = obj["entrypoint"] as? [String: Any],
             let routineStr = ep["routine"] as? String,
-            let routine = parseHexAddress(routineStr)
+            let routine = HexAddress.parse(routineStr)
         {
-            let param = (ep["parameter"] as? String).flatMap(parseHexAddress)
+            let param = (ep["parameter"] as? String).flatMap(HexAddress.parse)
             entry = Entrypoint(routine: routine, parameter: param)
         }
         return ProcessThread(id: UInt(rawID), name: name, entrypoint: entry)
     }
-}
-
-private func parseHexAddress(_ s: String) -> UInt64? {
-    let trimmed = s.hasPrefix("0x") ? String(s.dropFirst(2)) : s
-    return UInt64(trimmed, radix: 16)
 }
 
 public struct ThreadSnapshot: Sendable {

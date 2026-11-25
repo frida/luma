@@ -1019,7 +1019,7 @@ public enum MissionTools {
                 return errorResult("missing scope or query", code: .invalidInput)
             }
             do {
-                let results = try await node.resolveTargets(scope: scope, query: query)
+                let results = try await node.resolveTargets(scope: scope, query: query).map(toolTarget)
                 return makeResult(jsonObject: results, summary: "Found \(results.count) match\(results.count == 1 ? "" : "es")")
             } catch {
                 return errorResult("resolve failed: \(error.localizedDescription)")
@@ -1445,6 +1445,16 @@ public enum MissionTools {
                 summary: "Installed tracer hook at \(String(format: "0x%llx", address)) (\(target))"
             )
         }
+    }
+
+    private static func toolTarget(_ resolved: [String: Any]) -> [String: Any] {
+        [
+            "scope": resolved["scope"] as Any,
+            "display_name": resolved["displayName"] as Any,
+            "detail": resolved["detail"] ?? NSNull(),
+            "address": resolved["address"] as Any,
+            "anchor": (resolved["anchor"] as? JSONObject).flatMap { try? AddressAnchor.fromJSON($0) }?.toolJSON ?? NSNull(),
+        ]
     }
 
     private static func decodeAnchorJSON(_ obj: [String: Any]?) -> AddressAnchor? {
@@ -3662,7 +3672,7 @@ public enum MissionTools {
             name: "pin_as_insight",
             description: "Promote a finding into a persistent AddressInsight in the session sidebar. The insight stays open across mission boundaries so the user can keep inspecting the address. Pass either a hex 'address' (resolved against the session's modules into a moduleOffset anchor) or an explicit 'anchor' object.",
             inputSchemaJSON: """
-                {"type":"object","properties":{"session_id":{"type":"string"},"finding_id":{"type":"string"},"kind":{"type":"string","enum":["disassembly","memory"],"default":"disassembly"},"address":{"type":"string","description":"Hex address (auto-anchored against modules)"},"anchor":{"type":"object","description":"Explicit AddressAnchor (matches AddressAnchor.toJSON shape)"},"title":{"type":"string"}},"required":["session_id","finding_id"],"additionalProperties":false}
+                {"type":"object","properties":{"session_id":{"type":"string"},"finding_id":{"type":"string"},"kind":{"type":"string","enum":["disassembly","memory"],"default":"disassembly"},"address":{"type":"string","description":"Hex address (auto-anchored against modules)"},"anchor":{"type":"object","description":"Explicit anchor, as resolve returns it: {type, ...}, type one of absolute (address), module_offset (name, offset), module_export (name, export), objc_method (selector), swift_func (module, function), debug_symbol (name), java_method (class_name, method_name); address is a hex string such as \"0x1f00\", offset a number"},"title":{"type":"string"}},"required":["session_id","finding_id"],"additionalProperties":false}
                 """,
             isObserve: false,
             requiresSession: true
@@ -3684,7 +3694,7 @@ public enum MissionTools {
             let anchor: AddressAnchor
             if let anchorObj = invocation.args["anchor"] as? [String: Any] {
                 do {
-                    anchor = try AddressAnchor.fromJSON(anchorObj)
+                    anchor = try AddressAnchor(toolJSON: anchorObj)
                 } catch {
                     return errorResult("anchor parse failed: \(error.localizedDescription)", code: .invalidInput)
                 }

@@ -344,11 +344,11 @@ public enum JSInspectValue: nonisolated Codable, nonisolated Equatable, @uncheck
 
     public var nativePointerAddress: UInt64? {
         guard case .nativePointer(let s) = self else { return nil }
-        return UInt64(s.dropFirst(2), radix: 16)
+        return HexAddress.parse(s)
     }
 
     nonisolated fileprivate static func address(fromHex text: String) throws -> UInt64 {
-        guard let address = UInt64(text.dropFirst(2), radix: 16) else {
+        guard let address = HexAddress.parse(text) else {
             throw DecodePackedError.invalidNode
         }
         return address
