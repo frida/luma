@@ -1461,6 +1461,49 @@ public final class ProjectStore: Sendable {
         }
     }
 
+    public func fetchInstrumentChildren(instanceID: UUID) throws -> [InstrumentChild] {
+        try db.read { db in
+            try Row.fetchAll(
+                db,
+                sql: "SELECT template, child_id, position, title, subtitle, badge_json FROM instrument_child WHERE instance_id = ? ORDER BY position",
+                arguments: [instanceID]
+            ).map { row in
+                let badgeJSON: String? = row["badge_json"]
+                return InstrumentChild(
+                    ref: ChildRef(template: row["template"], id: row["child_id"]), position: row["position"], title: row["title"],
+                    subtitle: row["subtitle"], badge: try badgeJSON.map { try JSONDecoder().decode(ChildBadge.self, from: Data($0.utf8)) })
+            }
+        }
+    }
+
+    public func saveInstrumentChild(_ child: InstrumentChild, instanceID: UUID) throws {
+        let badgeJSON = child.badge.map { String(decoding: try! JSONEncoder().encode($0), as: UTF8.self) }
+        try db.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO instrument_child (instance_id, template, child_id, position, title, subtitle, badge_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(instance_id, template, child_id) DO UPDATE SET
+                        position = excluded.position, title = excluded.title, subtitle = excluded.subtitle, badge_json = excluded.badge_json
+                    """,
+                arguments: [instanceID, child.ref.template, child.ref.id, child.position, child.title, child.subtitle, badgeJSON]
+            )
+        }
+    }
+
+    public func deleteInstrumentChild(_ ref: ChildRef, instanceID: UUID) throws {
+        writeStagedWidgetStates()
+        let prefix = WidgetSlot.prefix(of: ref)
+        try db.write { db in
+            try db.execute(
+                sql: "DELETE FROM instrument_child WHERE instance_id = ? AND template = ? AND child_id = ?",
+                arguments: [instanceID, ref.template, ref.id])
+            try db.execute(
+                sql: "DELETE FROM widget_state WHERE instance_id = ? AND substr(widget_id, 1, length(?)) = ?",
+                arguments: [instanceID, prefix, prefix])
+        }
+    }
+
     public func fetchWidgetPlacements() throws -> [UUID: [String: [PatternPlacement]]] {
         try db.read { db in
             var result: [UUID: [String: [PatternPlacement]]] = [:]
@@ -1932,6 +1975,7 @@ public final class ProjectStore: Sendable {
             t.column("settings_json", .text).notNull().defaults(to: "[]")
             t.column("widgets_json", .text).notNull().defaults(to: "[]")
             t.column("layout_json", .text)
+            t.column("children_json", .text).notNull().defaults(to: "[]")
             t.column("created_at", .datetime).notNull()
             t.column("updated_at", .datetime).notNull()
         }
@@ -1956,6 +2000,18 @@ public final class ProjectStore: Sendable {
             t.column("widget_id", .text).notNull()
             t.column("state_json", .text).notNull()
             t.primaryKey(["instance_id", "widget_id"])
+        }
+
+        try db.create(table: "instrument_child") { t in
+            t.column("instance_id", .blob).notNull()
+                .references("instrument_instance", onDelete: .cascade)
+            t.column("template", .text).notNull()
+            t.column("child_id", .text).notNull()
+            t.column("position", .integer).notNull()
+            t.column("title", .text).notNull()
+            t.column("subtitle", .text)
+            t.column("badge_json", .text)
+            t.primaryKey(["instance_id", "template", "child_id"])
         }
 
         try db.create(table: "widget_placement") { t in

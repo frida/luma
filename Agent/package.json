@@ -8,6 +8,7 @@
     "frida-fs": "^8.1.2",
     "frida-itrace": "^7.0.0",
     "frida-java-bridge": "^7.0.13",
+    "frida-remote-stream": "^6.0.3",
     "frida-swift-bridge": "^4.0.0-preview.1"
   }
 }

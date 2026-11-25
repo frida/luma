@@ -313,7 +313,17 @@ public final class CollaborationSession {
     public var onSessionEventReceived: ((UUID, RuntimeEvent) -> Void)?
     public var onSessionEventUpdated: ((UUID, RuntimeEvent) -> Void)?
     public var onSessionWidgetUpdateReceived: ((UUID, WidgetUpdate) -> Void)?
-    public var onSessionWidgetActionRequested: ((UUID, UUID, String, String, String?) -> Void)?
+    var onSessionWidgetActionRequested: ((UUID, UUID, String, String, String?, UUID) -> Void)?
+    var onOfferedStream: ((UUID, IncomingRemoteStream) -> Void)?
+    var onRelayedStreamReply: ((UUID, [String: Any]) -> Void)?
+    var onRelayedStreamEnded: ((UUID, String) -> Void)?
+    var onChildReceived: ((InstrumentChild, UUID) -> Void)?
+    var onChildRemoved: ((ChildRef, UUID) -> Void)?
+    var onChildShown: ((ChildRef?, UUID, UUID) -> Void)?
+    var onChildrenSnapshot: (([UUID: [InstrumentChild]], Set<UUID>) -> Void)?
+    private var sentWidgetActions: [(id: UUID, action: SentWidgetAction)] = []
+    private var receivingStreams: [UUID: RemoteStreamReceiver] = [:]
+    private var relayedStreams: Set<UUID> = []
     public var onSessionViewStateReceived: ((UUID, UUID, String, WidgetViewState) -> Void)?
     public var onSessionViewEventReceived: ((UUID, UUID, String, WidgetViewPayload) -> Void)?
     public var onSessionViewMessageReceived: ((UUID, UUID, String, WidgetViewPayload, UserInfo) -> Void)?
@@ -1176,20 +1186,27 @@ public final class CollaborationSession {
         )
     }
 
-    public func sendWidgetAction(
+    func sendWidgetAction(
         sessionID: UUID,
         instanceID: UUID,
         widget: String,
         action: String,
-        item: String?
+        item: String?,
+        savesFile: Bool
     ) {
         guard case .joined(let labID) = status else { return }
+        let actionID = UUID()
         var payload: [String: Any] = [
+            "action_id": actionID.uuidString,
             "instance_id": instanceID.uuidString,
-            "widget": widget,
             "action": action,
         ]
+        WidgetSlot.addTarget(widget, to: &payload)
         if let item { payload["item"] = item }
+        sentWidgetActions.append((actionID, SentWidgetAction(sessionID: sessionID, instanceID: instanceID, savesFile: savesFile)))
+        if sentWidgetActions.count > Self.maxSentWidgetActions {
+            sentWidgetActions.removeFirst()
+        }
         sendNotification(
             to: "/labs/\(labID)/sessions/\(sessionID.uuidString)/widget-actions",
             type: "+widget-action",
@@ -1197,6 +1214,97 @@ public final class CollaborationSession {
         )
     }
 
+    private static let maxSentWidgetActions = 32
+
+    func sendChild(_ child: InstrumentChild, sessionID: UUID, instanceID: UUID) {
+        guard case .joined(let labID) = status else { return }
+        sendNotification(to: Self.childrenPath(labID: labID, sessionID: sessionID, instanceID: instanceID), type: "+child", payload: child.toWireJSON())
+    }
+
+    func sendChildRemoval(_ ref: ChildRef, sessionID: UUID, instanceID: UUID) {
+        guard case .joined(let labID) = status else { return }
+        sendNotification(
+            to: Self.childrenPath(labID: labID, sessionID: sessionID, instanceID: instanceID), type: "+child-remove", payload: ref.toWireJSON())
+    }
+
+    func sendShow(_ child: ChildRef?, sessionID: UUID, actionID: UUID) {
+        guard case .joined(let labID) = status else { return }
+        sendNotification(
+            to: "/labs/\(labID)/sessions/\(sessionID.uuidString)/widget-actions/\(actionID.uuidString)/show", type: "+show",
+            payload: ["child": child?.toWireJSON() ?? NSNull()])
+    }
+
+    private static func childrenPath(labID: String, sessionID: UUID, instanceID: UUID) -> String {
+        "/labs/\(labID)/sessions/\(sessionID.uuidString)/instruments/\(instanceID.uuidString)/children"
+    }
+
+    func relayFileStream(sessionID: UUID, actionID: UUID, stanza: [String: Any], data: Data?) {
+        guard case .joined(let labID) = status else {
+            onRelayedStreamEnded?(actionID, Self.connectionLost)
+            return
+        }
+        relayedStreams.insert(actionID)
+        sendNotification(
+            to: Self.streamPath(labID: labID, sessionID: sessionID, actionID: actionID), type: "+stream", payload: stanza,
+            data: data.map { [UInt8]($0) })
+    }
+
+    func abortRelayedStream(sessionID: UUID, actionID: UUID, reason: String) {
+        guard relayedStreams.remove(actionID) != nil, case .joined(let labID) = status else { return }
+        sendNotification(
+            to: Self.streamPath(labID: labID, sessionID: sessionID, actionID: actionID), type: "+abort", payload: ["reason": reason])
+    }
+
+    func endRelayedStream(actionID: UUID) {
+        relayedStreams.remove(actionID)
+    }
+
+    private static let connectionLost = "the lab connection was lost"
+
+    private static func streamPath(labID: String, sessionID: UUID, actionID: UUID) -> String {
+        "/labs/\(labID)/sessions/\(sessionID.uuidString)/widget-actions/\(actionID.uuidString)/stream"
+    }
+
+    private func receiveStreamTraffic(sessionID: UUID, actionID: UUID, type: String, payload: JSONObject, data: [UInt8]?) {
+        switch (type, payload["name"] as? String) {
+        case ("+stream", let name?) where name.hasPrefix("."):
+            receiver(sessionID: sessionID, actionID: actionID, creating: name == ".create")?.receive(payload, data: data.map { Data($0) })
+        case ("+stream", "+result"), ("+stream", "+error"):
+            guard relayedStreams.contains(actionID) else { return }
+            onRelayedStreamReply?(actionID, payload)
+        case ("+abort", _):
+            let reason = payload["reason"] as? String ?? "the stream was aborted"
+            if let receiver = receivingStreams.removeValue(forKey: actionID) {
+                receiver.abortAll(reason: reason)
+            } else if relayedStreams.remove(actionID) != nil {
+                onRelayedStreamEnded?(actionID, reason)
+            }
+        default:
+            break
+        }
+    }
+
+    private func receiver(sessionID: UUID, actionID: UUID, creating: Bool) -> RemoteStreamReceiver? {
+        if let existing = receivingStreams[actionID] {
+            return existing
+        }
+        guard creating, let sent = sentWidgetActions.first(where: { $0.id == actionID })?.action, sent.sessionID == sessionID,
+            case .joined(let labID) = status
+        else { return nil }
+        let path = Self.streamPath(labID: labID, sessionID: sessionID, actionID: actionID)
+        let receiver = RemoteStreamReceiver { [weak self] stanza in
+            self?.sendNotification(to: path, type: "+stream", payload: stanza)
+        }
+        receiver.onStream = { [weak self] stream in
+            guard sent.savesFile else {
+                stream.refuse("only a person can save a file")
+                return
+            }
+            self?.onOfferedStream?(sent.instanceID, stream)
+        }
+        receivingStreams[actionID] = receiver
+        return receiver
+    }
 
     public func sendReplEvalRequest(sessionID: UUID, code: String, language: REPLLanguage, cellID: UUID) {
         guard case .joined(let labID) = status else { return }
@@ -1644,6 +1752,13 @@ public final class CollaborationSession {
         let widgetStateDicts = (payload["widget_states"] as? [JSONObject]) ?? []
         let viewStateDicts = (payload["view_states"] as? [JSONObject]) ?? []
         onWidgetStatesSnapshot?(widgetStateDicts.compactMap(WidgetStateSnapshot.fromWireJSON))
+        var children: [UUID: [InstrumentChild]] = [:]
+        for entry in (payload["instrument_children"] as? [JSONObject]) ?? [] {
+            guard let instanceID = (entry["instance_id"] as? String).flatMap(UUID.init(uuidString:)), let child = InstrumentChild.fromWireJSON(entry)
+            else { continue }
+            children[instanceID, default: []].append(child)
+        }
+        onChildrenSnapshot?(children, Set(sessions.map(\.id)))
 
         ingestViewStates(viewStateDicts, labID: labID)
 
@@ -1952,10 +2067,31 @@ public final class CollaborationSession {
             guard let sessionID = UUID(uuidString: s[3]),
                 let instanceStr = payload["instance_id"] as? String,
                 let instanceID = UUID(uuidString: instanceStr),
-                let widget = payload["widget"] as? String,
-                let action = payload["action"] as? String
+                let widget = WidgetSlot.target(in: payload),
+                let action = payload["action"] as? String,
+                let actionIDStr = payload["action_id"] as? String,
+                let actionID = UUID(uuidString: actionIDStr)
             else { return }
-            onSessionWidgetActionRequested?(sessionID, instanceID, widget, action, payload["item"] as? String)
+            onSessionWidgetActionRequested?(sessionID, instanceID, widget, action, payload["item"] as? String, actionID)
+
+        case ("+child", let s) where s.count == 7 && s[0] == "labs" && s[2] == "sessions" && s[4] == "instruments" && s[6] == "children":
+            guard let instanceID = UUID(uuidString: s[5]), let child = InstrumentChild.fromWireJSON(payload) else { return }
+            onChildReceived?(child, instanceID)
+
+        case ("+child-remove", let s) where s.count == 7 && s[0] == "labs" && s[2] == "sessions" && s[4] == "instruments" && s[6] == "children":
+            guard let instanceID = UUID(uuidString: s[5]), let ref = ChildRef.fromWireJSON(payload) else { return }
+            onChildRemoved?(ref, instanceID)
+
+        case ("+show", let s) where s.count == 7 && s[0] == "labs" && s[2] == "sessions" && s[4] == "widget-actions" && s[6] == "show":
+            guard let sessionID = UUID(uuidString: s[3]), let actionID = UUID(uuidString: s[5]),
+                let sent = sentWidgetActions.first(where: { $0.id == actionID })?.action, sent.savesFile
+            else { return }
+            onChildShown?(ChildRef.fromWireJSON(payload["child"]), sessionID, sent.instanceID)
+
+        case (_, let s)
+            where s.count == 7 && s[0] == "labs" && s[2] == "sessions" && s[4] == "widget-actions" && s[6] == "stream":
+            guard let sessionID = UUID(uuidString: s[3]), let actionID = UUID(uuidString: s[5]) else { return }
+            receiveStreamTraffic(sessionID: sessionID, actionID: actionID, type: type, payload: payload, data: data)
 
         default:
             break
@@ -2047,6 +2183,27 @@ public final class CollaborationSession {
 
     private func setStatus(_ newStatus: Status) {
         status = newStatus
+        switch newStatus {
+        case .joined:
+            break
+        case .disconnected, .connecting, .error:
+            sentWidgetActions = []
+            for receiver in receivingStreams.values {
+                receiver.abortAll(reason: Self.connectionLost)
+            }
+            receivingStreams = [:]
+            let relayed = relayedStreams
+            relayedStreams = []
+            for actionID in relayed {
+                onRelayedStreamEnded?(actionID, Self.connectionLost)
+            }
+        }
         _statusChanges.yield(newStatus)
     }
+}
+
+private struct SentWidgetAction {
+    let sessionID: UUID
+    let instanceID: UUID
+    let savesFile: Bool
 }

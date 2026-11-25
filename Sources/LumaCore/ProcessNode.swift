@@ -84,6 +84,8 @@ public final class ProcessNode: Identifiable {
     private let _detachEvents = AsyncEventSource<SessionDetachReason>()
     private let _widgetUpdates = AsyncEventSource<WidgetUpdate>()
     private let _actionStateChanges = AsyncEventSource<InstrumentActionStateChange>()
+    private let _fileStreamTraffic = AsyncEventSource<FileStreamTraffic>()
+    private let _childTraffic = AsyncEventSource<ChildTraffic>()
 
     public var events: AsyncStream<RuntimeEvent> { _events.makeStream() }
     public var replResults: AsyncStream<REPLResult> { _replResults.makeStream() }
@@ -93,6 +95,8 @@ public final class ProcessNode: Identifiable {
     public var detachEvents: AsyncStream<SessionDetachReason> { _detachEvents.makeStream() }
     public var widgetUpdates: AsyncStream<WidgetUpdate> { _widgetUpdates.makeStream() }
     public var actionStateChanges: AsyncStream<InstrumentActionStateChange> { _actionStateChanges.makeStream() }
+    var fileStreamTraffic: AsyncStream<FileStreamTraffic> { _fileStreamTraffic.makeStream() }
+    var childTraffic: AsyncStream<ChildTraffic> { _childTraffic.makeStream() }
 
     private var assemblingViewStates: [InstrumentViews.Key: AssemblingViewState] = [:]
     private var scriptEventsStarted = false
@@ -506,6 +510,36 @@ public final class ProcessNode: Identifiable {
                 _actionStateChanges.yield(change)
                 return true
 
+            case "instrument-child":
+                guard let instanceId = dict["instance_id"] as? String, let instanceID = UUID(uuidString: instanceId),
+                    let ref = ChildRef.fromWireJSON(dict["child"]), let title = dict["title"] as? String
+                else { return false }
+                let badge = (dict["badge"] as? [String: Any]).flatMap { badge -> ChildBadge? in
+                    guard let text = badge["text"] as? String else { return nil }
+                    return ChildBadge(text: text, tone: (badge["tone"] as? String).flatMap(ChildBadge.Tone.init(rawValue:)) ?? .neutral)
+                }
+                _childTraffic.yield(.upsert(instanceID: instanceID, ref: ref, title: title, subtitle: dict["subtitle"] as? String, badge: badge))
+                return true
+
+            case "instrument-child-remove":
+                guard let instanceId = dict["instance_id"] as? String, let instanceID = UUID(uuidString: instanceId),
+                    let ref = ChildRef.fromWireJSON(dict["child"])
+                else { return false }
+                _childTraffic.yield(.remove(instanceID: instanceID, ref: ref))
+                return true
+
+            case "luma:stream":
+                guard let stanza = dict["stanza"] as? [String: Any] else { return false }
+                _fileStreamTraffic.yield(.stanza(stanza, data.map { Data($0) }))
+                return true
+
+            case "luma:stream-abort":
+                guard let actionId = dict["action_id"] as? String, let actionID = UUID(uuidString: actionId),
+                    let reason = dict["reason"] as? String
+                else { return false }
+                _fileStreamTraffic.yield(.abort(actionID: actionID, reason: reason))
+                return true
+
             case "instrument-actions-reset":
                 guard let instanceId = dict["instance_id"] as? String, let instanceID = UUID(uuidString: instanceId) else { return false }
                 _actionStateChanges.yield(.reset(instanceID: instanceID))
@@ -767,7 +801,7 @@ public final class ProcessNode: Identifiable {
     private func decodeWidgetContext(_ dict: [String: Any]) -> (instanceID: UUID, widget: String)? {
         guard let instanceId = dict["instance_id"] as? String,
             let instanceID = UUID(uuidString: instanceId),
-            let widget = dict["widget"] as? String
+            let widget = WidgetSlot.target(in: dict)
         else { return nil }
         return (instanceID, widget)
     }
@@ -1595,7 +1629,8 @@ public final class ProcessNode: Identifiable {
         moduleName: String,
         source: String,
         config: Any,
-        restored: [String: Any] = [:]
+        restored: [String: Any] = [:],
+        childTemplates: [String] = []
     ) async throws {
         try await script.exports.loadInstrument(JSValue([
             "instanceId": instanceID.uuidString,
@@ -1603,6 +1638,7 @@ public final class ProcessNode: Identifiable {
             "source": source,
             "config": config,
             "restored": restored,
+            "childTemplates": childTemplates,
         ]))
     }
 
@@ -1618,36 +1654,59 @@ public final class ProcessNode: Identifiable {
         ]))
     }
 
-    public func invokeWidgetAction(instanceID: UUID, widget: String, action: String, item: String?) async throws {
+    func invokeWidgetAction(
+        instanceID: UUID,
+        widget: String,
+        action: String,
+        item: String?,
+        actionID: UUID,
+        savesFile: Bool
+    ) async throws -> HandlerOutcome {
         var payload: [String: Any] = [
             "instanceId": instanceID.uuidString,
-            "widget": widget,
             "action": action,
+            "actionId": actionID.uuidString,
+            "savesFile": savesFile,
         ]
+        WidgetSlot.addTarget(widget, to: &payload)
         if let item { payload["item"] = item }
-        _ = try await script.exports.invokeWidgetAction(JSValue(payload))
+        return HandlerOutcome(try await script.exports.invokeWidgetAction(JSValue(payload)))
     }
 
     public func postViewMessage(instanceID: UUID, widget: String, payload: WidgetViewPayload, from sender: CollaborationSession.UserInfo?) {
         var message: [String: Any] = [
             "type": "luma:view-message",
             "instance_id": instanceID.uuidString,
-            "widget": widget,
-            "value": payload.value,
+            "value": payload.value as Any,
         ]
+        WidgetSlot.addTarget(widget, to: &message)
         if let sender {
             message["from"] = ["id": sender.id, "name": sender.name]
         }
         script.post(message, data: payload.data?.array)
     }
 
-    public func submitConsoleInput(instanceID: UUID, widget: String, entryID: String, text: String) async throws {
-        try await script.exports.submitConsoleInput(JSValue([
+    func submitConsoleInput(
+        instanceID: UUID,
+        widget: String,
+        entryID: String,
+        text: String,
+        actionID: UUID,
+        savesFile: Bool
+    ) async throws -> HandlerOutcome {
+        var payload: [String: Any] = [
             "instanceId": instanceID.uuidString,
-            "widget": widget,
             "entryId": entryID,
             "text": text,
-        ]))
+            "actionId": actionID.uuidString,
+            "savesFile": savesFile,
+        ]
+        WidgetSlot.addTarget(widget, to: &payload)
+        return HandlerOutcome(try await script.exports.submitConsoleInput(JSValue(payload)))
+    }
+
+    func postFileStreamStanza(_ stanza: [String: Any]) {
+        script.post(["type": "luma:stream", "stanza": stanza])
     }
 
     func handleITraceStart(
@@ -1924,6 +1983,26 @@ extension CollaborationSession.Session.Phase {
         case .detached: return .idle
         }
     }
+}
+
+struct HandlerOutcome {
+    let file: OfferedFileSummary?
+    let error: String?
+    let show: ShowRequest?
+
+    init(_ outcome: Any?) {
+        let object = outcome as? [String: Any]
+        file = (object?["file"] as? [String: Any]).map {
+            OfferedFileSummary(name: $0["name"] as! String, mediaType: $0["media_type"] as! String, size: $0["size"] as? Int)
+        }
+        error = object?["error"] as? String
+        show = (object?["show"] as? [String: Any]).map { ShowRequest(child: ChildRef.fromWireJSON($0["child"])) }
+    }
+}
+
+enum FileStreamTraffic: @unchecked Sendable {
+    case stanza([String: Any], Data?)
+    case abort(actionID: UUID, reason: String)
 }
 
 private struct AssemblingViewState {

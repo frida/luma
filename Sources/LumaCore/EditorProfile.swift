@@ -175,6 +175,34 @@ public enum CustomInstrumentTypings {
         declare interface CustomInstrumentContext {
             emit(value: unknown): void;
             widget<K extends keyof CustomInstrumentWidgetMap>(id: K): CustomInstrumentWidgetMap[K];
+            children<T extends keyof CustomInstrumentChildMap>(template: T): CustomInstrumentChildren<T>;
+        }
+
+        declare interface CustomInstrumentChildMap {
+        }
+
+        declare interface CustomInstrumentChildActionMap {
+        }
+
+        declare interface CustomInstrumentChildRow {
+            title: string;
+            subtitle?: string;
+            badge?: { text: string; tone?: "neutral" | "active" | "waiting" | "ended" | "failed" } | null;
+        }
+
+        declare interface CustomInstrumentChildren<T extends keyof CustomInstrumentChildMap> {
+            add(id: string, row: CustomInstrumentChildRow): CustomInstrumentChild<T>;
+            get(id: string): CustomInstrumentChild<T> | undefined;
+            ids(): string[];
+            remove(id: string): void;
+        }
+
+        declare interface CustomInstrumentChild<T extends keyof CustomInstrumentChildMap> {
+            readonly template: T;
+            readonly id: string;
+            update(row: Partial<CustomInstrumentChildRow>): void;
+            widget<K extends keyof CustomInstrumentChildMap[T]>(id: K): CustomInstrumentChildMap[T][K];
+            remove(): void;
         }
 
         declare interface CustomInstrumentCounterWidget {
@@ -245,27 +273,64 @@ public enum CustomInstrumentTypings {
         declare interface CustomInstrumentActionMap {
         }
 
-        declare type CustomInstrumentAction = CustomInstrumentActionMap[keyof CustomInstrumentActionMap];
+        declare type CustomInstrumentAction =
+            | CustomInstrumentActionMap[keyof CustomInstrumentActionMap]
+            | CustomInstrumentChildActionMap[keyof CustomInstrumentChildActionMap];
 
         declare type CustomInstrumentConsoleInput = {
             [K in keyof CustomInstrumentWidgetMap]:
                 CustomInstrumentWidgetMap[K] extends CustomInstrumentConsoleWidget
-                    ? { widget: K; entryId: string; text: string }
+                    ? { widget: K; entryId: string; text: string; child?: undefined }
                     : never
-        }[keyof CustomInstrumentWidgetMap];
+        }[keyof CustomInstrumentWidgetMap] | {
+            [T in keyof CustomInstrumentChildMap]: {
+                [K in keyof CustomInstrumentChildMap[T]]:
+                    CustomInstrumentChildMap[T][K] extends CustomInstrumentConsoleWidget
+                        ? { child: { template: T; id: string }; widget: K; entryId: string; text: string }
+                        : never
+            }[keyof CustomInstrumentChildMap[T]]
+        }[keyof CustomInstrumentChildMap];
 
         declare type CustomInstrumentViewMessage = {
             [K in keyof CustomInstrumentWidgetMap]:
                 CustomInstrumentWidgetMap[K] extends CustomInstrumentViewWidget
-                    ? { widget: K; value: unknown; data: ArrayBuffer | null; from?: { id: string; name: string } }
+                    ? { widget: K; value: unknown; data: ArrayBuffer | null; from?: { id: string; name: string }; child?: undefined }
                     : never
-        }[keyof CustomInstrumentWidgetMap];
+        }[keyof CustomInstrumentWidgetMap] | {
+            [T in keyof CustomInstrumentChildMap]: {
+                [K in keyof CustomInstrumentChildMap[T]]:
+                    CustomInstrumentChildMap[T][K] extends CustomInstrumentViewWidget
+                        ? { child: { template: T; id: string }; widget: K; value: unknown; data: ArrayBuffer | null; from?: { id: string; name: string } }
+                        : never
+            }[keyof CustomInstrumentChildMap[T]]
+        }[keyof CustomInstrumentChildMap];
+
+        declare interface CustomInstrumentOfferedFileHeader {
+            name: string;
+            mediaType: string;
+        }
+
+        declare interface CustomInstrumentOfferedFile extends CustomInstrumentOfferedFileHeader {
+            bytes: ArrayBuffer | ArrayBufferView | number[];
+        }
+
+        declare interface CustomInstrumentOfferFile {
+            (file: CustomInstrumentOfferedFile): void;
+            (file: CustomInstrumentOfferedFileHeader): import("stream").Writable;
+        }
+
+        declare interface CustomInstrumentActionResponder {
+            file: CustomInstrumentOfferFile;
+            show(child: CustomInstrumentChild<keyof CustomInstrumentChildMap> | null): void;
+        }
 
         declare interface CustomInstrumentConsoleResponder {
             output(text: string): void;
             error(text: string): void;
             value(v: unknown): void;
             image(image: CustomInstrumentConsoleImage): void;
+            file: CustomInstrumentOfferFile;
+            show(child: CustomInstrumentChild<keyof CustomInstrumentChildMap> | null): void;
         }
 
         declare type CustomSettingValue = boolean | number | string | CustomSettingValue[] | { [name: string]: CustomSettingValue };
@@ -279,7 +344,7 @@ public enum CustomInstrumentTypings {
 
         declare interface CustomInstrumentHandle {
             updateConfig?(config: CustomInstrumentConfig): void | Promise<void>;
-            onAction?(action: CustomInstrumentAction): void | Promise<void>;
+            onAction?(action: CustomInstrumentAction, respond: CustomInstrumentActionResponder): void | Promise<void>;
             onConsoleInput?(
                 input: CustomInstrumentConsoleInput,
                 respond: CustomInstrumentConsoleResponder
@@ -338,7 +403,7 @@ public enum CustomInstrumentTypings {
     )
 
     public static func settingMap(for def: CustomInstrumentDef) -> AmbientDeclarations? {
-        guard !def.settings.isEmpty || !def.widgets.isEmpty else { return nil }
+        guard !def.settings.isEmpty || !def.widgets.isEmpty || !def.children.isEmpty else { return nil }
         return AmbientDeclarations(
             content: defScopedDeclarations(for: def),
             fileName: "custom-instrument-\(def.id.uuidString).d.ts"
@@ -367,8 +432,11 @@ public enum CustomInstrumentTypings {
             sections.append(actionMapDeclarations(for: actingWidgets))
         }
         let persistentWidgets = def.widgets.filter { $0.persistence == .session }
-        if !persistentWidgets.isEmpty {
-            sections.append(restoredStateDeclarations(for: persistentWidgets))
+        if !persistentWidgets.isEmpty || def.children.contains(where: \.persists) {
+            sections.append(restoredStateDeclarations(for: persistentWidgets, children: def.children.filter(\.persists)))
+        }
+        if !def.children.isEmpty {
+            sections.append(childMapDeclarations(for: def.children))
         }
         return sections.joined(separator: "\n\n")
     }
@@ -400,10 +468,10 @@ public enum CustomInstrumentTypings {
             let widgetLiteral = jsStringLiteral(widget.id)
             var variants: [String] = []
             if !widget.actions.isEmpty {
-                variants.append("{ widget: \(widgetLiteral); action: \(stringLiteralUnion(widget.actions.map(\.id))); item?: undefined }")
+                variants.append("{ widget: \(widgetLiteral); action: \(stringLiteralUnion(widget.actions.map(\.id))); item?: undefined; child?: undefined }")
             }
             if !widget.kind.rowActions.isEmpty {
-                variants.append("{ widget: \(widgetLiteral); action: \(stringLiteralUnion(widget.kind.rowActions.map(\.id))); item: string }")
+                variants.append("{ widget: \(widgetLiteral); action: \(stringLiteralUnion(widget.kind.rowActions.map(\.id))); item: string; child?: undefined }")
             }
             lines.append("    \(propertyKey(widget.id)): \(variants.joined(separator: " | "));")
         }
@@ -411,11 +479,51 @@ public enum CustomInstrumentTypings {
         return lines.joined(separator: "\n")
     }
 
-    public static func restoredStateDeclarations(for persistentWidgets: [InstrumentWidget]) -> String {
+    public static func restoredStateDeclarations(for persistentWidgets: [InstrumentWidget], children: [InstrumentChildTemplate] = []) -> String {
         var lines: [String] = ["declare interface CustomInstrumentRestoredState {"]
         for widget in persistentWidgets {
             lines.append("    /** \(jsDocText(widget.label)) */")
             lines.append("    \(propertyKey(widget.id)): \(snapshotType(for: widget.kind));")
+        }
+        if !children.isEmpty {
+            lines.append("    children?: {")
+            for template in children {
+                let widgets = template.widgets.filter { $0.persistence == .session }
+                    .map { "\(propertyKey($0.id)): \(snapshotType(for: $0.kind))" }.joined(separator: "; ")
+                lines.append("        \(propertyKey(template.id))?: { [id: string]: CustomInstrumentChildRow & { widgets: { \(widgets) } } };")
+            }
+            lines.append("    };")
+        }
+        lines.append("}")
+        return lines.joined(separator: "\n")
+    }
+
+    public static func childMapDeclarations(for templates: [InstrumentChildTemplate]) -> String {
+        var lines: [String] = ["declare interface CustomInstrumentChildMap {"]
+        for template in templates {
+            lines.append("    /** \(jsDocText(template.name)) */")
+            lines.append("    \(propertyKey(template.id)): {")
+            for widget in template.widgets {
+                lines.append("        \(propertyKey(widget.id)): \(widgetType(for: widget));")
+            }
+            lines.append("    };")
+        }
+        lines.append("}")
+        lines.append("")
+        lines.append("declare interface CustomInstrumentChildActionMap {")
+        for template in templates {
+            let child = "child: { template: \(jsStringLiteral(template.id)); id: string }"
+            for widget in template.widgets where !widget.actions.isEmpty || !widget.kind.rowActions.isEmpty {
+                let widgetLiteral = jsStringLiteral(widget.id)
+                var variants: [String] = []
+                if !widget.actions.isEmpty {
+                    variants.append("{ \(child); widget: \(widgetLiteral); action: \(stringLiteralUnion(widget.actions.map(\.id))); item?: undefined }")
+                }
+                if !widget.kind.rowActions.isEmpty {
+                    variants.append("{ \(child); widget: \(widgetLiteral); action: \(stringLiteralUnion(widget.kind.rowActions.map(\.id))); item: string }")
+                }
+                lines.append("    \(jsStringLiteral("\(template.id)/\(widget.id)")): \(variants.joined(separator: " | "));")
+            }
         }
         lines.append("}")
         return lines.joined(separator: "\n")

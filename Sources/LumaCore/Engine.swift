@@ -61,6 +61,14 @@ public final class Engine {
     }
     private var widgetPlacements: [UUID: [String: [PatternPlacement]]] = [:]
     private var disabledWidgetActions: [UUID: [String: Set<String>]] = [:]
+    var fileRecipients: [UUID: FileRecipient] = [:]
+    var fileStreams: [UUID: FileStreamRoute] = [:]
+    var fileStreamActions: [FileStreamKey: UUID] = [:]
+    var localFileReceivers: [UUID: RemoteStreamReceiver] = [:]
+    var offeredFileStreams: [UUID: IncomingRemoteStream] = [:]
+    public internal(set) var offeredFiles: [OfferedFile] = []
+    public internal(set) var instrumentChildren: [UUID: [InstrumentChild]] = [:]
+    public internal(set) var childSelectionRequest: ChildSelectionRequest?
     private var remoteInstrumentAgents: [UUID: InstrumentAgentState] = [:]
 
     public let eventLog = EventLog()
@@ -890,13 +898,43 @@ public final class Engine {
             self?.applyWidgetUpdate(refused, sessionID: sessionID, origin: .remote)
         }
 
-        collaboration.onSessionWidgetActionRequested = { [weak self] sessionID, instanceID, widget, action, item in
+        collaboration.onChildReceived = { [weak self] child, instanceID in
+            self?.receiveRemoteChild(child, instanceID: instanceID)
+        }
+
+        collaboration.onChildRemoved = { [weak self] ref, instanceID in
+            self?.receiveRemoteChildRemoval(ref, instanceID: instanceID)
+        }
+
+        collaboration.onChildShown = { [weak self] child, sessionID, instanceID in
+            self?.receiveShow(child, sessionID: sessionID, instanceID: instanceID)
+        }
+
+        collaboration.onChildrenSnapshot = { [weak self] snapshot, sessionIDs in
+            guard let self else { return }
+            adoptRemoteChildren(snapshot, sessionIDs: Set(sessionIDs.filter { !self.localUserHosts($0) }))
+        }
+
+        collaboration.onOfferedStream = { [weak self] instanceID, stream in
+            self?.offer(stream, instanceID: instanceID)
+        }
+
+        collaboration.onRelayedStreamReply = { [weak self] actionID, stanza in
+            self?.relayedStreamReplied(actionID: actionID, stanza: stanza)
+        }
+
+        collaboration.onRelayedStreamEnded = { [weak self] actionID, reason in
+            self?.relayedStreamEnded(actionID: actionID, reason: reason)
+        }
+
+        collaboration.onSessionWidgetActionRequested = { [weak self] sessionID, instanceID, widget, action, item, actionID in
             self?.handleRemoteWidgetActionRequest(
                 sessionID: sessionID,
                 instanceID: instanceID,
                 widget: widget,
                 action: action,
-                item: item
+                item: item,
+                actionID: actionID
             )
         }
 
@@ -2189,6 +2227,10 @@ public final class Engine {
             let sid = node.sessionID
             processNodes.remove(at: idx)
             node.stop()
+            endFileStreams(ofSession: sid, reason: "the session was detached")
+            for instance in instrumentsBySession[sid] ?? [] {
+                dropTransientChildren(of: instance.id)
+            }
             retireDrainService(deviceID: node.deviceID)
             updateSession(id: sid) { $0.phase = .idle }
             rebuildAddressAnnotations(sessionID: sid)
@@ -3637,6 +3679,7 @@ public final class Engine {
         try? store.deleteInstrument(id: instance.id)
         forgetViewData(of: instance)
         widgetStates.removeValue(forKey: instance.id)
+        instrumentChildren.removeValue(forKey: instance.id)
         widgetPlacements.removeValue(forKey: instance.id)
         onSessionListChanged?(.instrumentRemoved(id: instance.id, sessionID: instance.sessionID))
         rebuildAddressAnnotations(sessionID: instance.sessionID)
@@ -3679,6 +3722,7 @@ public final class Engine {
                 node.markInstrumentDetached(id: inst.id)
                 broadcastInstrumentStatus(instanceID: inst.id, sessionID: node.sessionID)
                 try? await node.disposeInstrumentOnAgent(instanceID: inst.id)
+                dropTransientChildren(of: inst.id)
             }
         }
     }
@@ -4481,92 +4525,112 @@ public final class Engine {
         let hashHex = digest.map { String(format: "%02x", $0) }.joined()
         let moduleName = "/\(sourceSlug)/\(hashHex).js"
 
-        let restored = hydrateRestoredState(instanceID: instanceID, widgets: def.widgets, on: node)
+        let restored = hydrateRestoredState(instanceID: instanceID, def: def)
 
         try await node.loadInstrumentOnAgent(
             instanceID: instanceID,
             moduleName: moduleName,
             source: compiledSource,
             config: config.toAgentJSON(def: def),
-            restored: restored
+            restored: restored,
+            childTemplates: def.children.map(\.id)
         )
     }
 
-    private func hydrateRestoredState(
-        instanceID: UUID,
-        widgets: [InstrumentWidget],
-        on node: ProcessNode
-    ) -> [String: Any] {
-        let persistentWidgets = widgets.filter { $0.persistence == .session }
-        guard !persistentWidgets.isEmpty else { return [:] }
+    private func hydrateRestoredState(instanceID: UUID, def: CustomInstrumentDef) -> [String: Any] {
+        let children = restoreChildren(of: instanceID, def: def)
+        let persistent = def.widgets.filter { $0.persistence == .session }.map { (slot: $0.id, widget: $0) }
+            + children.flatMap { child in
+                (def.children.first { $0.id == child.ref.template }?.widgets ?? []).filter { $0.persistence == .session }
+                    .map { (slot: child.widgetKey($0.id), widget: $0) }
+            }
+        guard !persistent.isEmpty else { return [:] }
         let states = persistedWidgetStates(instanceID: instanceID)
-        let persistentIDs = Set(persistentWidgets.map(\.id))
-        widgetStates[instanceID] = states.filter { persistentIDs.contains($0.key) }
-        for widget in persistentWidgets {
-            let state = states[widget.id] ?? WidgetState()
-            _widgetUpdates.yield(WidgetUpdate(
-                instanceID: instanceID,
-                widget: widget.id,
-                kind: .snapshot(state)
-            ))
+        let slots = Set(persistent.map(\.slot))
+        widgetStates[instanceID] = states.filter { slots.contains($0.key) }
+        for (slot, _) in persistent {
+            _widgetUpdates.yield(WidgetUpdate(instanceID: instanceID, widget: slot, kind: .snapshot(states[slot] ?? WidgetState())))
         }
 
         var restored: [String: Any] = [:]
-        for widget in persistentWidgets {
-            let state = states[widget.id] ?? WidgetState()
-            switch widget.kind {
-            case .counter:
-                if let counter = state.counter {
-                    var obj: [String: Any] = ["value": counter.value]
-                    if let unit = counter.unit { obj["unit"] = unit }
-                    if let delta = counter.delta { obj["delta"] = delta }
-                    restored[widget.id] = ["counter": obj]
-                } else {
-                    restored[widget.id] = ["counter": NSNull()]
-                }
-            case .histogram:
-                let buckets = state.histogram.map { ["label": $0.label, "count": $0.count] }
-                restored[widget.id] = ["buckets": buckets]
-            case .graph:
-                let points = state.graphSeries.flatMap { (seriesID, pts) -> [[String: Any]] in
-                    pts.map { ["series": seriesID, "x": $0.x, "y": $0.y] }
-                }
-                restored[widget.id] = ["points": points]
-            case .list:
-                let items = state.listItems.map { item -> [String: Any] in
-                    var obj: [String: Any] = ["id": item.id, "title": item.title]
-                    if let s = item.subtitle { obj["subtitle"] = s }
-                    if let a = item.accessory { obj["accessory"] = a }
-                    return obj
-                }
-                restored[widget.id] = ["items": items]
-            case .table:
-                let rows = state.tableRows.map { row -> [String: Any] in
-                    ["id": row.id, "cells": row.cells]
-                }
-                restored[widget.id] = ["rows": rows]
-            case .hex:
-                if let hex = state.hex {
-                    restored[widget.id] = [
-                        "hex": [
-                            "bytes": hex.bytes.base64EncodedString(),
-                            "base_address": hex.baseAddress,
-                        ],
-                    ]
-                } else {
-                    restored[widget.id] = ["hex": NSNull()]
-                }
-            case .console:
-                restored[widget.id] = ["entries": state.consoleEntries.map { $0.toWireJSON() }]
-            case .view:
-                restored[widget.id] = ["state": state.view?.payload.value ?? NSNull()]
-            }
+        for widget in def.widgets where widget.persistence == .session {
+            restored[widget.id] = restoredValue(of: widget, state: states[widget.id] ?? WidgetState())
+        }
+        var restoredChildren: [String: [String: Any]] = [:]
+        for child in children {
+            let widgets = (def.children.first { $0.id == child.ref.template }?.widgets ?? []).filter { $0.persistence == .session }
+            var entry = child.toWireJSON()
+            entry["widgets"] = Dictionary(uniqueKeysWithValues: widgets.map {
+                ($0.id, restoredValue(of: $0, state: states[child.widgetKey($0.id)] ?? WidgetState()))
+            })
+            restoredChildren[child.ref.template, default: [:]][child.ref.id] = entry
+        }
+        if !restoredChildren.isEmpty {
+            restored["children"] = restoredChildren
         }
         return restored
     }
 
+    private func restoredValue(of widget: InstrumentWidget, state: WidgetState) -> Any {
+        switch widget.kind {
+        case .counter:
+            if let counter = state.counter {
+                var obj: [String: Any] = ["value": counter.value]
+                if let unit = counter.unit { obj["unit"] = unit }
+                if let delta = counter.delta { obj["delta"] = delta }
+                return ["counter": obj]
+            } else {
+                return ["counter": NSNull()]
+            }
+        case .histogram:
+            let buckets = state.histogram.map { ["label": $0.label, "count": $0.count] }
+            return ["buckets": buckets]
+        case .graph:
+            let points = state.graphSeries.flatMap { (seriesID, pts) -> [[String: Any]] in
+                pts.map { ["series": seriesID, "x": $0.x, "y": $0.y] }
+            }
+            return ["points": points]
+        case .list:
+            let items = state.listItems.map { item -> [String: Any] in
+                var obj: [String: Any] = ["id": item.id, "title": item.title]
+                if let s = item.subtitle { obj["subtitle"] = s }
+                if let a = item.accessory { obj["accessory"] = a }
+                return obj
+            }
+            return ["items": items]
+        case .table:
+            let rows = state.tableRows.map { row -> [String: Any] in
+                ["id": row.id, "cells": row.cells]
+            }
+            return ["rows": rows]
+        case .hex:
+            if let hex = state.hex {
+                return [
+                    "hex": [
+                        "bytes": hex.bytes.base64EncodedString(),
+                        "base_address": hex.baseAddress,
+                    ],
+                ]
+            } else {
+                return ["hex": NSNull()]
+            }
+        case .console:
+            return ["entries": state.consoleEntries.map { $0.toWireJSON() }]
+        case .view:
+            return ["state": state.view?.payload.value ?? NSNull()]
+        }
+    }
+
     public func widgetState(instanceID: UUID, widget: String) -> WidgetState {
         widgetStates[instanceID]?[widget] ?? WidgetState()
+    }
+
+    func widgetSlots(of instanceID: UUID) -> [String] {
+        Array((widgetStates[instanceID] ?? [:]).keys)
+    }
+
+    func forgetWidgetState(_ slot: String, of instanceID: UUID) {
+        widgetStates[instanceID]?[slot] = nil
     }
 
     public func placements(forWidget widget: String, of instanceID: UUID) -> [PatternPlacement] {
@@ -4588,36 +4652,10 @@ public final class Engine {
 
     private func hydrateWidgetStatesFromStore(_ grouped: [UUID: [InstrumentInstance]]) {
         for instances in grouped.values {
-            for instance in instances {
-                guard widgetStates[instance.id] == nil else { continue }
-                let widgets = widgets(forInstance: instance)
-                let persistent = widgets.filter { $0.persistence == .session }
-                guard !persistent.isEmpty else { continue }
-                let states = persistedWidgetStates(instanceID: instance.id)
-                let persistentIDs = Set(persistent.map(\.id))
-                let filtered = states.filter { persistentIDs.contains($0.key) }
-                widgetStates[instance.id] = filtered
-                for widget in persistent {
-                    let state = filtered[widget.id] ?? WidgetState()
-                    _widgetUpdates.yield(WidgetUpdate(
-                        instanceID: instance.id,
-                        widget: widget.id,
-                        kind: .snapshot(state)
-                    ))
-                }
+            for instance in instances where widgetStates[instance.id] == nil && instance.kind == .custom {
+                guard let def = UUID(uuidString: instance.sourceIdentifier).flatMap(customInstruments.def(withId:)) else { continue }
+                _ = hydrateRestoredState(instanceID: instance.id, def: def)
             }
-        }
-    }
-
-    private func widgets(forInstance instance: InstrumentInstance) -> [InstrumentWidget] {
-        switch instance.kind {
-        case .custom:
-            guard let defID = UUID(uuidString: instance.sourceIdentifier),
-                let def = customInstruments.def(withId: defID)
-            else { return [] }
-            return def.widgets
-        default:
-            return []
         }
     }
 
@@ -5167,11 +5205,14 @@ public final class Engine {
         instanceID: UUID,
         widget: String,
         action: String,
-        item: String?
+        item: String?,
+        actionID: UUID
     ) {
-        guard let instance = instrumentsBySession[sessionID]?.first(where: { $0.id == instanceID }) else { return }
+        guard let instance = instrumentsBySession[sessionID]?.first(where: { $0.id == instanceID }),
+            canReachAgent(of: instance), item != nil || agentState(of: instance).isEnabled(action, of: widget)
+        else { return }
         Task { @MainActor [weak self] in
-            await self?.invokeAction(instance: instance, widget: widget, action: action, item: item)
+            await self?.runAction(instance: instance, widget: widget, action: action, item: item, actionID: actionID, recipient: .member(sessionID))
         }
     }
 
@@ -5297,12 +5338,13 @@ public final class Engine {
         text: String
     ) async {
         let entry = WidgetConsoleEntry(kind: .input, text: text)
-        await dispatchConsoleInput(instance: instance, widget: widget, entry: entry)
+        await dispatchConsoleInput(instance: instance, widget: widget, entry: entry, recipient: .person)
     }
 
     public struct ConsoleResponse: Sendable {
         public let inputEntryID: String
         public let replies: [WidgetConsoleEntry]
+        public var offeredFile: OfferedFileSummary? = nil
     }
 
     /// Submits a console input and awaits replies tagged with `replyTo ==
@@ -5320,7 +5362,7 @@ public final class Engine {
         guard canSubmitConsoleInput(of: instance) else { return ConsoleResponse(inputEntryID: inputID, replies: []) }
         let instanceID = instance.id
         let updates = widgetUpdates
-        await dispatchConsoleInput(instance: instance, widget: widget, entry: entry)
+        let offeredFile = await dispatchConsoleInput(instance: instance, widget: widget, entry: entry, recipient: nil)
 
         let buffer = ConsoleReplyBuffer()
         let collector = Task { @MainActor in
@@ -5343,25 +5385,35 @@ public final class Engine {
         }
         _ = await collector.value
         deadline.cancel()
-        return ConsoleResponse(inputEntryID: inputID, replies: await buffer.snapshot())
+        return ConsoleResponse(inputEntryID: inputID, replies: await buffer.snapshot(), offeredFile: offeredFile)
     }
 
+    @discardableResult
     private func dispatchConsoleInput(
         instance: InstrumentInstance,
         widget: String,
-        entry: WidgetConsoleEntry
-    ) async {
-        guard canSubmitConsoleInput(of: instance) else { return }
+        entry: WidgetConsoleEntry,
+        recipient: FileRecipient?
+    ) async -> OfferedFileSummary? {
+        guard canSubmitConsoleInput(of: instance) else { return nil }
         let update = WidgetUpdate(instanceID: instance.id, widget: widget, kind: .consoleAppend(entry))
         applyWidgetUpdate(update, sessionID: instance.sessionID, origin: .local)
 
         guard let node = node(forSessionID: instance.sessionID),
             node.instruments.first(where: { $0.id == instance.id })?.attachment == .attached
-        else { return }
+        else { return nil }
+        let actionID = UUID()
+        fileRecipients[actionID] = recipient
         do {
-            try await node.submitConsoleInput(instanceID: instance.id, widget: widget, entryID: entry.id, text: entry.text)
+            let outcome = try await node.submitConsoleInput(
+                instanceID: instance.id, widget: widget, entryID: entry.id, text: entry.text, actionID: actionID, savesFile: recipient != nil)
+            handlerEnded(actionID: actionID, offeredFile: outcome.file != nil)
+            show(outcome.show, toChooserOf: actionID, recipient: recipient, instance: instance)
+            return outcome.file
         } catch {
+            handlerEnded(actionID: actionID, offeredFile: false)
             emitEngineError(subsystem: "instruments", text: "Failed to submit console input on \(widget): \(userFacingMessage(error))")
+            return nil
         }
     }
 
@@ -5399,23 +5451,53 @@ public final class Engine {
         await invokeAction(instance: instance, widget: widget, action: action, item: item)
     }
 
-    func invokeAction(instance: InstrumentInstance, widget: String, action: String, item: String?) async {
-        guard canReachAgent(of: instance), item != nil || agentState(of: instance).isEnabled(action, of: widget) else { return }
+    @discardableResult
+    func invokeAction(
+        instance: InstrumentInstance,
+        widget: String,
+        action: String,
+        item: String?,
+        chooser: ActionChooser = .person
+    ) async -> OfferedFileSummary? {
+        guard canReachAgent(of: instance), item != nil || agentState(of: instance).isEnabled(action, of: widget) else { return nil }
         if isHostedRemotelyLive(instance.sessionID) {
             collaboration.sendWidgetAction(
                 sessionID: instance.sessionID,
                 instanceID: instance.id,
                 widget: widget,
                 action: action,
-                item: item
+                item: item,
+                savesFile: chooser == .person
             )
-            return
+            return nil
         }
-        guard let node = node(forSessionID: instance.sessionID) else { return }
+        return await runAction(
+            instance: instance, widget: widget, action: action, item: item, actionID: UUID(), recipient: chooser == .person ? .person : nil)
+    }
+
+    private func runAction(
+        instance: InstrumentInstance,
+        widget: String,
+        action: String,
+        item: String?,
+        actionID: UUID,
+        recipient: FileRecipient?
+    ) async -> OfferedFileSummary? {
+        guard let node = node(forSessionID: instance.sessionID) else { return nil }
+        fileRecipients[actionID] = recipient
         do {
-            try await node.invokeWidgetAction(instanceID: instance.id, widget: widget, action: action, item: item)
+            let outcome = try await node.invokeWidgetAction(
+                instanceID: instance.id, widget: widget, action: action, item: item, actionID: actionID, savesFile: recipient != nil)
+            handlerEnded(actionID: actionID, offeredFile: outcome.file != nil)
+            show(outcome.show, toChooserOf: actionID, recipient: recipient, instance: instance)
+            if let failure = outcome.error {
+                emitEngineError(subsystem: "instruments", text: "Failed to invoke widget action \(widget).\(action): \(failure)")
+            }
+            return outcome.file
         } catch {
+            handlerEnded(actionID: actionID, offeredFile: false)
             emitEngineError(subsystem: "instruments", text: "Failed to invoke widget action \(widget).\(action): \(userFacingMessage(error))")
+            return nil
         }
     }
 
@@ -5692,7 +5774,7 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         return session.id
     }
 
-    private func collabSessionID(forSessionID sessionID: UUID) -> UUID? {
+    func collabSessionID(forSessionID sessionID: UUID) -> UUID? {
         guard collaboration.isCollaborative,
               sessions.contains(where: { $0.id == sessionID })
         else { return nil }
@@ -5855,6 +5937,20 @@ public func deleteCustomInstrument(_ defID: UUID) async {
                 self?.applyActionStateChange(change, sessionID: sessionID)
             }
         }
+
+        Task { @MainActor [weak self, weak node] in
+            guard let node else { return }
+            for await traffic in node.fileStreamTraffic {
+                self?.handleFileStreamTraffic(traffic, sessionID: sessionID)
+            }
+        }
+
+        Task { @MainActor [weak self, weak node] in
+            guard let node else { return }
+            for await traffic in node.childTraffic {
+                self?.handleChildTraffic(traffic)
+            }
+        }
     }
 
     private func applyActionStateChange(_ change: InstrumentActionStateChange, sessionID: UUID) {
@@ -5880,7 +5976,7 @@ public func deleteCustomInstrument(_ defID: UUID) async {
             guard let defID = UUID(uuidString: instance.sourceIdentifier),
                 let def = customInstruments.def(withId: defID)
             else { return nil }
-            return def.widgets.first { $0.id == widgetID }
+            return def.widget(atSlot: widgetID)
         default:
             return nil
         }

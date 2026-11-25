@@ -21,8 +21,13 @@ public struct InstrumentFolder: Sendable {
     private static let settingManifestKeys = ["id", "name", "schema", "optional", "enabledByDefault"]
     private static let schemaManifestKeys = ["kind", "choices", "fields", "item", "default", "min", "max"]
     private static let choiceManifestKeys = ["id", "name"]
+    private static let layoutNodeManifestKeys = ["widget", "row", "column", "share", "maxRows", "foldBelow"]
     private static let manifestKeyOrders: [String: [String]] = [
-        "luma": ["root", "icon", "compatibility", "settings", "widgets", "store"],
+        "luma": ["root", "icon", "compatibility", "settings", "widgets", "layout", "children", "store"],
+        "layout": layoutNodeManifestKeys,
+        "row": layoutNodeManifestKeys,
+        "column": layoutNodeManifestKeys,
+        "children": ["id", "name", "icon", "widgets", "layout"],
         "icon": ["kind", "value"],
         "compatibility": ["platforms", "osIDs", "archs"],
         "settings": settingManifestKeys,
@@ -119,6 +124,8 @@ public struct InstrumentFolder: Sendable {
             dependencies: manifest.dependencies ?? [:],
             settings: manifest.luma?.settings ?? [],
             widgets: manifest.luma?.widgets?.map(\.widget) ?? [],
+            layout: manifest.luma?.layout,
+            children: manifest.luma?.children?.map(\.template) ?? [],
             createdAt: createdAt,
             updatedAt: updatedAt
         )
@@ -218,7 +225,9 @@ public struct InstrumentFolder: Sendable {
             icon: icon,
             compatibility: def.compatibility.isUniversal ? nil : def.compatibility,
             settings: def.settings,
-            widgets: def.widgets.map(Manifest.Widget.init)
+            widgets: def.widgets.map(Manifest.Widget.init),
+            layout: def.layout,
+            children: def.children.isEmpty ? nil : def.children.map(Manifest.ChildTemplate.init)
         )
         var package: [String: Any] =
             if let existingManifest {
@@ -500,6 +509,8 @@ public struct InstrumentFolder: Sendable {
             var compatibility: InstrumentCompatibility?
             var settings: [CustomInstrumentDef.Setting]?
             var widgets: [Widget]?
+            var layout: InstrumentLayout?
+            var children: [ChildTemplate]?
 
             var iconFilePath: String? {
                 if case .file(let path) = icon {
@@ -535,6 +546,56 @@ public struct InstrumentFolder: Sendable {
                     try c.encode(Kind.file, forKey: .kind)
                     try c.encode(path, forKey: .value)
                 }
+            }
+        }
+
+        struct ChildTemplate: Codable, Sendable {
+            let template: InstrumentChildTemplate
+
+            private enum CodingKeys: String, CodingKey { case id, name, icon, widgets, layout }
+
+            init(_ template: InstrumentChildTemplate) {
+                self.template = template
+            }
+
+            init(from decoder: Decoder) throws {
+                try decoder.refuseUnknownKeys(CodingKeys.self)
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                var symbol: String?
+                switch try c.decodeIfPresent(Icon.self, forKey: .icon) {
+                case .symbolic(let id):
+                    symbol = id
+                case .file:
+                    throw DecodingError.dataCorrupted(.init(codingPath: c.codingPath + [CodingKeys.icon], debugDescription: "a child's icon has to be symbolic"))
+                case nil:
+                    symbol = nil
+                }
+                template = InstrumentChildTemplate(
+                    id: try c.decode(String.self, forKey: .id),
+                    name: try c.decode(String.self, forKey: .name),
+                    symbol: symbol,
+                    widgets: try c.decodeIfPresent([Widget].self, forKey: .widgets)?.map(\.widget) ?? [],
+                    layout: try c.decodeIfPresent(InstrumentLayout.self, forKey: .layout))
+                if let problem = template.problem {
+                    throw DecodingError.dataCorrupted(
+                        .init(codingPath: decoder.codingPath + problem.path.map(ManifestKey.init), debugDescription: problem.text))
+                }
+                let here = InstrumentFolder.keyPath(decoder.codingPath)
+                if let problem = template.layout?.problem(
+                    placing: template.widgets, keys: .camelCase, widgetsName: "\(here).widgets", layoutName: "\(here).layout")
+                {
+                    throw DecodingError.dataCorrupted(
+                        .init(codingPath: c.codingPath + [CodingKeys.layout] + problem.path.map(ManifestKey.init), debugDescription: problem.text))
+                }
+            }
+
+            func encode(to encoder: Encoder) throws {
+                var c = encoder.container(keyedBy: CodingKeys.self)
+                try c.encode(template.id, forKey: .id)
+                try c.encode(template.name, forKey: .name)
+                try c.encodeIfPresent(template.symbol.map(Icon.symbolic), forKey: .icon)
+                try c.encode(template.widgets.map(Widget.init), forKey: .widgets)
+                try c.encodeIfPresent(template.layout, forKey: .layout)
             }
         }
 
@@ -586,9 +647,35 @@ extension InstrumentFolder.Manifest.Section {
             icon: try c.decodeIfPresent(InstrumentFolder.Manifest.Icon.self, forKey: .icon),
             compatibility: try c.decodeIfPresent(InstrumentCompatibility.self, forKey: .compatibility),
             settings: try c.decodeIfPresent([CustomInstrumentDef.Setting].self, forKey: .settings),
-            widgets: try c.decodeIfPresent([InstrumentFolder.Manifest.Widget].self, forKey: .widgets))
+            widgets: try c.decodeIfPresent([InstrumentFolder.Manifest.Widget].self, forKey: .widgets),
+            layout: try c.decodeIfPresent(InstrumentLayout.self, forKey: .layout),
+            children: try c.decodeIfPresent([InstrumentFolder.Manifest.ChildTemplate].self, forKey: .children))
         if let problem = InstrumentWidget.countProblem(widgets?.count ?? 0) {
             throw DecodingError.dataCorrupted(.init(codingPath: c.codingPath + [CodingKeys.widgets], debugDescription: problem))
+        }
+        let pageWidgets = widgets?.map(\.widget) ?? []
+        if let problem = InstrumentWidget.repeatedIDProblem(in: pageWidgets) {
+            throw DecodingError.dataCorrupted(
+                .init(codingPath: c.codingPath + [CodingKeys.widgets] + problem.path.map(ManifestKey.init), debugDescription: problem.text))
+        }
+        if let problem = layout?.problem(placing: pageWidgets, keys: .camelCase, widgetsName: "luma.widgets", layoutName: "luma.layout") {
+            throw DecodingError.dataCorrupted(
+                .init(codingPath: c.codingPath + [CodingKeys.layout] + problem.path.map(ManifestKey.init), debugDescription: problem.text))
+        }
+        let templates = children?.map(\.template) ?? []
+        if let problem = InstrumentChildTemplate.countProblem(templates, pageWidgets: widgets?.count ?? 0) {
+            throw DecodingError.dataCorrupted(.init(codingPath: c.codingPath + [CodingKeys.children], debugDescription: problem))
+        }
+        var seen: Set<String> = []
+        if let index = templates.firstIndex(where: { !seen.insert($0.id).inserted }) {
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: c.codingPath + [CodingKeys.children, ManifestKey(index), ManifestKey("id")],
+                debugDescription: "\"\(templates[index].id)\" is already the id of another kind of child"))
+        }
+        if !templates.isEmpty, let index = widgets?.firstIndex(where: { $0.widget.id == "children" }) {
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: c.codingPath + [CodingKeys.widgets, ManifestKey(index), ManifestKey("id")],
+                debugDescription: "\"children\" names the restored state of an instrument's children; choose another id"))
         }
     }
 }
@@ -610,7 +697,7 @@ extension Decoder {
     }
 }
 
-private struct ManifestKey: CodingKey {
+struct ManifestKey: CodingKey {
     let stringValue: String
     let intValue: Int?
 

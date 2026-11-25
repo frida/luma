@@ -3949,7 +3949,7 @@ public enum MissionTools {
     private static func registerInvokeWidgetAction(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "invoke_widget_action",
-            description: "Trigger an action a widget declares, as clicking its button would: one of the widget's own actions (a header button; omit item) or one of a list's or table's row actions (pass the row's id as item). The instrument's onAction handler runs in the host's agent.",
+            description: "Trigger an action a widget declares, as clicking its button would: one of the widget's own actions (a header button; omit item) or one of a list's or table's row actions (pass the row's id as item). The instrument's onAction handler runs in the host's agent. A file the action offers for saving is dropped, since only a person can save one.",
             inputSchemaJSON: """
                 {"type":"object","properties":{"session_id":{"type":"string"},"instance_id":{"type":"string"},"widget":{"type":"string"},"action":{"type":"string"},"item":{"type":"string","description":"The row's id, for a row action; omitted for a widget's own action"}},"required":["session_id","instance_id","widget","action"],"additionalProperties":false}
                 """,
@@ -3976,13 +3976,14 @@ public enum MissionTools {
             case .error(let err): return err
             }
             let item = invocation.args["item"] as? String
-            await engine.invokeAction(instance: instance, widget: widget, action: action, item: item)
+            let offeredFile = await engine.invokeAction(instance: instance, widget: widget, action: action, item: item, chooser: .mission)
             var payload: [String: Any] = [
                 "instance_id": instanceID.uuidString,
                 "widget": widget,
                 "action": action,
             ]
             if let item { payload["item"] = item }
+            noteDroppedFile(offeredFile, in: &payload, offeredBy: "action")
             return makeResult(jsonObject: payload, summary: "Invoked \(action) on \(widget)")
         }
     }
@@ -3990,7 +3991,7 @@ public enum MissionTools {
     private static func registerSubmitConsoleInput(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "submit_console_input",
-            description: "Send a line of input to a console widget and wait for the instrument's responses (entries posted with `respond.output` / `respond.error` / `respond.value` from `onConsoleInput`). Returns whatever responses arrived within `timeout_ms` (default 2000). Free-form output the instrument emits via appendOutput / appendError / appendValue is NOT included — only entries explicitly tied back to this input.",
+            description: "Send a line of input to a console widget and wait for the instrument's responses (entries posted with `respond.output` / `respond.error` / `respond.value` from `onConsoleInput`). A file the input offers for saving is dropped, since only a person can save one. Returns whatever responses arrived within `timeout_ms` (default 2000). Free-form output the instrument emits via appendOutput / appendError / appendValue is NOT included — only entries explicitly tied back to this input.",
             inputSchemaJSON: """
                 {"type":"object","properties":{"session_id":{"type":"string"},"instance_id":{"type":"string"},"widget":{"type":"string"},"text":{"type":"string"},"timeout_ms":{"type":"integer","minimum":1,"maximum":60000,"default":2000}},"required":["session_id","instance_id","widget","text"],"additionalProperties":false}
                 """,
@@ -4025,14 +4026,21 @@ public enum MissionTools {
                 timeout: .milliseconds(timeoutMs)
             )
             let replies = response.replies.map(consoleEntryJSON)
-            let payload: [String: Any] = [
+            var payload: [String: Any] = [
                 "instance_id": instanceID.uuidString,
                 "widget": widget,
                 "input_entry_id": response.inputEntryID,
                 "replies": replies,
             ]
+            noteDroppedFile(response.offeredFile, in: &payload, offeredBy: "input")
             return makeResult(jsonObject: payload, summary: "Submitted to \(widget), \(replies.count) repl\(replies.count == 1 ? "y" : "ies")")
         }
+    }
+
+    private static func noteDroppedFile(_ file: OfferedFileSummary?, in payload: inout [String: Any], offeredBy trigger: String) {
+        guard let file else { return }
+        payload["offered_file"] = ["name": file.name, "media_type": file.mediaType, "size": file.size.map { $0 as Any } ?? NSNull()]
+        payload["note"] = "The \(trigger) offered a file, which only a person can save; it was dropped."
     }
 
     private static func consoleEntryJSON(_ entry: WidgetConsoleEntry) -> [String: Any] {

@@ -30,7 +30,7 @@ extension Engine {
     func isViewWidget(_ key: InstrumentViews.Key) -> Bool {
         guard let instance = instance(withID: key.instanceID),
             let defID = UUID(uuidString: instance.sourceIdentifier),
-            let widget = customInstruments.def(withId: defID)?.widgets.first(where: { $0.id == key.widget })
+            let widget = customInstruments.def(withId: defID)?.widget(atSlot: key.widget)
         else { return false }
         return widget.kind.isView
     }

@@ -40,7 +40,7 @@ public struct WidgetUpdate: Sendable, Identifiable {
     public func toWireJSON() -> [String: Any] {
         var obj = kind.wireJSON
         obj["instance_id"] = instanceID.uuidString
-        obj["widget"] = widget
+        WidgetSlot.addTarget(widget, to: &obj)
         obj["revision"] = revision
         return obj
     }
@@ -48,7 +48,7 @@ public struct WidgetUpdate: Sendable, Identifiable {
     public static func fromWireJSON(_ obj: [String: Any]) -> WidgetUpdate? {
         guard let instanceIDStr = obj["instance_id"] as? String,
             let instanceID = UUID(uuidString: instanceIDStr),
-            let widget = obj["widget"] as? String,
+            let widget = WidgetSlot.target(in: obj),
             let kindStr = obj["kind"] as? String,
             let revision = obj["revision"] as? Int
         else { return nil }
@@ -455,7 +455,7 @@ public struct WidgetStateSnapshot: Sendable {
             let sessionID = UUID(uuidString: sessionStr),
             let instanceStr = obj["instance_id"] as? String,
             let instanceID = UUID(uuidString: instanceStr),
-            let widget = obj["widget"] as? String,
+            let widget = WidgetSlot.target(in: obj),
             let stateObj = obj["state"] as? [String: Any],
             let revision = obj["revision"] as? Int
         else { return nil }

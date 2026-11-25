@@ -1,3 +1,6 @@
+import { Buffer } from "buffer";
+import { Controller as StreamController } from "frida-remote-stream";
+import { Writable } from "stream";
 import { encodeValue } from "./value.js";
 
 export interface Instrument<C = unknown, R = unknown> {
@@ -13,6 +16,38 @@ export interface InstrumentContext {
     emit(payload: unknown): void;
     post(type: string, payload: object, data?: ArrayBuffer | ArrayBufferView | number[] | null): void;
     widget(id: string): WidgetHandle;
+    children(template: string): ChildrenHandle;
+}
+
+export interface ChildrenHandle {
+    add(id: string, row: ChildRow): ChildHandle;
+    get(id: string): ChildHandle | undefined;
+    ids(): string[];
+    remove(id: string): void;
+}
+
+export interface ChildRow {
+    title: string;
+    subtitle?: string;
+    badge?: ChildBadge | null;
+}
+
+export interface ChildBadge {
+    text: string;
+    tone?: "neutral" | "active" | "waiting" | "ended" | "failed";
+}
+
+export interface ChildHandle {
+    readonly template: string;
+    readonly id: string;
+    update(row: Partial<ChildRow>): void;
+    widget(id: string): WidgetHandle;
+    remove(): void;
+}
+
+export interface ChildRef {
+    template: string;
+    id: string;
 }
 
 export interface WidgetHandle {
@@ -90,12 +125,14 @@ export interface WidgetAction {
     widget: string;
     action: string;
     item?: string;
+    child?: ChildRef;
 }
 
 export interface ConsoleInput {
     widget: string;
     entryId: string;
     text: string;
+    child?: ChildRef;
 }
 
 export interface ViewMessage {
@@ -103,6 +140,26 @@ export interface ViewMessage {
     value: unknown;
     data: ArrayBuffer | null;
     from?: { id: string; name: string };
+    child?: ChildRef;
+}
+
+export interface OfferedFileHeader {
+    name: string;
+    mediaType: string;
+}
+
+export interface OfferedFile extends OfferedFileHeader {
+    bytes: ArrayBuffer | ArrayBufferView | number[];
+}
+
+export interface OfferFile {
+    (file: OfferedFile): void;
+    (file: OfferedFileHeader): Writable;
+}
+
+export interface ActionResponder {
+    file: OfferFile;
+    show(child: ChildHandle | null): void;
 }
 
 export interface ConsoleResponder {
@@ -110,11 +167,13 @@ export interface ConsoleResponder {
     error(text: string): void;
     value(v: unknown): void;
     image(img: ConsoleImage): void;
+    file: OfferFile;
+    show(child: ChildHandle | null): void;
 }
 
 export interface InstrumentHandle<C = unknown> {
     updateConfig?(config: C): Promise<void> | void;
-    onAction?(action: WidgetAction): Promise<void> | void;
+    onAction?(action: WidgetAction, respond: ActionResponder): Promise<void> | void;
     onConsoleInput?(input: ConsoleInput, respond: ConsoleResponder): Promise<void> | void;
     onViewMessage?(message: ViewMessage): Promise<void> | void;
     dispose?(): Promise<void> | void;
@@ -140,6 +199,28 @@ const viewLimits = {
     stateDataPieceBytes: 4 * 1024 * 1024 - 64 * 1024,
 };
 
+const fileLimits = {
+    bytes: 64 * 1024 * 1024,
+    nameBytes: 255,
+    chunkBytes: 4 * 1024 * 1024,
+};
+
+const fileStreams = new StreamController();
+const openFileStreams = new Map<string, Set<OfferedFileStream>>();
+
+fileStreams.events.on("send", ({ stanza, data }) => {
+    send({ type: "luma:stream", stanza }, data === null ? null : new Uint8Array(data).buffer);
+});
+
+function receiveFileStreamReplies(): void {
+    recv("luma:stream", (message: { stanza: { [key: string]: any } }) => {
+        receiveFileStreamReplies();
+        fileStreams.receive({ stanza: message.stanza, data: null });
+    });
+}
+
+receiveFileStreamReplies();
+
 declare global {
     function send(message: any, data?: ArrayBuffer | ArrayBufferView | number[] | null): void;
 }
@@ -147,6 +228,7 @@ declare global {
 interface ViewMessageEnvelope {
     instance_id: string;
     widget: string;
+    child?: ChildRef;
     value: unknown;
     from?: { id: string; name: string };
 }
@@ -162,21 +244,25 @@ function receiveViewMessages(): void {
         if (message.from !== undefined) {
             delivered.from = message.from;
         }
+        if (message.child !== undefined) {
+            delivered.child = message.child;
+        }
         handle.onViewMessage(delivered);
     });
 }
 
 receiveViewMessages();
 
-export async function loadInstrument({ instanceId, moduleName, source, config, restored }: {
+export async function loadInstrument({ instanceId, moduleName, source, config, restored, childTemplates }: {
     instanceId: string,
     moduleName: string,
     source: string,
     config: unknown,
-    restored: unknown,
+    restored: { children?: { [template: string]: { [id: string]: ChildRow } } },
+    childTemplates: string[],
 }): Promise<void> {
     const instrument = await loadInstrumentModule(moduleName, source);
-    const ctx = makeInstrumentContext(instanceId);
+    const ctx = makeInstrumentContext(instanceId, childTemplates, restored.children ?? {});
 
     ctx.post("instrument-actions-reset", {});
     const handle = await instrument.create(ctx, config, restored);
@@ -212,15 +298,21 @@ export async function disposeInstrument({ instanceId }: { instanceId: string }):
 
     await controller.handle.dispose?.();
 
+    for (const stream of openFileStreams.get(instanceId) ?? []) {
+        stream.destroy(new Error("the instrument was unloaded"));
+    }
     instruments.delete(instanceId);
 }
 
-export async function invokeWidgetAction({ instanceId, widget, action, item }: {
+export async function invokeWidgetAction({ instanceId, widget, child, action, item, actionId, savesFile }: {
     instanceId: string,
     widget: string,
+    child?: ChildRef,
     action: string,
     item?: string,
-}): Promise<void> {
+    actionId: string,
+    savesFile: boolean,
+}): Promise<HandlerOutcome> {
     const controller = instruments.get(instanceId);
     if (controller === undefined) {
         throw new Error(`No such instance: ${instanceId}`);
@@ -230,38 +322,233 @@ export async function invokeWidgetAction({ instanceId, widget, action, item }: {
     if (item !== undefined) {
         chosen.item = item;
     }
-    await controller.handle.onAction?.(chosen);
+    if (child !== undefined) {
+        chosen.child = child;
+    }
+    const offer = makeFileOffer(instanceId, actionId, savesFile, "onAction", "action");
+    let error: string | null = null;
+    try {
+        await controller.handle.onAction?.(chosen, { file: offer.file, show: offer.show });
+    } catch (e) {
+        error = (e instanceof Error) ? e.message : String(e);
+    }
+    offer.close();
+    return { file: offer.offered(), error, show: offer.shown() };
 }
 
-export async function submitConsoleInput({ instanceId, widget, entryId, text }: {
+export async function submitConsoleInput({ instanceId, widget, child, entryId, text, actionId, savesFile }: {
     instanceId: string,
     widget: string,
+    child?: ChildRef,
     entryId: string,
     text: string,
-}): Promise<void> {
+    actionId: string,
+    savesFile: boolean,
+}): Promise<HandlerOutcome> {
     const controller = instruments.get(instanceId);
     if (controller === undefined) {
         throw new Error(`No such instance: ${instanceId}`);
     }
 
-    const respond = makeConsoleResponder(instanceId, widget, entryId);
+    const offer = makeFileOffer(instanceId, actionId, savesFile, "onConsoleInput", "input");
+    const respond = makeConsoleResponder(instanceId, widget, child, entryId, offer);
+    const input: ConsoleInput = { widget, entryId, text };
+    if (child !== undefined) {
+        input.child = child;
+    }
     try {
-        await controller.handle.onConsoleInput?.({ widget, entryId, text }, respond);
+        await controller.handle.onConsoleInput?.(input, respond);
     } catch (e) {
         respond.error((e instanceof Error) ? e.message : String(e));
     }
+    offer.close();
     send({
         type: "widget-console-reply-done",
         instance_id: instanceId,
         widget,
+        child,
         reply_to: entryId,
     }, null);
+    return { file: offer.offered(), error: null, show: offer.shown() };
+}
+
+interface HandlerOutcome {
+    file: { name: string, media_type: string, size: number | null } | null;
+    error: string | null;
+    show: { child: ChildRef | null } | null;
+}
+
+function makeFileOffer(
+    instanceId: string,
+    actionId: string,
+    savesFile: boolean,
+    handlerName: string,
+    trigger: string
+): { file: OfferFile, show(child: ChildHandle | null): void, close(): void, offered(): HandlerOutcome["file"], shown(): HandlerOutcome["show"] } {
+    let closed = false;
+    let offered: HandlerOutcome["file"] = null;
+    let shown: HandlerOutcome["show"] = null;
+    function file(file: OfferedFile): void;
+    function file(file: OfferedFileHeader): Writable;
+    function file(file: OfferedFileHeader | OfferedFile): Writable | void {
+        if (closed) {
+            throw new Error(`respond.file: offered after ${handlerName} returned`);
+        }
+        if (offered !== null) {
+            throw new Error(`respond.file: this ${trigger} has already offered a file`);
+        }
+        const { name, mediaType } = file;
+        const nameProblem = fileNameProblem(name);
+        if (nameProblem !== null) {
+            throw new TypeError(`respond.file: ${JSON.stringify(name)} is not a plain file name: ${nameProblem}`);
+        }
+        if (!mediaTypePattern.test(mediaType)) {
+            throw new TypeError(`respond.file: ${JSON.stringify(mediaType)} is not a media type such as "model/obj"`);
+        }
+        const bytes = ("bytes" in file) ? viewDataBytes(file.bytes) : null;
+        if (bytes !== null && bytes.byteLength > fileLimits.bytes) {
+            throw new RangeError(`respond.file: ${JSON.stringify(name)} is ${bytes.byteLength} bytes; the most a file can be is ${fileLimits.bytes} (64 MiB)`);
+        }
+        offered = { name, media_type: mediaType, size: bytes?.byteLength ?? null };
+        const sink = savesFile
+            ? fileStreams.open("offered-file", { action_id: actionId, instance_id: instanceId, name, media_type: mediaType })
+            : null;
+        const stream = new OfferedFileStream(sink, actionId);
+        const open = openFileStreams.get(instanceId) ?? new Set();
+        openFileStreams.set(instanceId, open.add(stream));
+        stream.once("close", () => open.delete(stream));
+        if (bytes === null) {
+            return stream;
+        }
+        stream.end(Buffer.from(bytes));
+    }
+    return {
+        file,
+        show(child) {
+            if (closed) {
+                throw new Error(`respond.show: called after ${handlerName} returned`);
+            }
+            shown = { child: child === null ? null : { template: child.template, id: child.id } };
+        },
+        close() {
+            closed = true;
+        },
+        offered() {
+            return offered;
+        },
+        shown() {
+            return shown;
+        },
+    };
+}
+
+class OfferedFileStream extends Writable {
+    #sink: Writable | null;
+    #actionId: string;
+    #pending: Buffer[] = [];
+    #pendingBytes = 0;
+    #total = 0;
+    #refused = false;
+
+    constructor(sink: Writable | null, actionId: string) {
+        super();
+        this.#sink = sink;
+        this.#actionId = actionId;
+        this.on("error", () => {});
+        sink?.on("error", () => {});
+    }
+
+    _write(chunk: Buffer, _encoding: BufferEncoding, callback: (error?: Error | null) => void): void {
+        this.#total += chunk.length;
+        if (this.#total > fileLimits.bytes) {
+            callback(new RangeError(`respond.file: the file grew past ${fileLimits.bytes} bytes (64 MiB)`));
+            return;
+        }
+        this.#pending.push(chunk);
+        this.#pendingBytes += chunk.length;
+        this.#flush(fileLimits.chunkBytes, callback);
+    }
+
+    _final(callback: (error?: Error | null) => void): void {
+        this.#flush(1, error => {
+            if (error !== null && error !== undefined) {
+                callback(error);
+            } else if (this.#sink === null) {
+                callback();
+            } else {
+                this.#sink.end(callback);
+            }
+        });
+    }
+
+    _destroy(error: Error | null, callback: (error?: Error | null) => void): void {
+        if (!this.writableFinished && !this.#refused && this.#sink !== null) {
+            send({ type: "luma:stream-abort", action_id: this.#actionId, reason: error?.message ?? "the instrument stopped writing" }, null);
+        }
+        this.#sink?.destroy();
+        callback(error);
+    }
+
+    #flush(threshold: number, callback: (error?: Error | null) => void): void {
+        if (this.#pendingBytes === 0 || this.#pendingBytes < threshold) {
+            callback();
+            return;
+        }
+        const piece = this.#take(fileLimits.chunkBytes);
+        if (this.#sink === null) {
+            this.#flush(threshold, callback);
+            return;
+        }
+        this.#sink.write(piece, error => {
+            if (error !== null && error !== undefined) {
+                this.#refused = true;
+                callback(error);
+            } else {
+                this.#flush(threshold, callback);
+            }
+        });
+    }
+
+    #take(count: number): Buffer {
+        const all = Buffer.concat(this.#pending);
+        const rest = all.subarray(count);
+        this.#pending = rest.length > 0 ? [rest] : [];
+        this.#pendingBytes = rest.length;
+        return all.subarray(0, count);
+    }
+}
+
+const mediaTypePattern = /^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]{0,126}\/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]{0,126}$/;
+
+function fileNameProblem(name: string): string | null {
+    if (name.length === 0) {
+        return "it is empty";
+    }
+    if (utf8Length(name) > fileLimits.nameBytes) {
+        return `it is longer than ${fileLimits.nameBytes} bytes as UTF-8`;
+    }
+    const reserved = [...name].find(c => '/\\<>:"|?*'.includes(c));
+    if (reserved !== undefined) {
+        return `it contains ${JSON.stringify(reserved)}`;
+    }
+    if ([...name].some(c => c.codePointAt(0)! < 0x20 || c.codePointAt(0) === 0x7f)) {
+        return "it contains a control character";
+    }
+    if (name.startsWith(".")) {
+        return "it starts with a dot";
+    }
+    if (name.endsWith(".") || name.endsWith(" ")) {
+        return `it ends with ${name.endsWith(".") ? "a dot" : "a space"}`;
+    }
+    return null;
 }
 
 function makeConsoleResponder(
     instanceId: string,
     widget: string,
-    replyTo: string
+    child: ChildRef | undefined,
+    replyTo: string,
+    { file, show }: Pick<ConsoleResponder, "file" | "show">
 ): ConsoleResponder {
     const postEntry = (
         entry: {
@@ -276,6 +563,7 @@ function makeConsoleResponder(
             type: "widget-console-append",
             instance_id: instanceId,
             widget,
+            child,
             entry: {
                 id: makeId(),
                 kind: entry.kind,
@@ -307,6 +595,8 @@ function makeConsoleResponder(
                 consoleImageBuffer(img.bytes)
             );
         },
+        file,
+        show,
     };
 }
 
@@ -335,7 +625,11 @@ function parseInstrumentModule(ns: unknown, name: string): Instrument {
     return instrument;
 }
 
-function makeInstrumentContext(instanceId: string): InstrumentContext {
+function makeInstrumentContext(
+    instanceId: string,
+    childTemplates: string[],
+    restoredChildren: { [template: string]: { [id: string]: ChildRow } }
+): InstrumentContext {
     const post = (type: string, payload: object, data?: ArrayBuffer | ArrayBufferView | number[] | null) => {
         send({
             type,
@@ -355,93 +649,212 @@ function makeInstrumentContext(instanceId: string): InstrumentContext {
         },
         post,
         widget(id: string): WidgetHandle {
-            return {
-                setCounter(value) {
-                    post("widget-counter-set", { widget: id, counter: value });
+            return makeWidgetHandle(post, id);
+        },
+        children: makeChildren(post, childTemplates, restoredChildren),
+    };
+}
+
+type Post = (type: string, payload: object, data?: ArrayBuffer | ArrayBufferView | number[] | null) => void;
+
+function makeChildren(
+    post: Post,
+    templates: string[],
+    restored: { [template: string]: { [id: string]: ChildRow } }
+): (template: string) => ChildrenHandle {
+    const live = new Map<string, Map<string, ChildHandle>>(templates.map(t => [t, new Map()]));
+    const count = () => [...live.values()].reduce((sum, children) => sum + children.size, 0);
+    const handleFor = (template: string, id: string, row: ChildRow): ChildHandle => {
+        const ref = { template, id };
+        let current = { ...row };
+        const handle: ChildHandle = {
+            template,
+            id,
+            update(change) {
+                current = { ...current, ...change };
+                postChild(post, ref, current);
+            },
+            widget(widgetId: string): WidgetHandle {
+                return makeWidgetHandle((type, payload, data) => post(type, { ...payload, child: ref }, data), widgetId);
+            },
+            remove() {
+                if (live.get(template)?.delete(id) !== true) {
+                    throw new Error(`child ${JSON.stringify(id)} of ${JSON.stringify(template)} was already removed`);
+                }
+                post("instrument-child-remove", { child: ref });
+            },
+        };
+        return handle;
+    };
+    for (const [template, children] of Object.entries(restored)) {
+        for (const [id, row] of Object.entries(children)) {
+            live.get(template)?.set(id, handleFor(template, id, row));
+        }
+    }
+    return (template: string) => {
+        const children = live.get(template);
+        if (children === undefined) {
+            throw new TypeError(`ctx.children: ${JSON.stringify(template)} is not a kind of child this instrument declares`);
+        }
+        return {
+            add(id, row) {
+                checkChildRow(id, row);
+                const existing = children.get(id);
+                if (existing !== undefined) {
+                    existing.update(row);
+                    return existing;
+                }
+                if (count() >= childLimits.perInstance) {
+                    throw new RangeError(`ctx.children: the most children an instance can have is ${childLimits.perInstance}`);
+                }
+                const child = handleFor(template, id, row);
+                children.set(id, child);
+                postChild(post, { template, id }, row);
+                return child;
+            },
+            get(id) {
+                return children.get(id);
+            },
+            ids() {
+                return [...children.keys()];
+            },
+            remove(id) {
+                const child = children.get(id);
+                if (child === undefined) {
+                    throw new Error(`ctx.children: there is no child ${JSON.stringify(id)} of ${JSON.stringify(template)}`);
+                }
+                child.remove();
+            },
+        };
+    };
+}
+
+const childLimits = {
+    perInstance: 256,
+    idLength: 128,
+    titleLength: 120,
+    subtitleLength: 200,
+    badgeLength: 32,
+};
+
+const badgeTones = ["neutral", "active", "waiting", "ended", "failed"];
+
+function checkChildRow(id: string, row: ChildRow): void {
+    if (id.length === 0 || id.length > childLimits.idLength) {
+        throw new TypeError(`ctx.children: a child's id has to be 1 to ${childLimits.idLength} characters, not ${JSON.stringify(id)}`);
+    }
+    if (row.title.length === 0 || row.title.length > childLimits.titleLength) {
+        throw new TypeError(`ctx.children: a child's title has to be 1 to ${childLimits.titleLength} characters`);
+    }
+    if ((row.subtitle?.length ?? 0) > childLimits.subtitleLength) {
+        throw new TypeError(`ctx.children: a child's subtitle has at most ${childLimits.subtitleLength} characters`);
+    }
+    const badge = row.badge;
+    if (badge !== undefined && badge !== null) {
+        if (badge.text.length === 0 || badge.text.length > childLimits.badgeLength) {
+            throw new TypeError(`ctx.children: a badge's text has to be 1 to ${childLimits.badgeLength} characters`);
+        }
+        if (badge.tone !== undefined && !badgeTones.includes(badge.tone)) {
+            throw new TypeError(`ctx.children: ${JSON.stringify(badge.tone)} is not a badge tone; use one of ${badgeTones.join(", ")}`);
+        }
+    }
+}
+
+function postChild(post: Post, child: ChildRef, row: ChildRow): void {
+    post("instrument-child", {
+        child,
+        title: row.title,
+        subtitle: row.subtitle,
+        badge: row.badge === undefined || row.badge === null ? undefined : { text: row.badge.text, tone: row.badge.tone ?? "neutral" },
+    });
+}
+
+function makeWidgetHandle(post: Post, id: string): WidgetHandle {
+    return {
+        setCounter(value) {
+            post("widget-counter-set", { widget: id, counter: value });
+        },
+        setHistogram(buckets) {
+            post("widget-histogram-set", { widget: id, buckets });
+        },
+        incrementBucket(label, by = 1) {
+            post("widget-histogram-increment", { widget: id, label, by });
+        },
+        push(point) {
+            post("widget-graph-point", { widget: id, point });
+        },
+        upsertItem(item) {
+            post("widget-list-upsert", { widget: id, item });
+        },
+        removeItem(itemId) {
+            post("widget-list-remove", { widget: id, item: itemId });
+        },
+        upsertRow(row) {
+            post("widget-table-upsert", { widget: id, row });
+        },
+        removeRow(rowId) {
+            post("widget-table-remove", { widget: id, row: rowId });
+        },
+        setHex(state) {
+            const data = state.bytes instanceof ArrayBuffer ? state.bytes : new Uint8Array(state.bytes).buffer;
+            post("widget-hex-set", { widget: id, hex: { base_address: state.baseAddress ?? 0 } }, data);
+        },
+        appendConsole(entry) {
+            post("widget-console-append", {
+                widget: id,
+                entry: {
+                    id: entry.id ?? makeId(),
+                    kind: entry.kind,
+                    text: entry.text,
                 },
-                setHistogram(buckets) {
-                    post("widget-histogram-set", { widget: id, buckets });
+            });
+        },
+        appendOutput(text) {
+            post("widget-console-append", {
+                widget: id,
+                entry: { id: makeId(), kind: "output", text },
+            });
+        },
+        appendError(text) {
+            post("widget-console-append", {
+                widget: id,
+                entry: { id: makeId(), kind: "error", text },
+            });
+        },
+        appendValue(value) {
+            const [tree, blob] = encodeValue(value);
+            post("widget-console-append", {
+                widget: id,
+                entry: { id: makeId(), kind: "output", text: "", value: tree },
+            }, blob);
+        },
+        appendImage(image) {
+            post("widget-console-append", {
+                widget: id,
+                entry: {
+                    id: makeId(),
+                    kind: "image",
+                    text: image.text ?? "",
+                    image: { media_type: image.mediaType, width: image.width, height: image.height },
                 },
-                incrementBucket(label, by = 1) {
-                    post("widget-histogram-increment", { widget: id, label, by });
-                },
-                push(point) {
-                    post("widget-graph-point", { widget: id, point });
-                },
-                upsertItem(item) {
-                    post("widget-list-upsert", { widget: id, item });
-                },
-                removeItem(itemId) {
-                    post("widget-list-remove", { widget: id, item: itemId });
-                },
-                upsertRow(row) {
-                    post("widget-table-upsert", { widget: id, row });
-                },
-                removeRow(rowId) {
-                    post("widget-table-remove", { widget: id, row: rowId });
-                },
-                setHex(state) {
-                    const data = state.bytes instanceof ArrayBuffer ? state.bytes : new Uint8Array(state.bytes).buffer;
-                    post("widget-hex-set", { widget: id, hex: { base_address: state.baseAddress ?? 0 } }, data);
-                },
-                appendConsole(entry) {
-                    post("widget-console-append", {
-                        widget: id,
-                        entry: {
-                            id: entry.id ?? makeId(),
-                            kind: entry.kind,
-                            text: entry.text,
-                        },
-                    });
-                },
-                appendOutput(text) {
-                    post("widget-console-append", {
-                        widget: id,
-                        entry: { id: makeId(), kind: "output", text },
-                    });
-                },
-                appendError(text) {
-                    post("widget-console-append", {
-                        widget: id,
-                        entry: { id: makeId(), kind: "error", text },
-                    });
-                },
-                appendValue(value) {
-                    const [tree, blob] = encodeValue(value);
-                    post("widget-console-append", {
-                        widget: id,
-                        entry: { id: makeId(), kind: "output", text: "", value: tree },
-                    }, blob);
-                },
-                appendImage(image) {
-                    post("widget-console-append", {
-                        widget: id,
-                        entry: {
-                            id: makeId(),
-                            kind: "image",
-                            text: image.text ?? "",
-                            image: { media_type: image.mediaType, width: image.width, height: image.height },
-                        },
-                    }, consoleImageBuffer(image.bytes));
-                },
-                setState(value, data) {
-                    const [payload, bytes] = viewPayload("state", value, data, viewLimits.stateDataBytes);
-                    post("widget-view-state", { widget: id, ...payload, data_size: bytes?.byteLength ?? 0 });
-                    for (const piece of viewDataPieces(bytes)) {
-                        post("widget-view-state-data", { widget: id }, piece);
-                    }
-                },
-                sendEvent(value, data) {
-                    const [payload, bytes] = viewPayload("event", value, data, viewLimits.eventDataBytes);
-                    post("widget-view-event", { widget: id, ...payload }, bytes);
-                },
-                setActionEnabled(action, enabled) {
-                    post("widget-action-enabled", { widget: id, action, enabled });
-                },
-                clear() {
-                    post("widget-clear", { widget: id });
-                },
-            };
+            }, consoleImageBuffer(image.bytes));
+        },
+        setState(value, data) {
+            const [payload, bytes] = viewPayload("state", value, data, viewLimits.stateDataBytes);
+            post("widget-view-state", { widget: id, ...payload, data_size: bytes?.byteLength ?? 0 });
+            for (const piece of viewDataPieces(bytes)) {
+                post("widget-view-state-data", { widget: id }, piece);
+            }
+        },
+        sendEvent(value, data) {
+            const [payload, bytes] = viewPayload("event", value, data, viewLimits.eventDataBytes);
+            post("widget-view-event", { widget: id, ...payload }, bytes);
+        },
+        setActionEnabled(action, enabled) {
+            post("widget-action-enabled", { widget: id, action, enabled });
+        },
+        clear() {
+            post("widget-clear", { widget: id });
         },
     };
 }

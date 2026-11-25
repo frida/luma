@@ -11,11 +11,11 @@ extension CollaborationSession {
             let end = min(offset + Self.viewStateChunkBytes, size)
             var payload: JSONObject = [
                 "instance_id": instanceID.uuidString,
-                "widget": widget,
                 "revision": state.revision,
                 "data_size": size,
                 "offset": offset,
             ]
+            WidgetSlot.addTarget(widget, to: &payload)
             if offset == 0 {
                 payload["value"] = state.payload.value
             }
@@ -27,20 +27,18 @@ extension CollaborationSession {
 
     public func sendViewEvent(_ event: WidgetViewPayload, sessionID: UUID, instanceID: UUID, widget: String) {
         guard case .joined(let labID) = status else { return }
+        var payload: JSONObject = ["instance_id": instanceID.uuidString, "value": event.value as Any]
+        WidgetSlot.addTarget(widget, to: &payload)
         sendNotification(
-            to: "/labs/\(labID)/sessions/\(sessionID.uuidString)/view-events",
-            type: "+event",
-            payload: ["instance_id": instanceID.uuidString, "widget": widget, "value": event.value],
-            data: event.data?.array)
+            to: "/labs/\(labID)/sessions/\(sessionID.uuidString)/view-events", type: "+event", payload: payload, data: event.data?.array)
     }
 
     public func sendViewMessage(_ message: WidgetViewPayload, sessionID: UUID, instanceID: UUID, widget: String) {
         guard case .joined(let labID) = status else { return }
+        var payload: JSONObject = ["instance_id": instanceID.uuidString, "value": message.value as Any]
+        WidgetSlot.addTarget(widget, to: &payload)
         sendNotification(
-            to: "/labs/\(labID)/sessions/\(sessionID.uuidString)/view-messages",
-            type: "+message",
-            payload: ["instance_id": instanceID.uuidString, "widget": widget, "value": message.value],
-            data: message.data?.array)
+            to: "/labs/\(labID)/sessions/\(sessionID.uuidString)/view-messages", type: "+message", payload: payload, data: message.data?.array)
     }
 
     static func customInstrumentEditors(in bundles: [JSONObject]) -> [UUID: UserInfo] {
@@ -122,18 +120,10 @@ extension CollaborationSession {
         sessionID: UUID,
         labID: String
     ) async throws -> [UInt8] {
-        try await withCheckedThrowingContinuation { continuation in
-            sendRequest(
-                to: viewStatesPath(labID: labID, sessionID: sessionID),
-                type: ".fetch",
-                payload: [
-                    "instance_id": target.instanceID.uuidString,
-                    "widget": target.widget,
-                    "revision": revision,
-                    "offset": offset,
-                    "length": length,
-                ]
-            ) { result in
+        var payload: JSONObject = ["instance_id": target.instanceID.uuidString, "revision": revision, "offset": offset, "length": length]
+        WidgetSlot.addTarget(target.widget, to: &payload)
+        return try await withCheckedThrowingContinuation { continuation in
+            sendRequest(to: viewStatesPath(labID: labID, sessionID: sessionID), type: ".fetch", payload: payload) { result in
                 switch result {
                 case .success(let reply):
                     continuation.resume(returning: reply.data ?? [])
@@ -146,7 +136,7 @@ extension CollaborationSession {
 
     static func viewTarget(of payload: JSONObject) -> (instanceID: UUID, widget: String)? {
         guard let instanceID = (payload["instance_id"] as? String).flatMap(UUID.init(uuidString:)),
-            let widget = payload["widget"] as? String
+            let widget = WidgetSlot.target(in: payload)
         else { return nil }
         return (instanceID, widget)
     }
