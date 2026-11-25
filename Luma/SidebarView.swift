@@ -24,6 +24,8 @@ struct SidebarView: View {
     var sessions: [LumaCore.ProcessSession] { engine.sessions }
     var packages: [LumaCore.InstalledPackage] { engine.installedPackages }
     var missions: [LumaCore.Mission] { engine.missions }
+    var missionsExpansion: SidebarExpansion { engine.sidebarExpansion(of: .missions) }
+    var chatsExpansion: SidebarExpansion { engine.sidebarExpansion(of: .chats) }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -41,14 +43,18 @@ struct SidebarView: View {
                     .sidebarItemTag(SidebarItemID.notebook)
                 SidebarPharoRow()
                     .sidebarItemTag(SidebarItemID.pharo)
-                SidebarMissionsRow(count: missions.count)
-                    .sidebarItemTag(SidebarItemID.missions)
-                ForEach(missions) { mission in
+                SidebarMissionsRow(count: missions.count, isExpanded: missionsExpansion == .expanded) {
+                    engine.setSidebarExpansion(section: .missions, missionsExpansion == .expanded ? .collapsed : .expanded)
+                }
+                .sidebarItemTag(SidebarItemID.missions)
+                ForEach(missionsExpansion == .expanded ? missions : []) { mission in
                     SidebarMissionRow(mission: mission, engine: engine, selection: $selection)
                         .sidebarItemTag(SidebarItemID.mission(mission.id))
                 }
-                SidebarChatsRow(chats: engine.objectChats)
-                ForEach(engine.objectChats.sidebarChatIDs, id: \.self) { chatID in
+                SidebarChatsRow(chats: engine.objectChats, isExpanded: chatsExpansion == .expanded) {
+                    engine.setSidebarExpansion(section: .chats, chatsExpansion == .expanded ? .collapsed : .expanded)
+                }
+                ForEach(chatsExpansion == .expanded ? engine.objectChats.sidebarChatIDs : [], id: \.self) { chatID in
                     SidebarChatRow(chatID: chatID, engine: engine)
                         .sidebarItemTag(SidebarItemID.chat(chatID))
                 }
@@ -258,6 +264,8 @@ private struct SidebarPharoRow: View {
 
 private struct SidebarMissionsRow: View {
     let count: Int
+    let isExpanded: Bool
+    let onToggle: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
@@ -267,6 +275,7 @@ private struct SidebarMissionsRow: View {
             Spacer()
             if count > 0 {
                 Text("\(count)").font(.caption).foregroundStyle(.secondary)
+                SidebarSectionDisclosure(isExpanded: isExpanded, title: "missions", onToggle: onToggle)
             }
         }
         .accessibilityElement(children: .combine)
@@ -274,8 +283,29 @@ private struct SidebarMissionsRow: View {
     }
 }
 
+struct SidebarSectionDisclosure: View {
+    let isExpanded: Bool
+    let title: String
+    let onToggle: () -> Void
+
+    var body: some View {
+        Button(action: onToggle) {
+            Image(systemName: "chevron.right")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                .frame(width: sidebarChevronWidth, height: sidebarChevronWidth)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(isExpanded ? "Collapse \(title)" : "Expand \(title)")
+    }
+}
+
 private struct SidebarChatsRow: View {
     let chats: ObjectChats
+    let isExpanded: Bool
+    let onToggle: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
@@ -285,6 +315,7 @@ private struct SidebarChatsRow: View {
             Spacer()
             SidebarUnreadBadge(count: chats.sidebarChatIDs.reduce(0) { $0 + chats.unreadCount(in: $1) })
             Text("\(chats.sidebarChatIDs.count)").font(.caption).foregroundStyle(.secondary)
+            SidebarSectionDisclosure(isExpanded: isExpanded, title: "chats", onToggle: onToggle)
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("sidebar.chats")

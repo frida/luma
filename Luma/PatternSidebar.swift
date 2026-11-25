@@ -16,7 +16,7 @@ struct PatternsSidebarRows: View {
             engine.setSidebarExpansion(section: .patterns, expansion == .expanded ? .collapsed : .expanded)
         }
         .sidebarItemTag(SidebarItemID.patterns)
-        if sources.isEmpty {
+        if sources.isEmpty, expansion == .expanded {
             SidebarAddPatternPackageRow(engine: engine, selection: $selection)
         }
         ForEach(expansion == .expanded ? sources : []) { source in
@@ -110,17 +110,8 @@ private struct SidebarPatternsRow: View {
             Spacer()
             if count > 0 {
                 Text("\(count)").font(.caption).foregroundStyle(.secondary)
-                Button(action: onToggle) {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                        .frame(width: sidebarChevronWidth, height: sidebarChevronWidth)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(isExpanded ? "Collapse patterns" : "Expand patterns")
             }
+            SidebarSectionDisclosure(isExpanded: isExpanded, title: "patterns", onToggle: onToggle)
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("sidebar.patterns")
