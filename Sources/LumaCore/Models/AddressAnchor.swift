@@ -106,7 +106,7 @@ public enum AddressAnchor: Hashable, Sendable {
         case .absolute(let a):
             return [
                 "type": "absolute",
-                "address": a,
+                "address": HexAddress.string(a),
             ]
 
         case .moduleOffset(let name, let offset):

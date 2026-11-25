@@ -4610,7 +4610,7 @@ public final class Engine {
                 return [
                     "hex": [
                         "bytes": hex.bytes.base64EncodedString(),
-                        "base_address": hex.baseAddress,
+                        "base_address": HexAddress.string(hex.baseAddress),
                     ],
                 ]
             } else {

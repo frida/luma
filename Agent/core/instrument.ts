@@ -104,7 +104,7 @@ export interface TableRow {
 
 export interface HexValue {
     bytes: ArrayBuffer | number[];
-    baseAddress?: number | string;
+    baseAddress?: number | string | NativePointer;
 }
 
 export interface ConsoleEntry {
@@ -265,7 +265,7 @@ export async function loadInstrument({ instanceId, moduleName, source, config, r
     const ctx = makeInstrumentContext(instanceId, childTemplates, restored.children ?? {});
 
     ctx.post("instrument-actions-reset", {});
-    const handle = await instrument.create(ctx, config, restored);
+    const handle = await instrument.create(ctx, config, withHexPointers(restored));
 
     const controller: InstrumentController = {
         instrument,
@@ -655,6 +655,32 @@ function makeInstrumentContext(
     };
 }
 
+type RestoredWidgets = { [widgetId: string]: unknown };
+
+function withHexPointers(restored: { children?: { [template: string]: { [id: string]: ChildRow } } }): object {
+    const { children, ...widgets } = restored;
+    if (children === undefined) {
+        return hexPointersIn(widgets);
+    }
+    return {
+        ...hexPointersIn(widgets),
+        children: Object.fromEntries(Object.entries(children).map(([template, rows]) => [
+            template,
+            Object.fromEntries(Object.entries(rows).map(([id, row]) => {
+                const { widgets: rowWidgets } = row as ChildRow & { widgets?: RestoredWidgets };
+                return [id, rowWidgets === undefined ? row : { ...row, widgets: hexPointersIn(rowWidgets) }];
+            })),
+        ])),
+    };
+}
+
+function hexPointersIn(widgets: RestoredWidgets): RestoredWidgets {
+    return Object.fromEntries(Object.entries(widgets).map(([widgetId, value]) => {
+        const hex = (value as { hex?: { bytes: string, base_address: string } | null } | null)?.hex;
+        return [widgetId, hex == null ? value : { hex: { ...hex, base_address: ptr(hex.base_address) } }];
+    }));
+}
+
 type Post = (type: string, payload: object, data?: ArrayBuffer | ArrayBufferView | number[] | null) => void;
 
 function makeChildren(
@@ -797,7 +823,7 @@ function makeWidgetHandle(post: Post, id: string): WidgetHandle {
         },
         setHex(state) {
             const data = state.bytes instanceof ArrayBuffer ? state.bytes : new Uint8Array(state.bytes).buffer;
-            post("widget-hex-set", { widget: id, hex: { base_address: state.baseAddress ?? 0 } }, data);
+            post("widget-hex-set", { widget: id, hex: { base_address: new NativePointer(state.baseAddress ?? 0).toString() } }, data);
         },
         appendConsole(entry) {
             post("widget-console-append", {

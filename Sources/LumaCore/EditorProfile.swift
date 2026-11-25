@@ -234,7 +234,7 @@ public enum CustomInstrumentTypings {
         }
 
         declare interface CustomInstrumentHexWidget {
-            setHex(state: { bytes: ArrayBuffer | number[], baseAddress?: number | string }): void;
+            setHex(state: { bytes: ArrayBuffer | number[], baseAddress?: number | string | NativePointer }): void;
             clear(): void;
         }
 
@@ -374,7 +374,7 @@ public enum CustomInstrumentTypings {
         }
 
         declare interface CustomInstrumentHexSnapshot {
-            hex: { bytes: string; base_address: number } | null;
+            hex: { bytes: string; base_address: NativePointer } | null;
         }
 
         declare interface CustomInstrumentConsoleSnapshot {
