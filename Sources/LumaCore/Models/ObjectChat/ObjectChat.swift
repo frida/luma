@@ -14,8 +14,6 @@ public struct ObjectChat: Codable, Equatable, Identifiable, Sendable, FetchableR
     public var title: String?
     public var subject: Subject
     public var sessionID: UUID?
-    public var providerID: String?
-    public var modelID: String?
     public var editors: [Author]
     public var createdAt: Date
     public var updatedAt: Date
@@ -96,8 +94,6 @@ public struct ObjectChat: Codable, Equatable, Identifiable, Sendable, FetchableR
         case title
         case subject
         case sessionID = "session_id"
-        case providerID = "provider_id"
-        case modelID = "model_id"
         case editors
         case createdAt = "created_at"
         case updatedAt = "updated_at"
@@ -123,14 +119,12 @@ public struct ObjectChat: Codable, Equatable, Identifiable, Sendable, FetchableR
 
     private static let urlNamespace = UUID(uuidString: "6BA7B811-9DAD-11D1-80B4-00C04FD430C8")!
 
-    public init(id: UUID = UUID(), title: String?, subject: Subject, providerID: String?, modelID: String?, editors: [Author]) {
+    public init(id: UUID = UUID(), title: String?, subject: Subject, editors: [Author]) {
         let now = Date()
         self.id = id
         self.title = title
         self.subject = subject
         self.sessionID = subject.sessionID
-        self.providerID = providerID
-        self.modelID = modelID
         self.editors = editors
         self.createdAt = now
         self.updatedAt = now

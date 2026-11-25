@@ -50,6 +50,8 @@ public final class LumaAppState {
         var missionDefaults: MissionDefaults?
         var externalMCPTrustsClient: Bool?
         var objectChatRunsWithoutAsking: Bool?
+        var chatModelChoices: [String: ObjectChatModelChoice]?
+        var lastChatModelChoice: ObjectChatModelChoice?
         var instrumentFolderLinks: [String: InstrumentFolderLink]?
         var storeInstallations: [String: StoreInstallation]?
         var approvedHostCode: Set<String>?
@@ -178,6 +180,24 @@ public final class LumaAppState {
             stored.objectChatRunsWithoutAsking = newValue
             persist()
         }
+    }
+
+    public func chatModelChoice(forChatID chatID: UUID) -> ObjectChatModelChoice? {
+        stored.chatModelChoices?[chatID.uuidString]
+    }
+
+    public var lastChatModelChoice: ObjectChatModelChoice {
+        stored.lastChatModelChoice ?? ObjectChatModelChoice(providerID: missionDefaults.providerID, modelID: missionDefaults.modelID)
+    }
+
+    public func setChatModelChoice(_ choice: ObjectChatModelChoice?, forChatID chatID: UUID) {
+        var choices = stored.chatModelChoices ?? [:]
+        choices[chatID.uuidString] = choice
+        stored.chatModelChoices = choices.isEmpty ? nil : choices
+        if let choice {
+            stored.lastChatModelChoice = choice
+        }
+        persist()
     }
 
     public func instrumentFolderLink(forDefID defID: UUID) -> InstrumentFolderLink? {

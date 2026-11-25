@@ -65,6 +65,14 @@ public protocol LLMProvider: Sendable {
     ) -> AsyncThrowingStream<LLMTurnEvent, Error>
 
     func suggestedModels(apiKey: String?, baseURL: URL?) async throws -> [LLMModelInfo]
+
+    func unavailableReason() -> String?
+}
+
+extension LLMProvider {
+    public func unavailableReason() -> String? {
+        nil
+    }
 }
 
 @MainActor

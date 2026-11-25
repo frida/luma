@@ -1660,8 +1660,6 @@ public final class ProjectStore: Sendable {
             t.column("session_id", .blob)
                 .references("process_session", onDelete: .cascade)
                 .indexed()
-            t.column("provider_id", .text)
-            t.column("model_id", .text)
             t.column("editors", .blob).notNull()
             t.column("created_at", .datetime).notNull()
             t.column("updated_at", .datetime).notNull()

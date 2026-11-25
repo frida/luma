@@ -20,6 +20,7 @@ public final class ObjectChats {
     private var drafts: [UUID: ObjectChat] = [:]
     private var discardedDrafts: Set<UUID> = []
     private var deletedHere: Set<UUID> = []
+    private var modelChoiceRevision = 0
     public private(set) var readThrough: [UUID: Int] = [:]
     public private(set) var unsent: [UUID: String] = [:]
     public private(set) var removedInLab: Set<UUID> = []
@@ -83,6 +84,29 @@ public final class ObjectChats {
         deletedHere.contains(chatID)
     }
 
+    public func modelChoice(in chatID: UUID) -> ObjectChatModelChoice {
+        _ = modelChoiceRevision
+        return LumaAppState.shared.chatModelChoice(forChatID: chatID) ?? LumaAppState.shared.lastChatModelChoice
+    }
+
+    public func setModelChoice(_ choice: ObjectChatModelChoice, in chatID: UUID) {
+        LumaAppState.shared.setChatModelChoice(choice, forChatID: chatID)
+        modelChoiceRevision += 1
+    }
+
+    public func answerUnavailableReason(in chatID: UUID) async -> String? {
+        let choice = modelChoice(in: chatID)
+        let engine = engine!
+        guard let provider = engine.llmRegistry.provider(id: choice.providerID) else {
+            return "There is no provider \(choice.providerID) in this Luma."
+        }
+        if let reason = provider.unavailableReason() { return reason }
+        guard provider.descriptor.capabilities.supports(.apiKey) else { return nil }
+        let apiKey = try? await engine.llmCredentials.apiKey(providerID: choice.providerID)
+        guard apiKey == nil else { return nil }
+        return "\(provider.descriptor.displayName) needs an API key in this Luma."
+    }
+
     public var listed: [ObjectChat] {
         chats.sorted { a, b in
             guard (a.id == conversationID) == (b.id == conversationID) else { return a.id == conversationID }
@@ -144,15 +168,7 @@ public final class ObjectChats {
     public func openConversation() -> ObjectChat {
         rekeySoloConversation(heldByLab: false)
         if let conversation { return conversation }
-        let defaults = LumaAppState.shared.missionDefaults
-        let opened = ObjectChat(
-            id: conversationID,
-            title: nil,
-            subject: .project,
-            providerID: defaults.providerID,
-            modelID: defaults.modelID,
-            editors: [me].compactMap { $0 }
-        )
+        let opened = ObjectChat(id: conversationID, title: nil, subject: .project, editors: [me].compactMap { $0 })
         keep(opened)
         enqueue(.chatUpsert(opened))
         return opened
@@ -256,15 +272,7 @@ public final class ObjectChats {
     }
 
     private func chat(about object: PharoObject, subject: ObjectChat.Subject, id: UUID) -> ObjectChat {
-        let defaults = LumaAppState.shared.missionDefaults
-        return ObjectChat(
-            id: id,
-            title: nil,
-            subject: subject,
-            providerID: defaults.providerID,
-            modelID: defaults.modelID,
-            editors: [me].compactMap { $0 }
-        )
+        ObjectChat(id: id, title: nil, subject: subject, editors: [me].compactMap { $0 })
     }
 
     private func begin(
@@ -276,6 +284,7 @@ public final class ObjectChats {
         guard chats.count < Self.chatsPerLab else { throw ObjectChatError.full("chats", Self.chatsPerLab) }
         drafts[chat.id] = chat
         threads[chat.id] = Thread()
+        setModelChoice(modelChoice(in: chat.id), in: chat.id)
         do {
             try await image.store(object, as: "o1", named: "self")
             try await image.retitle(displayTitle(of: chat))
@@ -302,6 +311,7 @@ public final class ObjectChats {
     public func discard(_ chatID: UUID) async {
         guard drafts.removeValue(forKey: chatID) != nil else { return }
         discardedDrafts.insert(chatID)
+        LumaAppState.shared.setChatModelChoice(nil, forChatID: chatID)
         threads[chatID] = nil
         try? await image(of: chatID).forget()
     }
@@ -402,9 +412,9 @@ public final class ObjectChats {
 
     private func answer(_ question: ObjectChatMessage, in chat: ObjectChat) async {
         let engine = engine!
-        let defaults = LumaAppState.shared.missionDefaults
-        let providerID = chat.providerID ?? defaults.providerID
-        let modelID = chat.modelID ?? defaults.modelID
+        let choice = modelChoice(in: chat.id)
+        let providerID = choice.providerID
+        let modelID = choice.modelID
         let mission = Mission(
             id: chat.id,
             goalText: "Chat about \(chat.title ?? "an object")",
@@ -646,8 +656,8 @@ public final class ObjectChats {
         let mission = Mission(
             id: chat.id,
             goalText: "Chat about \(chat.title ?? "an object")",
-            providerID: chat.providerID ?? "",
-            modelID: chat.modelID ?? "",
+            providerID: "",
+            modelID: "",
             tokenBudgetInput: 0,
             tokenBudgetOutput: 0
         )
@@ -813,6 +823,7 @@ public final class ObjectChats {
 
     private func drop(_ chatID: UUID) async {
         replies[chatID]?.cancel()
+        LumaAppState.shared.setChatModelChoice(nil, forChatID: chatID)
         let calls = thread(of: chatID).toolCalls
         persist(in: chatID) { try $0.deleteObjectChat(id: chatID) }
         chats.removeAll { $0.id == chatID }

@@ -321,7 +321,19 @@ public final class ClaudeCodeProvider: LLMProvider {
         }.joined(separator: "\n\n")
     }
 
-    private func augmentedEnvironment() -> [String: String] {
+    nonisolated public func unavailableReason() -> String? {
+        let fm = FileManager.default
+        if executablePath.contains("/") {
+            return fm.isExecutableFile(atPath: executablePath) ? nil : "Claude Code is not installed at \(executablePath)."
+        }
+        let searched = (augmentedEnvironment()["PATH"] ?? "").split(separator: ":")
+        guard searched.contains(where: { fm.isExecutableFile(atPath: "\($0)/\(executablePath)") }) else {
+            return "Claude Code (the \(executablePath) command) is not installed on this machine."
+        }
+        return nil
+    }
+
+    nonisolated private func augmentedEnvironment() -> [String: String] {
         var env = ProcessInfo.processInfo.environment
         let inherited = env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
         let candidates = [
