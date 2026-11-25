@@ -13,6 +13,7 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
     public var dependencies: [String: String]
     public var settings: [Setting]
     public var widgets: [InstrumentWidget]
+    public var layout: InstrumentLayout?
     public var createdAt: Date
     public var updatedAt: Date
 
@@ -59,6 +60,7 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
         dependencies: [String: String] = [:],
         settings: [Setting] = [],
         widgets: [InstrumentWidget] = [],
+        layout: InstrumentLayout? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -71,6 +73,7 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
         self.dependencies = dependencies
         self.settings = settings
         self.widgets = widgets
+        self.layout = layout
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
@@ -89,6 +92,8 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
         settings = try JSONDecoder().decode([Setting].self, from: Data(settingsJSON.utf8))
         let widgetsJSON: String = row["widgets_json"]
         widgets = try JSONDecoder().decode([InstrumentWidget].self, from: Data(widgetsJSON.utf8))
+        let layoutJSON: String? = row["layout_json"]
+        layout = try layoutJSON.map { try JSONDecoder().decode(InstrumentLayout.self, from: Data($0.utf8)) }
         createdAt = row["created_at"]
         updatedAt = row["updated_at"]
     }
@@ -103,6 +108,7 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
         container["dependencies_json"] = dependenciesJSONString
         container["settings_json"] = settingsJSONString
         container["widgets_json"] = widgetsJSONString
+        container["layout_json"] = layout.map { String(decoding: try! JSONEncoder().encode($0), as: UTF8.self) }
         container["created_at"] = createdAt
         container["updated_at"] = updatedAt
     }
@@ -125,6 +131,9 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
         if let minAppVersion {
             out["engines"] = ["luma": minAppVersion.engineRange]
         }
+        if let layout {
+            out["layout"] = layout.wireJSON
+        }
         return out
     }
 
@@ -139,6 +148,9 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
         let minAppVersion = ((obj["engines"] as? [String: Any])?["luma"] as? String).flatMap(StoreVersion.least(inEngineRange:))
         let settings = parseSettings(obj["settings"])
         let widgets = parseWidgets(obj["widgets"])
+        let wireLayout = obj["layout"]
+        let layout = wireLayout.flatMap { InstrumentLayout.fromWireJSON($0, placing: widgets) }
+        guard (wireLayout == nil) == (layout == nil) else { return nil }
         let isoFmt = ISO8601DateFormatter()
         let createdAt = (obj["created_at"] as? String).flatMap(isoFmt.date(from:)) ?? Date()
         let updatedAt = (obj["updated_at"] as? String).flatMap(isoFmt.date(from:)) ?? Date()
@@ -152,6 +164,7 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
             dependencies: dependencies,
             settings: settings,
             widgets: widgets,
+            layout: layout,
             createdAt: createdAt,
             updatedAt: updatedAt
         )

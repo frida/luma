@@ -257,6 +257,12 @@ extension InstrumentWidget {
         count > maxCount ? "has \(count) widgets; at most \(maxCount) are allowed" : nil
     }
 
+    public static func repeatedIDProblem(in widgets: [InstrumentWidget]) -> Problem? {
+        var seen: Set<String> = []
+        guard let index = widgets.firstIndex(where: { !seen.insert($0.id).inserted }) else { return nil }
+        return Problem(path: [.index(index), .key("id")], text: "\"\(widgets[index].id)\" is already the id of another widget")
+    }
+
     private static func problem(in list: [Action], at path: [Problem.Step]) -> Problem? {
         guard list.count <= maxActions else {
             return Problem(path: path, text: "has \(list.count) actions; at most \(maxActions) are allowed")

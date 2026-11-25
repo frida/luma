@@ -1822,9 +1822,9 @@ public enum MissionTools {
     private static func registerCreateCustomInstrument(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "create_custom_instrument",
-            description: "Create a custom instrument definition seeded with a `main.ts` file containing the canonical skeleton (the entrypoint). Use write_custom_instrument_file to replace its contents, and add helper files as needed. Optional 'icon' is a catalog id (e.g. wand-stars, bug, scope, network). Optional 'dependencies' names the npm packages the instrument imports; 'settings' declares config toggles; 'widgets' declares live UI elements.",
+            description: "Create a custom instrument definition seeded with a `main.ts` file containing the canonical skeleton (the entrypoint). Use write_custom_instrument_file to replace its contents, and add helper files as needed. Optional 'icon' is a catalog id (e.g. wand-stars, bug, scope, network). Optional 'dependencies' names the npm packages the instrument imports; 'settings' declares config toggles; 'widgets' declares live UI elements; 'layout' says how the instance page places them.",
             inputSchemaJSON: """
-                {"type":"object","properties":{"name":{"type":"string"},"dependencies":{"type":"object","additionalProperties":{"type":"string"},"description":"npm packages this instrument imports, as name → version range (e.g. {\\"frida-java-bridge\\":\\"^7.0.0\\"}). Installed for this instrument alone, ahead of the project-wide packages."},"icon":{"type":"string","description":"Catalog id like wand-stars, bug, scope, network — see list_custom_instrument_icons"},"compatibility":\(compatibilitySchemaJSON),"settings":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"enabled_by_default":{"type":"boolean","default":true}},"required":["id","name"],"additionalProperties":false}},"widgets":\(widgetsSchemaJSON)},"required":["name"],"additionalProperties":false}
+                {"type":"object","properties":{"name":{"type":"string"},"dependencies":{"type":"object","additionalProperties":{"type":"string"},"description":"npm packages this instrument imports, as name → version range (e.g. {\\"frida-java-bridge\\":\\"^7.0.0\\"}). Installed for this instrument alone, ahead of the project-wide packages."},"icon":{"type":"string","description":"Catalog id like wand-stars, bug, scope, network — see list_custom_instrument_icons"},"compatibility":\(compatibilitySchemaJSON),"settings":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"enabled_by_default":{"type":"boolean","default":true}},"required":["id","name"],"additionalProperties":false}},"widgets":\(widgetsSchemaJSON),"layout":\(layoutSchemaJSON)},"required":["name"],"additionalProperties":false}
                 """,
             isObserve: false,
             requiresSession: false
@@ -1842,12 +1842,19 @@ public enum MissionTools {
             if let problem = widgetProblem(in: widgets) {
                 return errorResult(problem, code: .invalidInput)
             }
+            let layout: InstrumentLayout?
+            do throws(InstrumentWidget.Problem) {
+                layout = try parseLayoutArg(invocation.args["layout"], placing: widgets)
+            } catch {
+                return errorResult(layoutProblemText(error), code: .invalidInput)
+            }
             var def = engine.createCustomInstrument(name: name, icon: icon)
             if !compatibility.isUniversal || !dependencies.isEmpty || !settings.isEmpty || !widgets.isEmpty {
                 def.compatibility = compatibility
                 def.dependencies = dependencies
                 def.settings = settings
                 def.widgets = widgets
+                def.layout = layout
                 engine.updateCustomInstrument(def)
             }
             return makeResult(
@@ -1860,9 +1867,9 @@ public enum MissionTools {
     private static func registerUpdateCustomInstrument(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "update_custom_instrument",
-            description: "Update a custom instrument's metadata: name, dependencies, icon, compatibility, settings, or widgets. Only fields you pass change. Passing 'dependencies', 'settings' or 'widgets' replaces the whole set — pass an empty one to clear. File contents are managed via write_custom_instrument_file; the entrypoint via set_custom_instrument_entrypoint.",
+            description: "Update a custom instrument's metadata: name, dependencies, icon, compatibility, settings, widgets, or layout. Only fields you pass change. Passing 'dependencies', 'settings' or 'widgets' replaces the whole set — pass an empty one to clear. Passing 'layout' replaces it, null being the plain stack; a layout places every widget exactly once, so pass it again when the widgets it places change. File contents are managed via write_custom_instrument_file; the entrypoint via set_custom_instrument_entrypoint.",
             inputSchemaJSON: """
-                {"type":"object","properties":{"def_id":{"type":"string"},"name":{"type":"string"},"dependencies":{"type":"object","additionalProperties":{"type":"string"},"description":"npm packages this instrument imports, as name → version range (e.g. {\\"frida-java-bridge\\":\\"^7.0.0\\"}). Installed for this instrument alone, ahead of the project-wide packages."},"icon":{"type":"string"},"compatibility":\(compatibilitySchemaJSON),"settings":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"enabled_by_default":{"type":"boolean","default":true}},"required":["id","name"],"additionalProperties":false}},"widgets":\(widgetsSchemaJSON)},"required":["def_id"],"additionalProperties":false}
+                {"type":"object","properties":{"def_id":{"type":"string"},"name":{"type":"string"},"dependencies":{"type":"object","additionalProperties":{"type":"string"},"description":"npm packages this instrument imports, as name → version range (e.g. {\\"frida-java-bridge\\":\\"^7.0.0\\"}). Installed for this instrument alone, ahead of the project-wide packages."},"icon":{"type":"string"},"compatibility":\(compatibilitySchemaJSON),"settings":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"enabled_by_default":{"type":"boolean","default":true}},"required":["id","name"],"additionalProperties":false}},"widgets":\(widgetsSchemaJSON),"layout":\(layoutSchemaJSON)},"required":["def_id"],"additionalProperties":false}
                 """,
             isObserve: false,
             requiresSession: false
@@ -1890,6 +1897,15 @@ public enum MissionTools {
                     if let problem = widgetProblem(in: def.widgets) {
                         return errorResult(problem, code: .invalidInput)
                     }
+                }
+                do throws(InstrumentWidget.Problem) {
+                    if invocation.args["layout"] != nil {
+                        def.layout = try parseLayoutArg(invocation.args["layout"], placing: def.widgets)
+                    } else if let problem = def.layout?.problem(placing: def.widgets, keys: .snakeCase, widgetsName: "widgets", layoutName: "layout") {
+                        throw problem
+                    }
+                } catch {
+                    return errorResult(layoutProblemText(error), code: .invalidInput)
                 }
                 engine.updateCustomInstrument(def)
                 await engine.awaitCustomInstrumentReload(defID: def.id)
@@ -2951,7 +2967,28 @@ public enum MissionTools {
                 return "widgets[\(index)]\(toolArgumentPath(problem.path)): \(problem.text)"
             }
         }
+        if let problem = InstrumentWidget.repeatedIDProblem(in: widgets) {
+            return "widgets\(toolArgumentPath(problem.path)): \(problem.text)"
+        }
         return nil
+    }
+
+    private static let layoutSchemaJSON: String = """
+        {"type":["string","object","null"],"description":"How the instance page places the widgets; leave it out, or pass null, for the plain stack in declaration order. A node is a widget id (natural height), {\\"widget\\": id, \\"share\\"?: 1-100, \\"max_rows\\"?: 1-1000}, {\\"row\\": [node, …], \\"share\\"?, \\"fold_below\\"?: 240-4000} or {\\"column\\": [node, …], \\"share\\"?}. In a column an entry with a share takes that share of the height the natural entries leave, and the page then fills the window instead of scrolling while everything fits; in a row, share is a share of the width (default 1) and every entry takes the row's height. max_rows, for tables and lists, is where their natural height stops (default 12 rows). A row stacks its entries below fold_below points of page width (default 280 per entry). A row holds 1-6 entries, a column 1-32, at most 3 rows and columns deep, and every widget is placed exactly once. Example: {\\"column\\": [{\\"widget\\": \\"services\\", \\"max_rows\\": 8}, {\\"widget\\": \\"messages\\", \\"share\\": 1}]}"}
+        """
+
+    private static func parseLayoutArg(_ raw: Any?, placing widgets: [InstrumentWidget]) throws(InstrumentWidget.Problem) -> InstrumentLayout? {
+        guard let raw, !(raw is NSNull) else { return nil }
+        let data = try! JSONSerialization.data(withJSONObject: raw, options: .fragmentsAllowed)
+        let layout = try InstrumentLayout(json: try! JSONDecoder().decode(JSONValue.self, from: data), keys: .snakeCase)
+        if let problem = layout.problem(placing: widgets, keys: .snakeCase, widgetsName: "widgets", layoutName: "layout") {
+            throw problem
+        }
+        return layout
+    }
+
+    private static func layoutProblemText(_ problem: InstrumentWidget.Problem) -> String {
+        "layout\(InstrumentLayout.text(of: problem.path)): \(problem.text)"
     }
 
     private static func toolArgumentPath(_ path: [InstrumentWidget.Problem.Step]) -> String {
@@ -3026,7 +3063,7 @@ public enum MissionTools {
             ]
         }
         let widgets: [[String: Any]] = def.widgets.map(customInstrumentWidgetJSON)
-        return [
+        var described: [String: Any] = [
             "id": def.id.uuidString,
             "name": def.name,
             "icon": describeIcon(def.icon),
@@ -3036,6 +3073,10 @@ public enum MissionTools {
             "settings": settings,
             "widgets": widgets,
         ]
+        if let layout = def.layout {
+            described["layout"] = layout.wireJSON
+        }
+        return described
     }
 
     private static func withResolvedCustomInstrumentDef(

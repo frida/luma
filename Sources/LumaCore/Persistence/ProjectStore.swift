@@ -1660,6 +1660,7 @@ public final class ProjectStore: Sendable {
             t.column("modules_expansion", .text).notNull().defaults(to: SidebarExpansion.collapsed.rawValue)
             t.column("threads_expansion", .text).notNull().defaults(to: SidebarExpansion.collapsed.rawValue)
             t.column("collapsed_hook_instruments", .text).notNull().defaults(to: "[]")
+            t.column("expanded_instrument_settings", .text).notNull().defaults(to: "[]")
             t.column("expanded_modules", .text).notNull().defaults(to: "[]")
             t.column("expanded_swift_type_lists", .text).notNull().defaults(to: "[]")
             t.column("last_selected_module_id", .text)
@@ -1930,6 +1931,7 @@ public final class ProjectStore: Sendable {
             t.column("dependencies_json", .text).notNull().defaults(to: "{}")
             t.column("settings_json", .text).notNull().defaults(to: "[]")
             t.column("widgets_json", .text).notNull().defaults(to: "[]")
+            t.column("layout_json", .text)
             t.column("created_at", .datetime).notNull()
             t.column("updated_at", .datetime).notNull()
         }

@@ -123,6 +123,15 @@ extension Engine {
         }
     }
 
+    public func setInstrumentSettingsExpansion(sessionID: UUID, instrumentID: UUID, _ expansion: SidebarExpansion) {
+        mutateSessionUIState(sessionID: sessionID) { state in
+            switch expansion {
+            case .expanded: state.expandedInstrumentSettings.insert(instrumentID)
+            case .collapsed: state.expandedInstrumentSettings.remove(instrumentID)
+            }
+        }
+    }
+
     public func setSidebarExpansion(sessionID: UUID, moduleID: String, _ expansion: SidebarExpansion) {
         mutateSessionUIState(sessionID: sessionID) { state in
             switch expansion {
@@ -198,6 +207,11 @@ extension Engine {
     public func hooksExpansion(forSessionID sessionID: UUID, instrumentID: UUID) -> SidebarExpansion {
         let collapsed = sessionUIStates[sessionID]?.collapsedHookInstruments.contains(instrumentID) ?? false
         return collapsed ? .collapsed : .expanded
+    }
+
+    public func instrumentSettingsExpansion(forSessionID sessionID: UUID, instrumentID: UUID) -> SidebarExpansion {
+        let isExpanded = sessionUIStates[sessionID]?.expandedInstrumentSettings.contains(instrumentID) ?? false
+        return isExpanded ? .expanded : .collapsed
     }
 
     public func sidebarExpansion(forSessionID sessionID: UUID, moduleID: String) -> SidebarExpansion {
