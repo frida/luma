@@ -47,9 +47,14 @@ struct CustomInstrumentMenuItems: View {
             Label("Settings\u{2026}", systemImage: "switch.2")
         }
         Button {
-            presentation.isShowingWidgets = true
+            presentation.widgetsEditor = .widgets
         } label: {
             Label("Widgets\u{2026}", systemImage: "chart.xyaxis.line")
+        }
+        Button {
+            presentation.widgetsEditor = .layout
+        } label: {
+            Label("Layout\u{2026}", systemImage: "rectangle.3.group")
         }
         Button {
             presentation.isShowingPackages = true
@@ -150,8 +155,8 @@ private struct CustomInstrumentMenuPresentations: ViewModifier {
             .popover(isPresented: $presentation.isShowingSettings, arrowEdge: .trailing) {
                 CustomInstrumentSettingsPopover(def: def, engine: engine)
             }
-            .popover(isPresented: $presentation.isShowingWidgets, arrowEdge: .trailing) {
-                CustomInstrumentWidgetsPopover(def: def, engine: engine)
+            .sheet(item: $presentation.widgetsEditor) { tab in
+                CustomInstrumentWidgetsSheet(def: def, engine: engine, tab: tab)
             }
             .popover(isPresented: $presentation.isShowingPackages, arrowEdge: .trailing) {
                 CustomInstrumentPackagesPopover(def: def, engine: engine, selection: $selection)
@@ -259,7 +264,7 @@ struct CustomInstrumentMenuPresentation {
     var isShowingRename = false
     var isShowingCompatibility = false
     var isShowingSettings = false
-    var isShowingWidgets = false
+    var widgetsEditor: WidgetsEditorTab?
     var isShowingPackages = false
     var addFilePrompt = AddFilePromptState()
     var renameEntrypointPrompt = RenamePromptState()

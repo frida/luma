@@ -452,22 +452,12 @@ struct CustomInstrumentRenamePopover: View {
     }
 
     private var iconGrid: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.fixed(32)), count: 8), spacing: 8) {
-            ForEach(InstrumentIconCatalog.all, id: \.id) { concept in
-                Button {
-                    draftIcon = .symbolic(concept.id)
-                } label: {
-                    Image(systemName: concept.sfSymbol)
-                        .frame(width: 28, height: 28)
-                        .background(
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(isConceptSelected(concept) ? Color.accentColor.opacity(0.25) : .clear)
-                        )
-                }
-                .buttonStyle(.plain)
-                .help(concept.displayName)
-            }
-        }
+        InstrumentSymbolGrid(selected: selectedConceptID) { draftIcon = .symbolic($0) }
+    }
+
+    private var selectedConceptID: String? {
+        if case .symbolic(let id) = draftIcon { return id }
+        return nil
     }
 
     private var customBitmapRow: some View {
@@ -485,11 +475,6 @@ struct CustomInstrumentRenamePopover: View {
             }
             Button("Choose File\u{2026}") { isPickingFile = true }
         }
-    }
-
-    private func isConceptSelected(_ c: InstrumentIconConcept) -> Bool {
-        if case .symbolic(let id) = draftIcon, id == c.id { return true }
-        return false
     }
 
     private func loadIcon(from url: URL) {
@@ -511,6 +496,32 @@ struct CustomInstrumentRenamePopover: View {
         engine.updateCustomInstrument(def.id) {
             $0.name = name
             $0.icon = icon
+        }
+    }
+}
+
+struct InstrumentSymbolGrid: View {
+    let selected: String?
+    let choose: (String) -> Void
+
+    var body: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.fixed(32)), count: 8), spacing: 8) {
+            ForEach(InstrumentIconCatalog.all, id: \.id) { concept in
+                Button {
+                    choose(concept.id)
+                } label: {
+                    Image(systemName: concept.sfSymbol)
+                        .frame(width: 28, height: 28)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(concept.id == selected ? Color.accentColor.opacity(0.25) : .clear)
+                        )
+                }
+                .buttonStyle(.plain)
+                .help(concept.displayName)
+                .accessibilityLabel(concept.displayName)
+                .accessibilityAddTraits(concept.id == selected ? .isSelected : [])
+            }
         }
     }
 }

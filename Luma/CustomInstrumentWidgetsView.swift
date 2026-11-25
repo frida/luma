@@ -1,25 +1,259 @@
 import LumaCore
 import SwiftUI
 
-struct CustomInstrumentWidgetsPopover: View {
-    let def: CustomInstrumentDef
+enum WidgetsEditorTab: Identifiable {
+    case widgets
+    case layout
+
+    var id: Self { self }
+}
+
+struct CustomInstrumentWidgetsSheet: View {
+    let defID: UUID
     let engine: Engine
     @Environment(\.dismiss) private var dismiss
 
-    @State private var draftWidgets: [InstrumentWidget] = []
+    @State private var draft: CustomInstrumentDef
+    @State private var tab: WidgetsEditorTab
+    @State private var target: WidgetsTarget = .page
+
+    init(def: CustomInstrumentDef, engine: Engine, tab: WidgetsEditorTab) {
+        defID = def.id
+        self.engine = engine
+        _draft = State(initialValue: def)
+        _tab = State(initialValue: tab)
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            WidgetsTargetList(templates: $draft.children, target: $target)
+                .frame(width: 190)
+            VStack(alignment: .leading, spacing: 12) {
+                if case .template(let index) = target {
+                    TemplateProperties(template: $draft.children[index])
+                }
+                Picker("Editing", selection: $tab) {
+                    Text("Widgets").tag(WidgetsEditorTab.widgets)
+                    Text("Layout").tag(WidgetsEditorTab.layout)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .accessibilityIdentifier("customInstrument.widgets.tab")
+
+                switch tab {
+                case .widgets:
+                    WidgetListEditor(widgets: widgetsBinding, layout: layoutBinding)
+                        .id(target)
+                case .layout:
+                    InstrumentLayoutDesigner(widgets: widgetsBinding.wrappedValue, layout: layoutBinding, sample: sampleTemplate)
+                        .id(target)
+                }
+
+                ForEach(problems, id: \.self) { problem in
+                    ProblemLine(text: problem)
+                }
+
+                HStack {
+                    Spacer()
+                    Button("Cancel") { dismiss() }
+                        .keyboardShortcut(.cancelAction)
+                    Button("Save", action: save)
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(!problems.isEmpty || draft.widgets.contains { $0.problem != nil })
+                }
+            }
+        }
+        .padding(12)
+        .frame(minWidth: 1040, idealWidth: 1180, maxWidth: .infinity, minHeight: 640, idealHeight: 780, maxHeight: .infinity)
+    }
+
+    private var widgetsBinding: Binding<[InstrumentWidget]> {
+        switch target {
+        case .page: return $draft.widgets
+        case .template(let index): return $draft.children[index].widgets
+        }
+    }
+
+    private var layoutBinding: Binding<InstrumentLayout?> {
+        switch target {
+        case .page: return $draft.layout
+        case .template(let index): return $draft.children[index].layout
+        }
+    }
+
+    private var sampleTemplate: InstrumentChildTemplate? {
+        guard case .template(let index) = target else { return nil }
+        return draft.children[index]
+    }
+
+    private var problems: [String] {
+        var problems: [String] = []
+        if let countProblem = InstrumentWidget.countProblem(draft.widgets.count) {
+            problems.append("widgets: \(countProblem)")
+        }
+        if let layoutProblem = savedLayout?.problem(placing: draft.widgets, keys: .camelCase, widgetsName: "widgets", layoutName: "layout") {
+            problems.append("layout\(InstrumentLayout.text(of: layoutProblem.path)): \(layoutProblem.text)")
+        }
+        if let childrenProblem = draft.childrenProblem {
+            problems.append("\(InstrumentLayout.text(of: childrenProblem.path).dropFirst()): \(childrenProblem.text)")
+        }
+        return problems
+    }
+
+    private var savedLayout: InstrumentLayout? {
+        draft.layout.flatMap { $0.droppingMaxRows(outside: draft.widgets).savable(for: draft.widgets) }
+    }
+
+    private var savedChildren: [InstrumentChildTemplate] {
+        draft.children.map { template in
+            var saved = template
+            saved.layout = template.layout.flatMap { $0.droppingMaxRows(outside: template.widgets).savable(for: template.widgets) }
+            return saved
+        }
+    }
+
+    private func save() {
+        let widgets = draft.widgets
+        let layout = savedLayout
+        let children = savedChildren
+        engine.updateCustomInstrument(defID) {
+            $0.widgets = widgets
+            $0.layout = layout
+            $0.children = children
+        }
+        dismiss()
+    }
+}
+
+enum WidgetsTarget: Hashable {
+    case page
+    case template(Int)
+}
+
+private struct WidgetsTargetList: View {
+    @Binding var templates: [InstrumentChildTemplate]
+    @Binding var target: WidgetsTarget
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            List(selection: targetSelection) {
+                Label("Page", systemImage: "doc.richtext")
+                    .tag(WidgetsTarget.page)
+                Section("Kinds of children") {
+                    ForEach(templates.indices, id: \.self) { index in
+                        Label {
+                            Text(templates[index].name.isEmpty ? templates[index].id : templates[index].name)
+                        } icon: {
+                            ChildTemplateIcon(template: templates[index])
+                        }
+                        .tag(WidgetsTarget.template(index))
+                    }
+                }
+            }
+            .accessibilityLabel("What to design")
+            HStack(spacing: 8) {
+                Button(action: add) { Image(systemName: "plus") }
+                    .help("Add a Kind of Child")
+                    .accessibilityLabel("Add a Kind of Child")
+                Button(action: remove) { Image(systemName: "minus") }
+                    .disabled(selectedIndex == nil)
+                    .help("Remove This Kind of Child")
+                    .accessibilityLabel("Remove This Kind of Child")
+                Button { move(by: -1) } label: { Image(systemName: "chevron.up") }
+                    .disabled(selectedIndex.map { $0 == 0 } ?? true)
+                    .help("Move Up")
+                    .accessibilityLabel("Move Up")
+                Button { move(by: 1) } label: { Image(systemName: "chevron.down") }
+                    .disabled(selectedIndex.map { $0 == templates.count - 1 } ?? true)
+                    .help("Move Down")
+                    .accessibilityLabel("Move Down")
+            }
+            .buttonStyle(.borderless)
+        }
+    }
+
+    private var targetSelection: Binding<WidgetsTarget?> {
+        Binding(get: { target }, set: { if let selected = $0 { target = selected } })
+    }
+
+    private var selectedIndex: Int? {
+        guard case .template(let index) = target else { return nil }
+        return index
+    }
+
+    private func add() {
+        let taken = Set(templates.map(\.id))
+        let id = (1...).lazy.map { $0 == 1 ? "child" : "child\($0)" }.first { !taken.contains($0) }!
+        templates.append(InstrumentChildTemplate(id: id, name: "Children", widgets: []))
+        target = .template(templates.count - 1)
+    }
+
+    private func remove() {
+        templates.remove(at: selectedIndex!)
+        target = .page
+    }
+
+    private func move(by offset: Int) {
+        let index = selectedIndex!
+        templates.swapAt(index, index + offset)
+        target = .template(index + offset)
+    }
+}
+
+private struct TemplateProperties: View {
+    @Binding var template: InstrumentChildTemplate
+
+    @State private var isPickingIcon = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button {
+                isPickingIcon = true
+            } label: {
+                ChildTemplateIcon(template: template)
+                    .frame(width: 24, height: 24)
+            }
+            .help("Icon")
+            .accessibilityLabel("Icon")
+            .popover(isPresented: $isPickingIcon, arrowEdge: .bottom) {
+                InstrumentSymbolGrid(selected: template.symbol) { template.symbol = $0 }
+                    .padding(12)
+            }
+            Text("id")
+                .foregroundStyle(.secondary)
+            TextField("id", text: idBinding)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 140)
+                .accessibilityLabel("Kind id")
+            Text("Name")
+                .foregroundStyle(.secondary)
+            TextField("Plural, shown above its rows", text: $template.name)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityLabel("Kind name")
+        }
+    }
+
+    private var idBinding: Binding<String> {
+        Binding(get: { template.id }, set: { template.id = CamelCase.sanitized($0) })
+    }
+}
+
+struct WidgetListEditor: View {
+    @Binding var widgets: [InstrumentWidget]
+    @Binding var layout: InstrumentLayout?
+
     @State private var draftID: String = ""
     @State private var draftName: String = ""
     @State private var draftKind: WidgetKindChoice = .graph
     @State private var isAdding: Bool = false
     @State private var nameAutoFilled: Bool = true
     @State private var expandedID: String? = nil
-    @State private var isCancelled = false
     @FocusState private var draftFocus: NewWidgetField?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Widgets").font(.headline)
-            Text("Live UI elements rendered alongside the settings. Graphs receive points your agent code pushes via `ctx.widget(id).push(...)`. Lists hold items the agent maintains; per-item action buttons post events back to your `onAction` handler.")
+            Text("Live UI elements rendered alongside the settings. Graphs receive points your agent code pushes via `ctx.widget(id).push(...)`. Lists hold items the agent maintains; per-item action buttons post events back to your `onAction` handler. Where each one goes on the page is set under Layout.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -30,36 +264,34 @@ struct CustomInstrumentWidgetsPopover: View {
                 addRow
             }
 
-            if let countProblem = InstrumentWidget.countProblem(draftWidgets.count) {
-                ProblemLine(text: "widgets: \(countProblem)")
+            Button {
+                toggleAdding()
+            } label: {
+                Label(
+                    isAdding ? "Done Adding" : "Add Widget",
+                    systemImage: isAdding ? "checkmark" : "plus"
+                )
             }
+        }
+    }
 
-            HStack {
-                Button {
-                    toggleAdding()
-                } label: {
-                    Label(
-                        isAdding ? "Done Adding" : "Add Widget",
-                        systemImage: isAdding ? "checkmark" : "plus"
-                    )
+    private var widgetList: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 8) {
+                if widgets.isEmpty {
+                    Text("No widgets defined.").font(.caption).foregroundStyle(.secondary)
+                } else {
+                    ForEach($widgets) { $widget in
+                        WidgetRow(widget: $widget, expandedID: $expandedID) {
+                            remove(widget.id)
+                        }
+                    }
                 }
-                Spacer()
-                Button("Cancel") {
-                    isCancelled = true
-                    dismiss()
-                }
-                .keyboardShortcut(.cancelAction)
-                Button("Save") { dismiss() }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(hasProblem)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(12)
-        .popoverFormSheet(width: 520)
-        .onAppear { draftWidgets = def.widgets }
-        .onDisappear {
-            if !isCancelled { commit() }
-        }
+        .scrollBounceBehavior(.basedOnSize)
+        .frame(maxHeight: .infinity)
     }
 
     private var addRow: some View {
@@ -92,48 +324,22 @@ struct CustomInstrumentWidgetsPopover: View {
         }
     }
 
-    @ViewBuilder
-    private var widgetList: some View {
-        let content = VStack(alignment: .leading, spacing: 8) {
-            if draftWidgets.isEmpty {
-                Text("No widgets defined.").font(.caption).foregroundStyle(.secondary)
-            } else {
-                ForEach($draftWidgets) { $widget in
-                    WidgetRow(widget: $widget, expandedID: $expandedID) {
-                        let removedID = widget.id
-                        draftWidgets.removeAll { $0.id == removedID }
-                        if expandedID == removedID { expandedID = nil }
-                    }
-                }
-            }
-        }
-
-        ScrollView {
-            content.frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .scrollBounceBehavior(.basedOnSize)
-        .frame(maxHeight: 480)
-        .fixedSize(horizontal: false, vertical: true)
+    private func remove(_ id: String) {
+        widgets.removeAll { $0.id == id }
+        layout = layout?.removing(id)
+        if expandedID == id { expandedID = nil }
     }
 
     private func toggleAdding() {
         if isAdding {
-            flushDraft()
+            addWidget()
+            resetDraft()
             isAdding = false
         } else {
             isAdding = true
             expandedID = nil
             DispatchQueue.main.async { draftFocus = .id }
         }
-    }
-
-    private var hasProblem: Bool {
-        InstrumentWidget.countProblem(draftWidgets.count) != nil || draftWidgets.contains { $0.problem != nil }
-    }
-
-    private func flushDraft() {
-        addWidget()
-        resetDraft()
     }
 
     private func resetDraft() {
@@ -161,20 +367,11 @@ struct CustomInstrumentWidgetsPopover: View {
     private func addWidget() {
         let id = draftID.trimmingCharacters(in: .whitespaces)
         let name = draftName.trimmingCharacters(in: .whitespaces)
-        guard !id.isEmpty, !draftWidgets.contains(where: { $0.id == id }) else { return }
-        draftWidgets.append(InstrumentWidget(id: id, name: name.isEmpty ? nil : name, kind: draftKind.defaultKind()))
-        draftID = ""
-        draftName = ""
-        nameAutoFilled = true
-        draftKind = .graph
+        guard !id.isEmpty, !widgets.contains(where: { $0.id == id }) else { return }
+        widgets.append(InstrumentWidget(id: id, name: name.isEmpty ? nil : name, kind: draftKind.defaultKind()))
+        resetDraft()
         expandedID = id
         isAdding = false
-    }
-
-    private func commit() {
-        if isAdding { flushDraft() }
-        let widgets = draftWidgets
-        engine.updateCustomInstrument(def.id) { $0.widgets = widgets }
     }
 }
 
@@ -912,6 +1109,24 @@ private struct ProblemLine: View {
             .font(.caption)
             .foregroundStyle(.red)
             .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+extension InstrumentLayout {
+    fileprivate func droppingMaxRows(outside widgets: [InstrumentWidget]) -> InstrumentLayout {
+        widgets.filter { !$0.kind.takesRows }.reduce(self) { layout, widget in
+            guard let path = layout.path(of: widget.id), layout[path].maxRows != nil else { return layout }
+            return try! layout.setting(.maxRows, to: nil, at: path, widgets: widgets)
+        }
+    }
+}
+
+extension InstrumentWidget.Kind {
+    fileprivate var takesRows: Bool {
+        switch self {
+        case .list, .table: return true
+        default: return false
+        }
     }
 }
 
