@@ -70,30 +70,53 @@ private struct ChildRow: View {
     let template: InstrumentChildTemplate
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
             ChildTemplateIcon(template: template)
                 .frame(width: sidebarChildIconWidth, alignment: .center)
                 .foregroundStyle(.secondary)
-            VStack(alignment: .leading, spacing: 0) {
-                Text(child.title)
-                if let subtitle = child.subtitle {
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+            ViewThatFits(in: .horizontal) {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 4) {
+                        Text(child.title)
+                        Spacer(minLength: 4)
+                        badge
+                    }
+                    subtitle
+                }
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(child.title)
+                        .truncationMode(.middle)
+                    HStack(spacing: 4) {
+                        badge
+                        subtitle
+                    }
                 }
             }
             .lineLimit(1)
-            .truncationMode(.tail)
-            Spacer(minLength: 4)
-            if let badge = child.badge {
-                ChildBadgeView(text: badge.text, tone: badge.tone)
-                    .fixedSize()
-            }
         }
         .font(.callout)
         .contentShape(Rectangle())
         .padding(.leading, sidebarGrandchildIndent)
         .help([child.title, child.subtitle].compactMap { $0 }.joined(separator: " \u{00B7} "))
         .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private var badge: some View {
+        if let badge = child.badge {
+            ChildBadgeView(text: badge.text, tone: badge.tone)
+                .fixedSize()
+        }
+    }
+
+    @ViewBuilder
+    private var subtitle: some View {
+        if let subtitle = child.subtitle {
+            Text(subtitle)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .truncationMode(.tail)
+                .frame(idealWidth: 0, maxWidth: .infinity, alignment: .leading)
+        }
     }
 }
