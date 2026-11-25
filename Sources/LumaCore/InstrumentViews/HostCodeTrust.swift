@@ -33,6 +33,7 @@ extension HostCodeOrigin {
 extension HostCodeOrigin {
     public static let request = "This instrument wants to run its own code inside Luma."
     public static let allowLabel = "Allow"
+    public static let gateNote = "Nothing of this instrument runs until you allow it."
 
     public var provenance: String {
         switch self {

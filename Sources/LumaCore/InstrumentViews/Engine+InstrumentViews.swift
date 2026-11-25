@@ -15,6 +15,19 @@ struct InstrumentViewTarget {
 }
 
 extension Engine {
+    func hostCodeTarget(ofInstance instanceID: UUID) -> (def: CustomInstrumentDef, hostCode: HostCode?)? {
+        guard let instance = try? store.fetchInstrument(id: instanceID), instance.kind == .custom,
+            let defID = UUID(uuidString: instance.sourceIdentifier),
+            let def = try? store.fetchCustomInstrumentDef(id: defID),
+            let files = try? store.fetchCustomInstrumentFiles(defID: defID)
+        else { return nil }
+        return (def, HostCode(files: files))
+    }
+
+    func instanceIDs(ofCustomInstrument defID: UUID) -> [UUID] {
+        instrumentsBySession.values.joined().filter { $0.kind == .custom && $0.sourceIdentifier == defID.uuidString }.map(\.id)
+    }
+
     func viewTarget(for key: InstrumentViews.Key) -> InstrumentViewTarget? {
         guard let instance = instance(withID: key.instanceID),
             instance.kind == .custom,

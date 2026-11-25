@@ -4075,6 +4075,12 @@ public enum MissionTools {
         guard let instance = engine.instrumentsBySession[sessionID]?.first(where: { $0.id == instanceID }) else {
             return .error(errorResult("no instrument \(instanceID) on session \(sessionID)", code: .notFound))
         }
+        if engine.instrumentViews.approvalWanted(byInstance: instanceID) != nil {
+            return .error(errorResult(
+                "the instrument “\(engine.descriptor(for: instance).displayName)” is waiting for the user to allow its code to run; "
+                    + "nothing of it runs until they do, so this cannot be done now",
+                code: .unavailable))
+        }
         guard let ref = node.instruments.first(where: { $0.id == instanceID }), ref.attachment == .attached else {
             return .error(errorResult(
                 "instrument \(instanceID) is not attached on session \(sessionID) — recompile may have failed",

@@ -3824,12 +3824,7 @@ public final class Engine {
                 if await skipIfIncompatible(instanceID: instanceID, compatibility: bundle.def.compatibility, on: node) {
                     return
                 }
-                try await loadCustomInstrument(
-                    instanceID: instanceID,
-                    bundle: bundle,
-                    config: cfg,
-                    on: node
-                )
+                guard try await loadCustomInstrument(instanceID: instanceID, bundle: bundle, config: cfg, on: node) else { return }
             }
 
             node.markInstrumentAttached(id: instanceID)
@@ -4501,13 +4496,18 @@ public final class Engine {
         )
     }
 
+    @discardableResult
     public func loadCustomInstrument(
         instanceID: UUID,
         bundle: CustomInstrumentBundle,
         config: CustomInstrumentConfig,
         on node: ProcessNode
-    ) async throws {
+    ) async throws -> Bool {
         let def = bundle.def
+        guard await instrumentViews.isAllowed(instanceID) else {
+            broadcastInstrumentStatus(instanceID: instanceID, sessionID: node.sessionID)
+            return false
+        }
         let paths = try compilerWorkspacePaths()
         let sourceSlug = "Custom/\(def.id.uuidString)"
         let files = bundle.files.map { (path: $0.path, content: Data($0.content.utf8)) }
@@ -4535,6 +4535,7 @@ public final class Engine {
             restored: restored,
             childTemplates: def.children.map(\.id)
         )
+        return true
     }
 
     private func hydrateRestoredState(instanceID: UUID, def: CustomInstrumentDef) -> [String: Any] {
@@ -5412,6 +5413,10 @@ public final class Engine {
         entry: WidgetConsoleEntry,
         recipient: FileRecipient?
     ) async -> OfferedFileSummary? {
+        if let refusal = gateRefusal(of: instance) {
+            emitEngineWarning(subsystem: "instruments", text: refusal)
+            return nil
+        }
         guard canSubmitConsoleInput(of: instance) else { return nil }
         let update = WidgetUpdate(instanceID: instance.id, widget: widget, kind: .consoleAppend(entry))
         applyWidgetUpdate(update, sessionID: instance.sessionID, origin: .local)
@@ -5443,18 +5448,47 @@ public final class Engine {
     }
 
     public func canSubmitConsoleInput(of instance: InstrumentInstance) -> Bool {
-        isHostingNode(instance.sessionID) && agentState(of: instance).isLive
+        isHostingNode(instance.sessionID) && agentState(of: instance).isLive && instrumentViews.approvalWanted(byInstance: instance.id) == nil
     }
 
     public func canReachAgent(of instance: InstrumentInstance) -> Bool {
         let mayAsk = isHostingNode(instance.sessionID) || (isHostedRemotelyLive(instance.sessionID) && collaboration.isOwner)
-        return mayAsk && agentState(of: instance).isLive
+        return mayAsk && agentState(of: instance).isLive && instrumentViews.approvalWanted(byInstance: instance.id) == nil
+    }
+
+    public func approvalAwaitedFromHost(of instance: InstrumentInstance) -> CollaborationSession.UserInfo? {
+        guard !isHostingNode(instance.sessionID), isHostedRemotelyLive(instance.sessionID), agentState(of: instance).awaitsApproval else { return nil }
+        return sessions.first { $0.id == instance.sessionID }?.host
+    }
+
+    func gateRefusal(of instance: InstrumentInstance) -> String? {
+        let name = descriptor(for: instance).displayName
+        if instrumentViews.approvalWanted(byInstance: instance.id) != nil {
+            return "“\(name)” is waiting for you to allow its code to run; nothing of it runs until you do."
+        }
+        guard let host = approvalAwaitedFromHost(of: instance) else { return nil }
+        return "“\(name)” is waiting for \(host.name) to allow its code to run."
+    }
+
+    func instanceAllowed(_ instanceID: UUID) {
+        guard let instance = instrumentsBySession.values.joined().first(where: { $0.id == instanceID }), instance.state == .enabled,
+            let node = node(forSessionID: instance.sessionID)
+        else { return }
+        broadcastInstrumentStatus(instanceID: instanceID, sessionID: instance.sessionID)
+        guard node.instruments.first(where: { $0.id == instanceID })?.attachment != .attached else { return }
+        Task { @MainActor [weak self] in
+            await self?.loadInstrumentOnNode(
+                instanceID: instance.id, kind: instance.kind, sourceIdentifier: instance.sourceIdentifier, configJSON: instance.configJSON,
+                node: node, sessionID: instance.sessionID)
+        }
     }
 
     public func agentState(of instance: InstrumentInstance) -> InstrumentAgentState {
         if let node = node(forSessionID: instance.sessionID) {
             let isLive = node.instruments.first(where: { $0.id == instance.id })?.attachment == .attached
-            return InstrumentAgentState(isLive: isLive, disabledActions: disabledWidgetActions[instance.id] ?? [:])
+            return InstrumentAgentState(
+                isLive: isLive, disabledActions: disabledWidgetActions[instance.id] ?? [:],
+                awaitsApproval: instrumentViews.approvalWanted(byInstance: instance.id) != nil)
         }
         guard isHostedRemotelyLive(instance.sessionID) else { return InstrumentAgentState() }
         return remoteInstrumentAgents[instance.id] ?? InstrumentAgentState()
@@ -5476,6 +5510,10 @@ public final class Engine {
         item: String?,
         chooser: ActionChooser = .person
     ) async -> OfferedFileSummary? {
+        if let refusal = gateRefusal(of: instance) {
+            emitEngineWarning(subsystem: "instruments", text: refusal)
+            return nil
+        }
         guard canReachAgent(of: instance), item != nil || agentState(of: instance).isEnabled(action, of: widget) else { return nil }
         if isHostedRemotelyLive(instance.sessionID) {
             collaboration.sendWidgetAction(
@@ -5575,12 +5613,10 @@ public func deleteCustomInstrument(_ defID: UUID) async {
                     continue
                 }
                 do {
-                    try await loadCustomInstrument(
-                        instanceID: liveInstance.id,
-                        bundle: bundle,
-                        config: cfg,
-                        on: node
-                    )
+                    guard try await loadCustomInstrument(instanceID: liveInstance.id, bundle: bundle, config: cfg, on: node) else {
+                        onSessionListChanged?(.instrumentUpdated(liveInstance))
+                        continue
+                    }
                     node.markInstrumentAttached(id: liveInstance.id)
                     broadcastInstrumentStatus(instanceID: liveInstance.id, sessionID: node.sessionID)
                 } catch {

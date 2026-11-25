@@ -18,7 +18,6 @@ public final class InstrumentViews {
     public enum Phase: Sendable, Equatable {
         case idle
         case checking
-        case awaitingApproval(HostCodeOrigin)
         case starting
         case running(generation: Int)
         case failed(String)
@@ -30,10 +29,12 @@ public final class InstrumentViews {
     }
 
     public private(set) var phases: [Key: Phase] = [:]
+    public private(set) var approvalsWanted: [UUID: HostCodeOrigin] = [:]
 
     @ObservationIgnored private weak var engine: Engine?
     @ObservationIgnored let trust: HostCodeTrust
     @ObservationIgnored private var demand: [Key: Int] = [:]
+    @ObservationIgnored private var gateDecisions: [UUID: String] = [:]
     @ObservationIgnored private var views: [Key: RunningView] = [:]
     @ObservationIgnored private var viewsByID: [String: RunningView] = [:]
     @ObservationIgnored private var heldEvents: [Key: [WidgetViewPayload]] = [:]
@@ -68,13 +69,41 @@ public final class InstrumentViews {
         demand[key, default: 1] -= 1
     }
 
-    public func allow(_ key: Key) {
-        guard let engine, let target = engine.viewTarget(for: key), let hostCode = target.hostCode else { return }
+    public func approvalWanted(byInstance instanceID: UUID) -> HostCodeOrigin? {
+        approvalsWanted[instanceID]
+    }
+
+    public func allow(instance instanceID: UUID) {
+        guard let engine, let target = engine.hostCodeTarget(ofInstance: instanceID), let hostCode = target.hostCode else { return }
         trust.approve(hostCode.digest)
-        for (other, phase) in phases {
-            guard case .awaitingApproval = phase, engine.viewTarget(for: other)?.def.id == target.def.id else { continue }
-            phases[other] = .idle
-            startIfWanted(other)
+        for other in approvalsWanted.keys where engine.hostCodeTarget(ofInstance: other)?.def.id == target.def.id {
+            approvalsWanted[other] = nil
+            gateDecisions[other] = hostCode.digest
+            engine.instanceAllowed(other)
+            for key in demand.keys where key.instanceID == other {
+                startIfWanted(key)
+            }
+        }
+    }
+
+    func isAllowed(_ instanceID: UUID) async -> Bool {
+        await decideGate(of: instanceID)
+        return approvalsWanted[instanceID] == nil
+    }
+
+    private func decideGate(of instanceID: UUID) async {
+        guard let engine, let target = engine.hostCodeTarget(ofInstance: instanceID), let hostCode = target.hostCode else {
+            approvalsWanted[instanceID] = nil
+            return
+        }
+        guard gateDecisions[instanceID] != hostCode.digest else { return }
+        let decision = await trust.decide(hostCode, origin: engine.codeOrigin(ofCustomInstrument: target.def.id))
+        gateDecisions[instanceID] = hostCode.digest
+        switch decision {
+        case .allowed:
+            approvalsWanted[instanceID] = nil
+        case .ask(let origin):
+            approvalsWanted[instanceID] = origin
         }
     }
 
@@ -120,6 +149,14 @@ public final class InstrumentViews {
     }
 
     func reconcile(with instruments: [UUID: [InstrumentInstance]]) {
+        let present = Set(instruments.values.joined().map(\.id))
+        for instanceID in Set(approvalsWanted.keys).union(gateDecisions.keys) where !present.contains(instanceID) {
+            approvalsWanted[instanceID] = nil
+            gateDecisions[instanceID] = nil
+        }
+        for instance in instruments.values.joined() where instance.kind == .custom {
+            Task { await decideGate(of: instance.id) }
+        }
         let enabled = Set(instruments.values.joined().filter { $0.state == .enabled }.map(\.id))
         for key in Set(views.keys).union(phases.keys) where !enabled.contains(key.instanceID) {
             perform(key) { [weak self] in
@@ -133,6 +170,9 @@ public final class InstrumentViews {
 
     func reload(customInstrument defID: UUID) {
         guard let engine else { return }
+        for instanceID in engine.instanceIDs(ofCustomInstrument: defID) {
+            Task { await decideGate(of: instanceID) }
+        }
         for key in Set(views.keys).union(phases.keys) {
             guard let target = engine.viewTarget(for: key), target.def.id == defID else { continue }
             let running = views[key]
@@ -223,8 +263,8 @@ public final class InstrumentViews {
         }
 
         phases[key] = .checking
-        if case .ask(let origin) = await trust.decide(hostCode, ofCustomInstrument: target.def.id) {
-            phases[key] = .awaitingApproval(origin)
+        guard await isAllowed(key.instanceID) else {
+            phases[key] = .idle
             return
         }
 
