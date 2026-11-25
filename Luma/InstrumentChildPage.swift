@@ -92,21 +92,30 @@ struct ChildBadgeView: View {
     var truncates = false
 
     var body: some View {
-        Text(text)
-            .font(.caption2.weight(.semibold))
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .frame(minWidth: truncates ? Self.minimumTextWidth : nil)
-            .fixedSize(horizontal: !truncates, vertical: false)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(tone.color.opacity(0.18), in: Capsule())
-            .foregroundStyle(tone.color)
-            .help(text)
-            .accessibilityLabel(text)
+        ZStack(alignment: .leading) {
+            Text(shortest)
+                .fixedSize()
+                .hidden()
+            Text(text)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .font(.caption2.weight(.semibold))
+        .fixedSize(horizontal: !truncates, vertical: false)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(tone.color.opacity(0.18), in: Capsule())
+        .foregroundStyle(tone.color)
+        .help(text)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(text)
     }
 
-    private static let minimumTextWidth: CGFloat = 10
+    private var shortest: String {
+        text.count <= Self.shortestKept + 1 ? text : String(text.prefix(Self.shortestKept)) + "\u{2026}"
+    }
+
+    private static let shortestKept = 4
 }
 
 extension ChildBadge.Tone {

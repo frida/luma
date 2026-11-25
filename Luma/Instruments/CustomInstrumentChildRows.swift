@@ -91,11 +91,9 @@ struct ChildRowText: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 4) {
+            TitleAndBadge {
                 Text(title)
                     .truncationMode(.middle)
-                    .layoutPriority(1)
-                Spacer(minLength: 4)
                 badgeView
             }
             subtitleView
@@ -119,4 +117,28 @@ struct ChildRowText: View {
                 .truncationMode(.tail)
         }
     }
+}
+
+private struct TitleAndBadge: Layout {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let ideal = subviews.map { $0.sizeThatFits(.unspecified) }
+        let idealWidth = ideal.map(\.width).reduce(0, +) + Self.spacing * CGFloat(subviews.count - 1)
+        return CGSize(width: proposal.width ?? idealWidth, height: ideal.map(\.height).max() ?? 0)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let title = subviews[0]
+        guard subviews.count > 1 else {
+            title.place(at: CGPoint(x: bounds.minX, y: bounds.midY), anchor: .leading, proposal: ProposedViewSize(width: bounds.width, height: nil))
+            return
+        }
+        let badge = subviews[1]
+        let badgeMinimum = badge.sizeThatFits(ProposedViewSize(width: 0, height: nil)).width
+        let titleWidth = min(title.sizeThatFits(.unspecified).width, max(0, bounds.width - badgeMinimum - Self.spacing))
+        let badgeWidth = min(badge.sizeThatFits(.unspecified).width, max(badgeMinimum, bounds.width - titleWidth - Self.spacing))
+        title.place(at: CGPoint(x: bounds.minX, y: bounds.midY), anchor: .leading, proposal: ProposedViewSize(width: titleWidth, height: nil))
+        badge.place(at: CGPoint(x: bounds.maxX, y: bounds.midY), anchor: .trailing, proposal: ProposedViewSize(width: badgeWidth, height: nil))
+    }
+
+    private static let spacing: CGFloat = 8
 }
