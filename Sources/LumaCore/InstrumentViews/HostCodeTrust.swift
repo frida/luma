@@ -8,6 +8,29 @@ public enum HostCodeOrigin: Sendable, Equatable {
 }
 
 extension HostCodeOrigin {
+    var storedJSON: String {
+        let object: [String: String] = switch self {
+        case .project: ["kind": "project"]
+        case .folder(let path): ["kind": "folder", "path": path]
+        case .labMember(let name): ["kind": "lab_member", "name": name]
+        case .mission: ["kind": "mission"]
+        }
+        return String(decoding: try! JSONSerialization.data(withJSONObject: object, options: .sortedKeys), as: UTF8.self)
+    }
+
+    init?(storedJSON: String) {
+        guard let object = try? JSONSerialization.jsonObject(with: Data(storedJSON.utf8)) as? [String: String] else { return nil }
+        switch (object["kind"], object["path"], object["name"]) {
+        case ("project", _, _): self = .project
+        case ("folder", let path?, _): self = .folder(path: path)
+        case ("lab_member", _, let name?): self = .labMember(name: name)
+        case ("mission", _, _): self = .mission
+        default: return nil
+        }
+    }
+}
+
+extension HostCodeOrigin {
     public static let request = "This instrument wants to run its own code inside Luma."
     public static let allowLabel = "Allow"
 
@@ -43,36 +66,26 @@ final class HostCodeTrust {
     }
 
     private let catalog: StoreCatalog
-    private var origins: [UUID: HostCodeOrigin] = [:]
     private var localEdits: [String: LocalEdit] = [:]
 
     init(catalogURL: URL) {
         catalog = StoreCatalog(baseURL: catalogURL)
     }
 
-    func decide(_ hostCode: HostCode, ofCustomInstrument defID: UUID) async -> Decision {
+    func decide(_ hostCode: HostCode, origin: HostCodeOrigin) async -> Decision {
         if await isTrusted(hostCode.digest) {
             return .allowed
         }
-        return .ask(origins[defID] ?? .project)
+        return .ask(origin)
     }
 
     func approve(_ digest: String) {
         LumaAppState.shared.approveHostCode(digest)
     }
 
-    func noteArrival(ofCustomInstrument defID: UUID, from origin: HostCodeOrigin) {
-        origins[defID] = origin
-    }
-
-    func noteEdit(ofCustomInstrument defID: UUID, from previous: HostCode?, to next: HostCode?, by author: CustomInstrumentAuthor) {
+    func noteLocalEdit(from previous: HostCode?, to next: HostCode?) {
         guard let next, next != previous else { return }
-        switch author {
-        case .localUser:
-            localEdits[next.digest] = previous.map { LocalEdit.editedFrom($0.digest) } ?? .written
-        case .mission:
-            origins[defID] = .mission
-        }
+        localEdits[next.digest] = previous.map { LocalEdit.editedFrom($0.digest) } ?? .written
     }
 
     private func isTrusted(_ digest: String) async -> Bool {

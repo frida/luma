@@ -154,12 +154,9 @@ public final class InstrumentViews {
         phases.removeAll()
     }
 
-    func noteArrival(ofCustomInstrument defID: UUID, from origin: HostCodeOrigin) {
-        trust.noteArrival(ofCustomInstrument: defID, from: origin)
-    }
 
-    func noteEdit(ofCustomInstrument defID: UUID, from previous: HostCode?, to next: HostCode?, by author: CustomInstrumentAuthor) {
-        trust.noteEdit(ofCustomInstrument: defID, from: previous, to: next, by: author)
+    func noteLocalEdit(from previous: HostCode?, to next: HostCode?) {
+        trust.noteLocalEdit(from: previous, to: next)
     }
 
     func answer(_ operation: String, _ request: [String: Any]) async throws -> Any {

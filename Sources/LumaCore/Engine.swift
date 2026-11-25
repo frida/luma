@@ -576,10 +576,10 @@ public final class Engine {
             case .upsert(let u):
                 guard var bundle = try? Self.validatedCustomInstrumentBundle(u.bundle) else { return }
                 bundle.def.normalize()
-                if let editor {
-                    self.instrumentViews.noteArrival(ofCustomInstrument: bundle.def.id, from: .labMember(name: editor.name))
-                }
                 try? self.store.save(bundle.def)
+                if let editor, editor.id != self.collaboration.localUser?.id {
+                    self.recordCodeOrigin(.labMember(name: editor.name), ofCustomInstrument: bundle.def.id)
+                }
                 try? self.store.replaceCustomInstrumentFiles(defID: bundle.def.id, files: bundle.files)
                 self.scheduleCustomInstrumentReload(defID: bundle.def.id)
             case .remove(let r):
@@ -660,9 +660,6 @@ public final class Engine {
 
         collaboration.onCustomInstrumentSnapshot = { [weak self] bundles, editors in
             guard let self else { return }
-            for (defID, editor) in editors where editor.id != self.collaboration.localUser?.id {
-                self.instrumentViews.noteArrival(ofCustomInstrument: defID, from: .labMember(name: editor.name))
-            }
             let serverIDs = Set(bundles.map(\.def.id))
             let local = (try? self.store.fetchCustomInstrumentDefs()) ?? []
             let pending = self.subjectsOfPendingOps(CustomInstrumentOp.self)
@@ -681,6 +678,9 @@ public final class Engine {
             for bundle in normalized {
                 try? self.store.save(bundle.def)
                 try? self.store.replaceCustomInstrumentFiles(defID: bundle.def.id, files: bundle.files)
+            }
+            for (defID, editor) in editors where editor.id != self.collaboration.localUser?.id {
+                self.recordCodeOrigin(.labMember(name: editor.name), ofCustomInstrument: defID)
             }
             for bundle in normalized {
                 self.scheduleCustomInstrumentReload(defID: bundle.def.id)
@@ -4922,7 +4922,24 @@ public final class Engine {
         let previous = HostCode(files: try store.fetchCustomInstrumentFiles(defID: defID))
         try edit()
         let next = HostCode(files: try store.fetchCustomInstrumentFiles(defID: defID))
-        instrumentViews.noteEdit(ofCustomInstrument: defID, from: previous, to: next, by: author)
+        switch author {
+        case .localUser:
+            instrumentViews.noteLocalEdit(from: previous, to: next)
+        case .mission:
+            guard next != nil, next != previous else { return }
+            recordCodeOrigin(.mission, ofCustomInstrument: defID)
+        }
+    }
+
+    func codeOrigin(ofCustomInstrument defID: UUID) -> HostCodeOrigin {
+        if let link = instrumentFolderLinks[defID] {
+            return .folder(path: link.path)
+        }
+        return (try? store.fetchCodeOrigin(ofCustomInstrument: defID)) ?? .project
+    }
+
+    private func recordCodeOrigin(_ origin: HostCodeOrigin, ofCustomInstrument defID: UUID) {
+        try? store.saveCodeOrigin(origin, ofCustomInstrument: defID)
     }
 
     private func requiringLuma(_ def: CustomInstrumentDef) throws -> CustomInstrumentDef {
@@ -5012,8 +5029,8 @@ public final class Engine {
         let bundle = try Self.validatedCustomInstrumentBundle(
             InstrumentFolder(folderURL: folderURL).customInstrument(id: UUID(), createdAt: now, updatedAt: now)
         )
-        instrumentViews.noteArrival(ofCustomInstrument: bundle.def.id, from: .folder(path: folderURL.path))
         try saveCustomInstrumentBundle(bundle)
+        recordCodeOrigin(.folder(path: folderURL.path), ofCustomInstrument: bundle.def.id)
         try InstrumentFolder.writeTypings(for: bundle.def, to: folderURL)
         setInstrumentFolderLink(InstrumentFolderLink(path: folderURL.path, synced: .init(of: bundle)), forDefID: bundle.def.id)
         watchInstrumentFolder(defID: bundle.def.id)
@@ -5041,8 +5058,8 @@ public final class Engine {
             folderContents(for: storedCustomInstrumentBundle(defID: defID).def, in: link.folderURL)
         )
         bundle.def.updatedAt = Date()
-        instrumentViews.noteArrival(ofCustomInstrument: defID, from: .folder(path: link.path))
         try saveCustomInstrumentBundle(bundle)
+        recordCodeOrigin(.folder(path: link.path), ofCustomInstrument: defID)
         try InstrumentFolder.writeTypings(for: bundle.def, to: link.folderURL)
         link.synced = .init(of: bundle)
         setInstrumentFolderLink(link, forDefID: defID)

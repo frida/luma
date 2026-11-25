@@ -1461,6 +1461,24 @@ public final class ProjectStore: Sendable {
         }
     }
 
+    public func fetchCodeOrigin(ofCustomInstrument defID: UUID) throws -> HostCodeOrigin? {
+        try db.read { db in
+            try String.fetchOne(db, sql: "SELECT origin_json FROM custom_instrument_code_origin WHERE def_id = ?", arguments: [defID])
+                .flatMap(HostCodeOrigin.init(storedJSON:))
+        }
+    }
+
+    public func saveCodeOrigin(_ origin: HostCodeOrigin, ofCustomInstrument defID: UUID) throws {
+        try db.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO custom_instrument_code_origin (def_id, origin_json) VALUES (?, ?)
+                    ON CONFLICT(def_id) DO UPDATE SET origin_json = excluded.origin_json
+                    """,
+                arguments: [defID, origin.storedJSON])
+        }
+    }
+
     public func fetchInstrumentChildren(instanceID: UUID) throws -> [InstrumentChild] {
         try db.read { db in
             try Row.fetchAll(
@@ -2000,6 +2018,12 @@ public final class ProjectStore: Sendable {
             t.column("widget_id", .text).notNull()
             t.column("state_json", .text).notNull()
             t.primaryKey(["instance_id", "widget_id"])
+        }
+
+        try db.create(table: "custom_instrument_code_origin") { t in
+            t.primaryKey("def_id", .blob).notNull()
+                .references("custom_instrument_def", onDelete: .cascade)
+            t.column("origin_json", .text).notNull()
         }
 
         try db.create(table: "instrument_child") { t in
