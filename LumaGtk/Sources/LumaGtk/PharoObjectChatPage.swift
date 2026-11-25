@@ -22,6 +22,7 @@ final class PharoObjectChatPage {
     private let titleLabel = Label(str: "")
     private let aboutLabel = Label(str: "")
     private let editorsSlot = Box(orientation: .horizontal, spacing: 0)
+    private let localOnlyMark = MainWindow.makeNotInLabMark(tooltip: MainWindow.localOnlyChatTooltip)
     private let showSubjectButton = Button()
     private let renameButton = Button()
     private let deleteButton = Button()
@@ -305,6 +306,8 @@ final class PharoObjectChatPage {
         titleLabel.singleLineMode = true
         top.append(child: titleLabel)
 
+        localOnlyMark.visible = false
+        top.append(child: localOnlyMark)
         editorsSlot.hexpand = true
         top.append(child: editorsSlot)
 
@@ -538,6 +541,7 @@ final class PharoObjectChatPage {
         deleteButton.visible = chats.canDelete(chat.id)
         renameButton.visible = chats.canRename(chat.id)
         aboutLabel.label = about(chat)
+        localOnlyMark.visible = engine.collaboration.isCollaborative && chats.isLocalOnly(chat.id)
         if subject != checkedSubject {
             checkedSubject = subject
             checkSubject()

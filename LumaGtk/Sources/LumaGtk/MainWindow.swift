@@ -1559,11 +1559,17 @@ final class MainWindow: InstrumentUIHost {
     }
 
     static func makeKeptFromLabMark() -> Label {
+        makeNotInLabMark(
+            tooltip: "A member deleted it in the lab after you changed it, so your version is kept only here. Add it to the lab again, or delete it.")
+    }
+
+    static let localOnlyChatTooltip = "This chat is about a session only you have, so the lab does not have the chat either."
+
+    static func makeNotInLabMark(tooltip: String) -> Label {
         let mark = Label(str: "Not in the lab")
         mark.add(cssClass: "caption")
         mark.add(cssClass: "dim-label")
-        mark.tooltipText =
-            "A member deleted it in the lab after you changed it, so your version is kept only here. Add it to the lab again, or delete it."
+        mark.tooltipText = tooltip
         return mark
     }
 
