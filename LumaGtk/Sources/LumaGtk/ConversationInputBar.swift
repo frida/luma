@@ -3,10 +3,12 @@ import Gtk
 @MainActor
 final class ConversationInputBar {
     let widget: Box
+    let accessory = Box(orientation: .horizontal, spacing: 6)
 
     struct Action {
         let iconName: String
         let tooltip: String
+        var unavailableReason: String? = nil
         let run: () -> Void
     }
 
@@ -86,6 +88,7 @@ final class ConversationInputBar {
 
         row.append(child: buttonColumn)
         widget.append(child: row)
+        widget.append(child: accessory)
 
         secondaryButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated { self?.secondary?.run() }
@@ -107,12 +110,18 @@ final class ConversationInputBar {
         self.primary = primary
         self.secondary = secondary
         primaryIcon.setFrom(iconName: primary.iconName)
-        primaryButton.tooltipText = isSending ? "Cancel reply" : primary.tooltip
         secondaryButton.visible = secondary != nil
         if let secondary {
             secondaryIcon.setFrom(iconName: secondary.iconName)
-            secondaryButton.tooltipText = secondary.tooltip
         }
+        showAvailability()
+    }
+
+    private func showAvailability() {
+        primaryButton.sensitive = isSending || primary.unavailableReason == nil
+        primaryButton.tooltipText = isSending ? "Cancel reply" : primary.unavailableReason ?? primary.tooltip
+        secondaryButton.sensitive = !isSending && secondary?.unavailableReason == nil
+        secondaryButton.tooltipText = secondary.map { $0.unavailableReason ?? $0.tooltip }
     }
 
     var draft: String {
@@ -133,9 +142,7 @@ final class ConversationInputBar {
 
     func show(isSending: Bool, failure: String?) {
         self.isSending = isSending
-        secondaryButton.sensitive = !isSending
-        primaryButton.sensitive = true
-        primaryButton.tooltipText = isSending ? "Cancel reply" : primary.tooltip
+        showAvailability()
         spinner.visible = isSending
         primaryIcon.visible = !isSending
         cancelIcon.visible = isSending

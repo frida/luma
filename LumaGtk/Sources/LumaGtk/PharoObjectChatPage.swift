@@ -42,6 +42,12 @@ final class PharoObjectChatPage {
     private var isMapped = false
     private var isRemovedInLab = false
     private var subject: ObjectChatSubjectPlace?
+    private let modelPicker: ObjectChatModelPicker
+    private let answerNotice = Box(orientation: .horizontal, spacing: 6)
+    private let answerNoticeLabel = Label(str: "")
+    private var answerUnavailableReason: String?
+    private var checkedChoice: ObjectChatModelChoice?
+    private var answerCheck: Task<Void, Never>?
     private var checkedSubject: ObjectChatSubjectPlace?
     private var subjectUnavailableReason: String?
     private var subjectCheck: Task<Void, Never>?
@@ -74,6 +80,7 @@ final class PharoObjectChatPage {
         widget = Box(orientation: .vertical, spacing: 0)
         widget.hexpand = true
         widget.vexpand = true
+        modelPicker = ObjectChatModelPicker(engine: engine, chatID: chatID)
 
         inputBar = ConversationInputBar(
             primary: askAction,
@@ -96,6 +103,9 @@ final class PharoObjectChatPage {
         widget.append(child: Separator(orientation: .horizontal))
         widget.append(child: makeRunsWithoutAskingNotice())
         widget.append(child: inputBar.widget)
+        modelPicker.onSetUp = { [weak self] in self?.setUpProvider() }
+        inputBar.accessory.append(child: modelPicker.widget)
+        inputBar.accessory.append(child: makeAnswerNotice())
 
         widget.onMap { [weak self] _ in
             MainActor.assumeIsolated {
@@ -125,7 +135,58 @@ final class PharoObjectChatPage {
     }
 
     private var askAction: ConversationInputBar.Action {
-        ConversationInputBar.Action(iconName: "starred-symbolic", tooltip: "Ask the Assistant") { [weak self] in self?.ask() }
+        ConversationInputBar.Action(iconName: "starred-symbolic", tooltip: "Ask the Assistant", unavailableReason: answerUnavailableReason) {
+            [weak self] in self?.ask()
+        }
+    }
+
+    private func makeAnswerNotice() -> Box {
+        let icon = Gtk.Image(iconName: "dialog-information-symbolic")
+        icon.add(cssClass: "dim-label")
+        answerNotice.append(child: icon)
+        answerNoticeLabel.add(cssClass: "caption")
+        answerNoticeLabel.add(cssClass: "dim-label")
+        answerNoticeLabel.xalign = 0
+        answerNoticeLabel.wrap = true
+        answerNoticeLabel.lines = 2
+        answerNoticeLabel.ellipsize = .end
+        answerNoticeLabel.hexpand = true
+        answerNotice.append(child: answerNoticeLabel)
+        let setUp = Button(label: "Set Up…")
+        setUp.add(cssClass: "flat")
+        setUp.add(cssClass: "caption")
+        setUp.onClicked { [weak self] _ in
+            MainActor.assumeIsolated { self?.setUpProvider() }
+        }
+        answerNotice.append(child: setUp)
+        answerNotice.hexpand = true
+        answerNotice.visible = false
+        return answerNotice
+    }
+
+    private func setUpProvider() {
+        ObjectChatProviderSetupDialog.present(engine: engine, chatID: chatID, from: widget) { [weak self] in
+            self?.checkAnswer()
+        }
+    }
+
+    private func checkAnswer() {
+        answerCheck?.cancel()
+        answerCheck = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let reason = await self.chats.answerUnavailableReason(in: self.chatID)
+            guard !Task.isCancelled else { return }
+            self.answerUnavailableReason = reason
+            self.answerNoticeLabel.label = reason ?? ""
+            self.answerNotice.visible = reason != nil
+            self.offerActions()
+        }
+    }
+
+    private func offerActions() {
+        inputBar.offer(
+            primary: hasCompany ? postAction(hasCompany: true) : askAction,
+            secondary: hasCompany ? askAction : postAction(hasCompany: false))
     }
 
     private func ask() {
@@ -350,18 +411,26 @@ final class PharoObjectChatPage {
     }
 
     private func follow() {
-        let (chat, thread, runsWithoutAsking, hasCompany): (ObjectChat?, ObjectChats.Thread, Bool, Bool) = withObservationTracking {
+        var choice: ObjectChatModelChoice?
+        let (chat, thread, runsWithoutAsking, _, discarded): (ObjectChat?, ObjectChats.Thread, Bool, Bool, Bool) = withObservationTracking {
             let thread = chats.thread(of: chatID)
             isRemovedInLab = chats.removedInLab.contains(chatID)
             _ = chats.unsent
             _ = chats.problems
             _ = thread.toolCalls.map(chats.hold(on:))
-            return (chats.chats.first { $0.id == chatID }, thread, ObjectChatRunSetting.shared.runsWithoutAsking, self.hasCompany)
+            let chat = chats.chat(withID: chatID)
+            subject = chat.map(chats.subject(of:))
+            choice = chats.modelChoice(in: chatID)
+            return (chat, thread, ObjectChatRunSetting.shared.runsWithoutAsking, self.hasCompany, chats.wasDiscarded(chatID) || chats.wasDeletedHere(chatID))
         } onChange: { [weak self] in
             Task { @MainActor in self?.follow() }
         }
         guard let chat else {
-            showDeleted()
+            if discarded {
+                onDiscarded()
+            } else {
+                showDeleted()
+            }
             return
         }
         show(chat)
@@ -369,9 +438,11 @@ final class PharoObjectChatPage {
         runsWithoutAskingNotice.visible = runsWithoutAsking
         removedInLabNotice.visible = isRemovedInLab
         showProblems()
-        inputBar.offer(
-            primary: hasCompany ? postAction(hasCompany: true) : askAction,
-            secondary: hasCompany ? askAction : postAction(hasCompany: false))
+        if choice != checkedChoice {
+            checkedChoice = choice
+            checkAnswer()
+        }
+        offerActions()
         if isMapped {
             chats.markRead(chatID)
         }
@@ -414,6 +485,11 @@ final class PharoObjectChatPage {
         deleteButton.visible = chats.canDelete(chat.id)
         renameButton.visible = chats.canRename(chat.id)
         aboutLabel.label = about(chat)
+        if subject != checkedSubject {
+            checkedSubject = subject
+            checkSubject()
+        }
+        showSubjectAvailability()
         let editors = chat.editors.map(\.id)
         if editors != shownEditors {
             shownEditors = editors
@@ -692,8 +768,8 @@ final class PharoObjectChatPage {
                 role: .assistant,
                 author: nil,
                 bodyMarkdown: "",
-                modelID: chat.modelID ?? LumaAppState.shared.missionDefaults.modelID)
-            row = ConversationMessageRow(message: placeholder, content: Box(orientation: .vertical, spacing: 6))
+                modelID: chats.modelChoice(in: chatID).modelID)
+            row = ConversationMessageRow(message: placeholder, isMine: false, content: Box(orientation: .vertical, spacing: 6))
             transcript.append(row.widget)
         }
         streaming = (row, answer)
