@@ -389,14 +389,7 @@ private struct SampleChildRow: View {
             HStack(spacing: 6) {
                 ChildTemplateIcon(template: template)
                     .foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("Sample \(template.id)")
-                    Text("subtitle")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 4)
-                ChildBadgeView(text: "active", tone: .active)
+                ChildRowText(title: "Sample \(template.id)", subtitle: "subtitle", badge: ("active", .active))
             }
             .font(.callout)
             .padding(6)

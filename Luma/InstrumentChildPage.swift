@@ -89,17 +89,24 @@ struct ChildTemplateIcon: View {
 struct ChildBadgeView: View {
     let text: String
     let tone: ChildBadge.Tone
+    var truncates = false
 
     var body: some View {
         Text(text)
             .font(.caption2.weight(.semibold))
             .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(minWidth: truncates ? Self.minimumTextWidth : nil)
+            .fixedSize(horizontal: !truncates, vertical: false)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(tone.color.opacity(0.18), in: Capsule())
             .foregroundStyle(tone.color)
+            .help(text)
             .accessibilityLabel(text)
     }
+
+    private static let minimumTextWidth: CGFloat = 10
 }
 
 extension ChildBadge.Tone {

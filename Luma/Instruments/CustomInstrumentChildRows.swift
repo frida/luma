@@ -74,25 +74,7 @@ private struct ChildRow: View {
             ChildTemplateIcon(template: template)
                 .frame(width: sidebarChildIconWidth, alignment: .center)
                 .foregroundStyle(.secondary)
-            ViewThatFits(in: .horizontal) {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 4) {
-                        Text(child.title)
-                        Spacer(minLength: 4)
-                        badge
-                    }
-                    subtitle
-                }
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(child.title)
-                        .truncationMode(.middle)
-                    HStack(spacing: 4) {
-                        badge
-                        subtitle
-                    }
-                }
-            }
-            .lineLimit(1)
+            ChildRowText(title: child.title, subtitle: child.subtitle, badge: child.badge.map { ($0.text, $0.tone) })
         }
         .font(.callout)
         .contentShape(Rectangle())
@@ -100,23 +82,41 @@ private struct ChildRow: View {
         .help([child.title, child.subtitle].compactMap { $0 }.joined(separator: " \u{00B7} "))
         .accessibilityElement(children: .combine)
     }
+}
+
+struct ChildRowText: View {
+    let title: String
+    let subtitle: String?
+    let badge: (text: String, tone: ChildBadge.Tone)?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 4) {
+                Text(title)
+                    .truncationMode(.middle)
+                    .layoutPriority(1)
+                Spacer(minLength: 4)
+                badgeView
+            }
+            subtitleView
+        }
+        .lineLimit(1)
+    }
 
     @ViewBuilder
-    private var badge: some View {
-        if let badge = child.badge {
-            ChildBadgeView(text: badge.text, tone: badge.tone)
-                .fixedSize()
+    private var badgeView: some View {
+        if let badge {
+            ChildBadgeView(text: badge.text, tone: badge.tone, truncates: true)
         }
     }
 
     @ViewBuilder
-    private var subtitle: some View {
-        if let subtitle = child.subtitle {
+    private var subtitleView: some View {
+        if let subtitle {
             Text(subtitle)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .truncationMode(.tail)
-                .frame(idealWidth: 0, maxWidth: .infinity, alignment: .leading)
         }
     }
 }
