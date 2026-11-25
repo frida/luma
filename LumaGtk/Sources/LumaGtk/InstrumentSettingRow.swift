@@ -17,6 +17,16 @@ final class InstrumentSettingRow {
         heading.halign = .start
         heading.add(cssClass: "luma-widget-title")
         group.append(child: heading)
+        group.append(child: makeCard(settings: settings, config: config, keeping: &rows, onChange: onChange))
+        return group
+    }
+
+    static func makeCard(
+        settings: [CustomInstrumentDef.Setting],
+        config: CustomInstrumentConfig,
+        keeping rows: inout [InstrumentSettingRow],
+        onChange: @escaping (_ id: String, _ state: SettingState) -> Void
+    ) -> Box {
         let card = Box(orientation: .vertical, spacing: 0)
         card.add(cssClass: "luma-widget-box")
         let column = Box(orientation: .vertical, spacing: 12)
@@ -31,8 +41,7 @@ final class InstrumentSettingRow {
             rows.append(row)
             column.append(child: row.widget)
         }
-        group.append(child: card)
-        return group
+        return card
     }
 
     init(setting: CustomInstrumentDef.Setting, state: SettingState, onChange: @escaping (SettingState) -> Void) {

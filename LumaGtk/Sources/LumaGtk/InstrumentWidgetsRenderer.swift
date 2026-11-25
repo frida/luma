@@ -15,10 +15,14 @@ final class InstrumentWidgetsRenderer {
     private weak var engine: Engine?
     private let instance: LumaCore.InstrumentInstance?
     private var canvases: [WidgetCanvas] = []
+    private var area: ArrangedWidgetArea?
     private var subscriber: Task<Void, Never>?
     private let actionGate: WidgetActionGate
 
-    init(engine: Engine, instance: LumaCore.InstrumentInstance?, widgets: [InstrumentWidget]) {
+    init(
+        engine: Engine, instance: LumaCore.InstrumentInstance?, child: InstrumentChild?, widgets: [InstrumentWidget], layout: InstrumentLayout,
+        above: [Widget], margin: Int32
+    ) {
         self.engine = engine
         self.instance = instance
         actionGate = WidgetActionGate { [weak engine] action, widget in
@@ -26,32 +30,48 @@ final class InstrumentWidgetsRenderer {
             return action.map { engine.canChoose($0, of: widget, instance: instance) } ?? engine.canChooseWidgetActions(of: instance)
         }
 
-        widget = Box(orientation: .vertical, spacing: 12)
+        widget = Box(orientation: .vertical, spacing: 0)
         widget.hexpand = true
+        widget.vexpand = true
 
         let updates = instance.map { _ in engine.widgetUpdates }
 
         for definition in widgets {
-            let snapshot = instance.map { engine.widgetState(instanceID: $0.id, widget: definition.id) } ?? WidgetState()
+            let slot = child?.widgetKey(definition.id) ?? definition.id
+            let snapshot = instance.map { engine.widgetState(instanceID: $0.id, widget: slot) } ?? WidgetState()
             let canvas = WidgetCanvas(
                 definition: definition,
+                slot: slot,
                 snapshot: snapshot,
                 engine: engine,
                 instance: instance,
                 actionGate: actionGate,
                 onWidgetAction: { [weak self] action in
-                    self?.invoke(widget: definition.id, action: action)
+                    self?.invoke(widget: slot, action: action)
                 },
                 onAction: { [weak self] action, item in
-                    self?.invoke(widget: definition.id, action: action, item: item)
+                    self?.invoke(widget: slot, action: action, item: item)
                 },
                 onConsoleSubmit: { [weak self] text in
-                    self?.submitConsole(widget: definition.id, text: text)
+                    self?.submitConsole(widget: slot, text: text)
+                },
+                onRowTally: { [weak self] tally in
+                    self?.area?.setTally(tally, of: definition.id)
                 }
             )
             canvases.append(canvas)
-            widget.append(child: canvas.widget)
         }
+
+        let area = ArrangedWidgetArea(
+            above: above,
+            margin: margin,
+            layout: layout,
+            widgets: widgets,
+            cards: canvases.map { canvas -> (id: String, card: Widget) in (canvas.definition.id, canvas.widget) },
+            tallies: Dictionary(uniqueKeysWithValues: canvases.compactMap { canvas -> (String, RowTally)? in canvas.rowTally.map { (canvas.definition.id, $0) } }),
+            metrics: WidgetCardMetrics.measured)
+        self.area = area
+        widget.append(child: area.widget)
 
         startSubscriber(updates)
         followAgentState()
@@ -59,6 +79,14 @@ final class InstrumentWidgetsRenderer {
 
     deinit {
         subscriber?.cancel()
+    }
+
+    func cover(with widget: Widget) {
+        area?.cover(with: widget)
+    }
+
+    func setCovered(_ covered: Bool) {
+        area?.setCovered(covered)
     }
 
     func refreshAgentState() {
@@ -72,6 +100,7 @@ final class InstrumentWidgetsRenderer {
     private var consoleInput: (enabled: Bool, reason: String?) {
         guard let engine, let instance else { return (false, "Session not attached.") }
         if engine.canSubmitConsoleInput(of: instance) { return (true, nil) }
+        if let waiting = InstrumentWaitingMark.sentence(engine: engine, instance: instance) { return (false, "\(waiting).") }
         if engine.isHostedRemotelyLive(instance.sessionID) { return (false, "Only the member hosting this session can type here.") }
         if engine.isHostingNode(instance.sessionID) { return (false, "The instrument is not running.") }
         return (false, "Session not attached.")
@@ -95,7 +124,7 @@ final class InstrumentWidgetsRenderer {
     }
 
     private func dispatch(_ update: WidgetUpdate) {
-        for canvas in canvases where canvas.definition.id == update.widget {
+        for canvas in canvases where canvas.slot == update.widget {
             canvas.apply(update)
         }
     }
@@ -125,6 +154,7 @@ final class InstrumentWidgetsRenderer {
 @MainActor
 private final class WidgetCanvas {
     let definition: InstrumentWidget
+    let slot: String
     let widget: Box
     private let onAction: (_ action: String, _ item: String) -> Void
     private var counterView: CounterView?
@@ -138,48 +168,38 @@ private final class WidgetCanvas {
 
     init(
         definition: InstrumentWidget,
+        slot: String,
         snapshot: WidgetState,
         engine: Engine,
         instance: LumaCore.InstrumentInstance?,
         actionGate: WidgetActionGate,
         onWidgetAction: @escaping (_ action: String) -> Void,
         onAction: @escaping (_ action: String, _ item: String) -> Void,
-        onConsoleSubmit: @escaping (_ text: String) -> Void
+        onConsoleSubmit: @escaping (_ text: String) -> Void,
+        onRowTally: @escaping (_ tally: RowTally) -> Void
     ) {
         self.definition = definition
+        self.slot = slot
         self.onAction = onAction
 
         widget = Box(orientation: .vertical, spacing: 0)
 
         if definition.title != nil || !definition.actions.isEmpty {
-            let header = Box(orientation: .horizontal, spacing: 4)
-            header.marginBottom = 4
-            header.setSizeRequest(width: -1, height: 16)
-            let title = Label(str: definition.title ?? "")
-            title.add(cssClass: "luma-widget-title")
-            title.halign = .start
-            title.xalign = 0
-            title.ellipsize = .end
-            title.hexpand = true
-            title.valign = .center
-            header.append(child: title)
-            if !definition.actions.isEmpty {
-                let actions = WidgetHeaderActions.make(definition.actions, of: definition.id, gate: actionGate, onPress: onWidgetAction)
-                header.append(child: actions)
-            }
-            widget.append(child: header)
+            widget.append(child: Self.makeHeader(definition, slot: slot, gate: actionGate, onPress: onWidgetAction))
         }
 
         let card = Box(orientation: .vertical, spacing: 0)
         card.add(cssClass: "luma-widget-box")
+        card.vexpand = true
         Self.setAccessibleLabel(definition.label, of: card)
         widget.append(child: card)
 
         let column = Box(orientation: .vertical, spacing: 6)
-        column.marginStart = 5
-        column.marginEnd = 5
-        column.marginTop = 5
-        column.marginBottom = 5
+        column.marginStart = Self.boxInset
+        column.marginEnd = Self.boxInset
+        column.marginTop = Self.boxInset
+        column.marginBottom = Self.boxInset
+        column.vexpand = true
         card.append(child: column)
 
         switch definition.kind {
@@ -199,6 +219,7 @@ private final class WidgetCanvas {
             let view = WidgetRowList(kind: definition.kind, initial: snapshot, rows: \.listItems, header: nil, emptyText: "No items.") {
                 ListItemPresenter(actions: cfg.rowActions, gate: actionGate, onAction: onAction)
             }
+            view.onRowTally = onRowTally
             listView = view
             column.append(child: view.widget)
         case .table(let cfg):
@@ -207,11 +228,12 @@ private final class WidgetCanvas {
             let view = WidgetRowList(kind: definition.kind, initial: snapshot, rows: { layout.fit($0.tableRows) }, header: header, emptyText: "No rows.") {
                 TableRowPresenter(layout: layout, gate: actionGate, onAction: onAction)
             }
+            view.onRowTally = onRowTally
             tableView = view
             column.append(child: view.widget)
         case .hex:
             if let instance {
-                let view = HexWidgetView(initial: snapshot.hex, engine: engine, instance: instance, widgetID: definition.id)
+                let view = HexWidgetView(initial: snapshot.hex, engine: engine, instance: instance, widgetID: slot)
                 hexView = view
                 column.append(child: view.widget)
             } else {
@@ -235,12 +257,39 @@ private final class WidgetCanvas {
         case .view(let cfg):
             if let instance {
                 let view = InstrumentViewWidget(
-                    engine: engine, key: .init(instanceID: instance.id, widget: definition.id), sessionID: instance.sessionID,
+                    engine: engine, key: .init(instanceID: instance.id, widget: slot), sessionID: instance.sessionID,
                     name: definition.label, config: cfg)
                 viewWidget = view
                 column.append(child: view.widget)
             }
         }
+    }
+
+    static let boxInset = 5
+    static let headerSpacing = 4
+
+    var rowTally: RowTally? {
+        listView?.rowTally ?? tableView?.rowTally
+    }
+
+    static func makeHeader(
+        _ definition: InstrumentWidget, slot: String, gate: WidgetActionGate, onPress: @escaping (_ action: String) -> Void
+    ) -> Box {
+        let header = Box(orientation: .horizontal, spacing: 4)
+        header.marginBottom = headerSpacing
+        header.setSizeRequest(width: -1, height: 16)
+        let title = Label(str: definition.title ?? "")
+        title.add(cssClass: "luma-widget-title")
+        title.halign = .start
+        title.xalign = 0
+        title.ellipsize = .end
+        title.hexpand = true
+        title.valign = .center
+        header.append(child: title)
+        if !definition.actions.isEmpty {
+            header.append(child: WidgetHeaderActions.make(definition.actions, of: slot, gate: gate, onPress: onPress))
+        }
+        return header
     }
 
     private static func setAccessibleLabel(_ label: String, of widget: Widget) {
@@ -294,6 +343,51 @@ private final class WidgetCanvas {
             hexView?.replace(state: snapshot.hex)
             consoleWidget?.replace(entries: snapshot.consoleEntries)
         }
+    }
+}
+
+@MainActor
+enum WidgetCardMetrics {
+    static let measured = measure()
+
+    private static let spacing = 12.0
+
+    private static func measure() -> InstrumentLayout.Metrics {
+        InstrumentLayout.Metrics(
+            spacing: spacing,
+            headerHeight: Double(headerHeight()),
+            headerSpacing: Double(WidgetCanvas.headerSpacing),
+            boxInset: Double(WidgetCanvas.boxInset),
+            lineHeight: Double(naturalHeight(of: WidgetEmptyLabel.make("No rows."))),
+            rowHeight: Double(tableRowHeight()),
+            twoLineRowHeight: Double(twoLineRowHeight()),
+            counterHeight: Double(naturalHeight(of: CounterView(unit: "calls", initial: WidgetCounterValue(value: 1)).widget)))
+    }
+
+    private static func headerHeight() -> Int {
+        let sample = InstrumentWidget(
+            id: "sample", name: "Sample", kind: .counter(InstrumentWidget.CounterConfig()),
+            actions: [InstrumentWidget.Action(id: "sample", name: "Sample")])
+        let header = WidgetCanvas.makeHeader(sample, slot: sample.id, gate: WidgetActionGate { _, _ in true }, onPress: { _ in })
+        return naturalHeight(of: header) - WidgetCanvas.headerSpacing
+    }
+
+    private static func tableRowHeight() -> Int {
+        let layout = TableLayout(
+            columns: [InstrumentWidget.Column(id: "sample", name: "Sample")],
+            actions: [InstrumentWidget.Action(id: "sample", name: "Sample")])
+        let row = TableRowPresenter(layout: layout, gate: WidgetActionGate { _, _ in true }, onAction: { _, _ in })
+        return naturalHeight(of: row.widget)
+    }
+
+    private static func twoLineRowHeight() -> Int {
+        let row = ListItemPresenter(actions: [], gate: WidgetActionGate { _, _ in true }, onAction: { _, _ in })
+        row.show(WidgetListItem(id: "sample", title: "Sample", subtitle: "Sample"))
+        return naturalHeight(of: row.widget)
+    }
+
+    private static func naturalHeight(of widget: Widget) -> Int {
+        widget.naturalSize(along: .vertical)
     }
 }
 
@@ -597,6 +691,7 @@ private final class GraphView {
         widget = Box(orientation: .vertical, spacing: 4)
         drawingArea = DrawingArea()
         drawingArea.hexpand = true
+        drawingArea.vexpand = true
         drawingArea.contentHeight = 180
         widget.append(child: drawingArea)
         widget.append(child: Self.makeLegend(series))
@@ -805,6 +900,8 @@ private protocol WidgetRowPresenter: AnyObject {
 
     var widget: Box { get }
 
+    static func isTwoLine(_ row: Row) -> Bool
+
     func show(_ row: Row)
 }
 
@@ -817,10 +914,16 @@ private final class WidgetRowList<Presenter: WidgetRowPresenter> {
     private let model: StringList
     private let scroller: ScrolledWindow
     private let emptyLabel: Label
+    private let header: Widget?
     private var state: WidgetState
     private var shownRows: [Presenter.Row] = []
     private var presenters: [UnsafeMutableRawPointer: Presenter] = [:]
     private var refresh = Refresh.idle
+    var onRowTally: ((RowTally) -> Void)?
+
+    var rowTally: RowTally {
+        RowTally(count: shownRows.count, subtitled: shownRows.filter(Presenter.isTwoLine).count)
+    }
 
     private enum Refresh {
         case idle
@@ -844,6 +947,7 @@ private final class WidgetRowList<Presenter: WidgetRowPresenter> {
 
         widget = Box(orientation: .vertical, spacing: 0)
         widget.add(cssClass: "boxed-list")
+        self.header = header
         if let header {
             widget.append(child: header)
         }
@@ -861,15 +965,11 @@ private final class WidgetRowList<Presenter: WidgetRowPresenter> {
         scroller.setPolicy(hscrollbarPolicy: .never, vscrollbarPolicy: .automatic)
         scroller.propagateNaturalHeight = true
         scroller.maxContentHeight = Self.maxHeight
+        scroller.vexpand = true
         scroller.set(child: list)
         widget.append(child: scroller)
 
-        emptyLabel = Label(str: emptyText)
-        emptyLabel.add(cssClass: "dim-label")
-        emptyLabel.add(cssClass: "luma-widget-empty")
-        emptyLabel.halign = .start
-        emptyLabel.marginTop = 2
-        emptyLabel.marginBottom = 2
+        emptyLabel = WidgetEmptyLabel.make(emptyText)
         widget.append(child: emptyLabel)
 
         configure(factory)
@@ -927,8 +1027,10 @@ private final class WidgetRowList<Presenter: WidgetRowPresenter> {
         shownRows = rows
         splice(at: kept, removing: removed, adding: rows.count - kept - keptAtEnd)
 
+        header?.visible = !rows.isEmpty
         scroller.visible = !rows.isEmpty
         emptyLabel.visible = rows.isEmpty
+        onRowTally?(rowTally)
     }
 
     private func leadingRowsDropped(before rows: [Presenter.Row]) -> Int {
@@ -944,6 +1046,19 @@ private final class WidgetRowList<Presenter: WidgetRowPresenter> {
                 model.splice(position: position, nRemovals: removals, additions: $0.baseAddress)
             }
         }
+    }
+}
+
+@MainActor
+private enum WidgetEmptyLabel {
+    static func make(_ text: String) -> Label {
+        let label = Label(str: text)
+        label.add(cssClass: "dim-label")
+        label.add(cssClass: "luma-widget-empty")
+        label.halign = .start
+        label.marginTop = 2
+        label.marginBottom = 2
+        return label
     }
 }
 
@@ -978,7 +1093,7 @@ private final class ListItemPresenter: WidgetRowPresenter {
     init(actions: [InstrumentWidget.Action], gate: WidgetActionGate, onAction: @escaping (_ action: String, _ item: String) -> Void) {
         widget = Box(orientation: .horizontal, spacing: 8)
         widget.marginTop = 2
-        widget.marginBottom = 6
+        widget.marginBottom = 2
 
         let column = Box(orientation: .vertical, spacing: 2)
         column.hexpand = true
@@ -1024,6 +1139,10 @@ private final class ListItemPresenter: WidgetRowPresenter {
         }
     }
 
+    static func isTwoLine(_ item: WidgetListItem) -> Bool {
+        item.subtitle != nil
+    }
+
     func show(_ item: WidgetListItem) {
         itemID = item.id
         title.setText(str: item.title)
@@ -1067,6 +1186,10 @@ private final class TableRowPresenter: WidgetRowPresenter {
             buttons.append(child: button)
         }
         widget.append(child: buttons)
+    }
+
+    static func isTwoLine(_ row: WidgetTableRow) -> Bool {
+        false
     }
 
     func show(_ row: WidgetTableRow) {
@@ -1359,6 +1482,7 @@ private final class HistogramView {
         widget = Box(orientation: .vertical, spacing: 0)
         drawingArea = DrawingArea()
         drawingArea.hexpand = true
+        drawingArea.vexpand = true
         drawingArea.contentHeight = 180
         widget.append(child: drawingArea)
 
@@ -1429,11 +1553,12 @@ private final class HexWidgetView {
         self.widgetID = widgetID
         decodeView = PatternDecodeView(
             engine: engine, sessionID: instance.sessionID, data: initial?.bytes ?? Data(), baseAddress: initial?.baseAddress,
-            placements: engine.placements(forWidget: widgetID, of: instance.id), sizing: .capped
+            placements: engine.placements(forWidget: widgetID, of: instance.id), sizing: .fill
         ) { [weak engine] placements in
             engine?.setPlacements(placements, forWidget: widgetID, of: instance.id)
         }
         decodeView.widget.hexpand = true
+        decodeView.widget.vexpand = true
 
         emptyLabel = Label(str: "No data.")
         emptyLabel.add(cssClass: "dim-label")

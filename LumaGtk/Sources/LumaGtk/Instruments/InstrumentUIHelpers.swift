@@ -21,11 +21,12 @@ enum InstrumentUIHelpers {
     static func appendWidgets(
         into outer: Box,
         widgets: [InstrumentWidget],
+        layout: InstrumentLayout,
         engine: Engine,
         instance: LumaCore.InstrumentInstance?
     ) -> InstrumentWidgetsRenderer? {
         guard !widgets.isEmpty else { return nil }
-        let renderer = InstrumentWidgetsRenderer(engine: engine, instance: instance, widgets: widgets)
+        let renderer = InstrumentWidgetsRenderer(engine: engine, instance: instance, child: nil, widgets: widgets, layout: layout, above: [], margin: 0)
         outer.append(child: renderer.widget)
         return renderer
     }

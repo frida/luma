@@ -425,11 +425,12 @@ enum StyleSheet {
         font-size: 10px;
     }
     box.luma-table-header {
-        padding: 4px 0;
+        min-height: 15px;
+        padding: 2px 0;
         border-bottom: 1px solid alpha(@window_fg_color, 0.12);
     }
     box.luma-table-row {
-        min-height: 13px;
+        min-height: 15px;
         padding: 2px 0;
         border-bottom: 1px solid alpha(@window_fg_color, 0.05);
     }

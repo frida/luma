@@ -114,9 +114,6 @@ final class ConsoleView {
     }
 
     func fitLogToContent(minHeight: Int, maxHeight: Int) {
-        widget.vexpand = false
-        contentSlot.vexpand = false
-        cellsScroll.vexpand = false
         cellsScroll.remove(cssClass: "view")
         cellsScroll.propagateNaturalHeight = true
         cellsScroll.minContentHeight = minHeight

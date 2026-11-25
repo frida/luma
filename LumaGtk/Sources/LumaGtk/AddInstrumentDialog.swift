@@ -176,7 +176,7 @@ final class AddInstrumentDialog {
         detailScroll.hexpand = true
         detailScroll.vexpand = true
         detailScroll.setPolicy(hscrollbarPolicy: .never, vscrollbarPolicy: .automatic)
-        detailScroll.set(child: detailContainer)
+        detailScroll.set(naturallyTallChild: detailContainer)
 
         let detailColumn = Box(orientation: .vertical, spacing: 0)
         detailColumn.append(child: detailScroll)
@@ -833,7 +833,8 @@ final class AddInstrumentDialog {
             })
         }
 
-        customWidgetsPreview = InstrumentUIHelpers.appendWidgets(into: outer, widgets: def.widgets, engine: engine, instance: nil)
+        customWidgetsPreview = InstrumentUIHelpers.appendWidgets(
+            into: outer, widgets: def.widgets, layout: def.pageLayout, engine: engine, instance: nil)
         customWidgetsPreview?.widget.sensitive = false
 
         pendingConfigJSON = config.encode()
