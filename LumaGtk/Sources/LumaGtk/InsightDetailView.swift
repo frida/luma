@@ -149,6 +149,14 @@ final class InsightDetailView {
         disasmContentOverlay.addOverlay(widget: flowArea)
 
         disasmScroll.set(child: disasmContentOverlay)
+
+        let lineClick = GestureClick()
+        lineClick.set(button: 1)
+        lineClick.propagationPhase = .capture
+        lineClick.onPressed { [weak self] _, nPress, _, y in
+            MainActor.assumeIsolated { self?.pressLine(atY: y, count: Int(nPress)) }
+        }
+        disasmContentOverlay.add(controller: lineClick)
         disasmHost.append(child: disasmScroll)
 
         let keyController = EventControllerKey()
@@ -670,6 +678,18 @@ final class InsightDetailView {
         return nil
     }
 
+    private func pressLine(atY y: Double, count: Int) {
+        guard let index = disasmRows.firstIndex(where: { row in
+            var bounds = graphene_rect_t()
+            guard gtk_widget_compute_bounds(row.widget_ptr, disasmContentOverlay.widget_ptr, &bounds) != 0 else { return false }
+            return y >= Double(bounds.origin.y) - 2 && y < Double(bounds.origin.y + bounds.size.height) + 2
+        }) else { return }
+        selectRow(at: index, focus: true)
+        if count >= 2 {
+            activateLine(at: index)
+        }
+    }
+
     private func activateLine(at index: Int) {
         if let onActivateLine {
             onActivateLine(disasmLines[index].address)
@@ -825,20 +845,6 @@ final class InsightDetailView {
             commentLabel.maxWidthChars = 50
             row.append(child: commentLabel)
         }
-
-        let click = GestureClick()
-        click.set(button: 1)
-        click.onPressed { [weak self] _, nPress, _, _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                guard let rowIndex = self.disasmRows.firstIndex(where: { $0 === row }) else { return }
-                self.selectRow(at: rowIndex, focus: true)
-                if nPress >= 2 {
-                    self.activateLine(at: rowIndex)
-                }
-            }
-        }
-        row.add(controller: click)
 
         let motion = EventControllerMotion()
         motion.onEnter { [weak self] _, _, _ in
