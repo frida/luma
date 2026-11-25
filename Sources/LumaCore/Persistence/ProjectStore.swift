@@ -377,6 +377,19 @@ public final class ProjectStore: Sendable {
     public func forgetLabKnowledge() throws {
         try db.write { db in
             try db.execute(sql: "DELETE FROM lab_known_subject")
+            try db.execute(sql: "DELETE FROM lab_dismissed_session")
+        }
+    }
+
+    public func dismissLabSession(_ sessionID: UUID) throws {
+        try db.write { db in
+            try db.execute(sql: "INSERT OR IGNORE INTO lab_dismissed_session (session_id) VALUES (?)", arguments: [sessionID])
+        }
+    }
+
+    public func fetchDismissedLabSessions() throws -> Set<UUID> {
+        try db.read { db in
+            Set(try UUID.fetchAll(db, sql: "SELECT session_id FROM lab_dismissed_session"))
         }
     }
 
@@ -2063,6 +2076,10 @@ public final class ProjectStore: Sendable {
             t.column("payload_json", .text).notNull()
             t.column("binary_data", .blob)
             t.column("created_at", .datetime).notNull()
+        }
+
+        try db.create(table: "lab_dismissed_session") { t in
+            t.primaryKey("session_id", .blob).notNull()
         }
 
         try db.create(table: "lab_withheld_subject") { t in

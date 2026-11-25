@@ -630,6 +630,10 @@ public final class Engine {
             self?.objectChats.refused(op, because: reason)
         }
 
+        collaboration.onSessionRemovedInLab = { [weak self] sessionID in
+            self?.applyRemoteSessionRemoval(sessionID: sessionID)
+        }
+
         collaboration.onLabLeft = { [weak self] in
             self?.objectChats.followLab()
         }
@@ -1181,7 +1185,10 @@ public final class Engine {
 
     private func applySessionsSnapshot(_ snapshot: [CollaborationSession.Session]) {
         let serverKnown = Set(snapshot.map(\.id))
-        for cached in sessions where !localUserHosts(cached) && !serverKnown.contains(cached.id) {
+        let known = knownToLab(.session)
+        let pending = subjectsOfPendingOps(SessionOp.self)
+        for cached in sessions where !serverKnown.contains(cached.id) {
+            guard !localUserHosts(cached) || (known.contains(cached.id) && !pending.contains(cached.id)) else { continue }
             applyRemoteSessionRemoval(sessionID: cached.id)
         }
         for session in snapshot {
@@ -1453,14 +1460,13 @@ public final class Engine {
     }
 
     private func applyRemoteSessionRemoval(sessionID: UUID) {
-        guard sessions.contains(where: { $0.id == sessionID }) else { return }
-        if let node = processNodes.first(where: { $0.sessionID == sessionID }) {
-            removeNode(node)
-        }
-        try? store.deleteSession(id: sessionID)
-        sessions.removeAll { $0.id == sessionID }
-        objectChats.forgetChats(ofSession: sessionID)
-        onSessionListChanged?(.sessionRemoved(sessionID))
+        collaboration.forget(removedSession: sessionID)
+        guard let session = sessions.first(where: { $0.id == sessionID }) else { return }
+        removeSessionHere(sessionID)
+        guard let host = session.host, host.id == localUserID else { return }
+        emitEngineWarning(
+            subsystem: "collaboration",
+            text: "The session “\(session.processName)” you were hosting was removed from the lab, so it was removed here too.")
     }
 
     public func start() async {
@@ -3137,17 +3143,45 @@ public final class Engine {
     }
 
     public func deleteSession(id: UUID) {
+        let session = sessions.first { $0.id == id } ?? (try? store.fetchSession(id: id))
+        let inLab = knownToLab(.session).contains(id)
+        let forEveryone = inLab && (session.map(localUserHosts) ?? false || isLabOwner)
+        collaboration.forget(removedSession: id)
+        if forEveryone {
+            collaboration.enqueueRemoveSession(sessionID: id)
+        } else if inLab {
+            try? store.dismissLabSession(id)
+        }
+        removeSessionHere(id)
+    }
+
+    public func canRemoveFromLab(_ session: ProcessSession) -> Bool {
+        knownToLab(.session).contains(session.id) && (localUserHosts(session) || isLabOwner)
+    }
+
+    private func removeSessionHere(_ id: UUID) {
         let removedDeviceID = sessions.first(where: { $0.id == id })?.deviceID
         if let node = node(forSessionID: id) {
             removeNode(node)
         }
+        rejectMyMissionActions(inSession: id)
         try? store.deleteSession(id: id)
         sessions.removeAll { $0.id == id }
         objectChats.forgetChats(ofSession: id)
+        addressAnnotations[id] = nil
         onSessionListChanged?(.sessionRemoved(id))
         if let deviceID = removedDeviceID {
             Task { @MainActor [weak self] in
                 await self?.evaluateGating(forDeviceID: deviceID)
+            }
+        }
+    }
+
+    private func rejectMyMissionActions(inSession sessionID: UUID) {
+        let mine = ((try? store.fetchMissions()) ?? []).filter(isStartedByMe)
+        for mission in mine {
+            for action in (try? store.fetchPendingMissionActions(missionID: mission.id)) ?? [] where action.sessionID == sessionID {
+                Task { await self.rejectMissionAction(actionID: action.id, reason: "The session was removed.") }
             }
         }
     }

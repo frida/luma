@@ -251,6 +251,7 @@ public final class CollaborationSession {
     private var pendingJoinLabID: String?
     private var replayedOpIDs: Set<UUID> = []
     private var removedMissionIDs: Set<UUID> = []
+    private var removedSessionIDs: Set<UUID> = []
     private var replayedForSubjectsTheLabLacks: Set<UUID> = []
     private var opsOverridingJoinSnapshot: [UUID: SessionOp] = [:]
     private var pendingCreateOrJoinDispatched: Bool = false
@@ -325,6 +326,7 @@ public final class CollaborationSession {
     public var onObjectChatOpRefused: ((ObjectChatOp, String) -> Void)?
     public var onMissionRemovedInLab: ((UUID) -> Void)?
     public var onLabLeft: (() -> Void)?
+    public var onSessionRemovedInLab: ((UUID) -> Void)?
     public var onCustomInstrumentRemovedInLab: ((UUID) -> Void)?
     public var onPatternRemovedInLab: ((UUID) -> Void)?
     public var onMissionSnapshot: ((MissionSnapshot) -> Void)?
@@ -582,6 +584,10 @@ public final class CollaborationSession {
         sendPatternSourceOpOverWire(op, labID: labID)
     }
 
+    private func isDismissed(_ sessionID: UUID) -> Bool {
+        ((try? store.fetchDismissedLabSessions()) ?? []).contains(sessionID)
+    }
+
     private func isWithheld(_ subject: LabSubject) -> Bool {
         ((try? store.subjectsWithheldFromLab()) ?? []).contains(subject)
     }
@@ -605,7 +611,7 @@ public final class CollaborationSession {
             replay(op, labID: labID)
         }
         announce()
-        for op in awaitingAnnouncement {
+        for op in awaitingAnnouncement where (try? store.fetchOutboxOp(opID: op.opID)) != nil {
             replay(op, labID: labID)
         }
     }
@@ -898,6 +904,11 @@ public final class CollaborationSession {
 
     public func enqueueRemoveSession(sessionID: UUID) {
         enqueueSessionOp(.remove(.init(sessionID: sessionID)))
+    }
+
+    public func forget(removedSession sessionID: UUID) {
+        removedSessionIDs.insert(sessionID)
+        try? store.removeOutboxOps(family: SessionOp.outboxFamily, subject: sessionID)
     }
 
     public func requestClaimHost(
@@ -1249,7 +1260,7 @@ public final class CollaborationSession {
     }
 
     private func enqueueSessionOp(_ op: SessionOp) {
-        guard isCollaborative else { return }
+        guard isCollaborative, !removedSessionIDs.contains(op.sessionID) || op.kind == "remove" else { return }
         try? store.saveOutboxOps([op])
         sendSessionOpIfJoined(op)
     }
@@ -1268,7 +1279,7 @@ public final class CollaborationSession {
     }
 
     private func applySessionOp(sessionID: UUID, payload: JSONObject) {
-        guard let op = SessionOp.fromJSON(payload, sessionID: sessionID) else { return }
+        guard !isDismissed(sessionID), let op = SessionOp.fromJSON(payload, sessionID: sessionID) else { return }
         markKnown(op.labSubject)
         apply(op)
     }
@@ -1572,8 +1583,9 @@ public final class CollaborationSession {
             }
             snapshot.append(entry)
         }
+        let dismissed = (try? store.fetchDismissedLabSessions()) ?? []
         let sessionDicts = (payload["sessions"] as? [JSONObject]) ?? []
-        let sessions = sessionDicts.compactMap(Session.fromJSON)
+        let sessions = sessionDicts.compactMap(Session.fromJSON).filter { !dismissed.contains($0.id) }
         let customDicts = (payload["custom_instruments"] as? [JSONObject]) ?? []
         let customBundles = customDicts.compactMap(CustomInstrumentBundle.fromJSON)
         let patternDicts = (payload["patterns"] as? [JSONObject]) ?? []
@@ -1581,7 +1593,9 @@ public final class CollaborationSession {
         let missionDicts = (payload["missions"] as? [JSONObject]) ?? []
         let missions = missionDicts.compactMap(Mission.fromWireJSON)
         let objectChatDicts = (payload["object_chats"] as? [JSONObject]) ?? []
-        let objectChats = objectChatDicts.compactMap(ObjectChatThread.fromWireJSON)
+        let objectChats = objectChatDicts.compactMap(ObjectChatThread.fromWireJSON).filter { thread in
+            thread.chat.sessionID.map { !dismissed.contains($0) } ?? true
+        }
         var heldByLab = snapshot.map { LabSubject(.entry, $0.id) }
         heldByLab += sessions.flatMap(\.labSubjects)
         heldByLab += customBundles.map { LabSubject(.definition, $0.def.id) }
@@ -1958,6 +1972,14 @@ public final class CollaborationSession {
         case .customInstrument(.upsert(let upsert)) where reason == "upsert: the instrument was removed":
             try? store.removeOutboxOps(family: CustomInstrumentOp.outboxFamily, subject: upsert.bundle.def.id)
             onCustomInstrumentRemovedInLab?(upsert.bundle.def.id)
+        case .session(let op) where reason.hasSuffix(": the session was removed"):
+            onSessionRemovedInLab?(op.sessionID)
+        case .objectChat(let op) where reason.hasSuffix(": the session was removed"):
+            if case .chatUpsert(let chat) = op.change, let sessionID = chat.sessionID {
+                onSessionRemovedInLab?(sessionID)
+            }
+        case .mission where reason.hasSuffix(": the session was removed"):
+            break
         case .pattern(.upsert(let upsert)) where reason == "upsert: the pattern was removed":
             try? store.removeOutboxOps(family: PatternSourceOp.outboxFamily, subject: upsert.record.id)
             onPatternRemovedInLab?(upsert.record.id)

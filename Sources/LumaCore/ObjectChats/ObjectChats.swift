@@ -870,6 +870,7 @@ public final class ObjectChats {
     }
 
     func refused(_ message: ObjectChatMessage, because reason: String) {
+        guard chat(withID: message.chatID) != nil else { return }
         markUnsent(message.id, because: reason)
         problems.append(
             ObjectChatProblem(
@@ -877,6 +878,7 @@ public final class ObjectChats {
     }
 
     func refused(_ op: ObjectChatOp, because reason: String) {
+        guard chat(withID: op.chatID) != nil else { return }
         problems.append(ObjectChatProblem(kind: .refusedByLab(opKind: op.kind), chatID: op.chatID, messageID: nil, reason: reason))
     }
 
@@ -1042,6 +1044,7 @@ public final class ObjectChats {
         discardDrafts(ofSession: sessionID)
         for chat in chats where chat.sessionID == sessionID {
             threads[chat.id] = nil
+            try? engine!.store.removeOutboxOps(family: ObjectChatOp.outboxFamily, subject: chat.id)
         }
         chats.removeAll { $0.sessionID == sessionID }
     }
