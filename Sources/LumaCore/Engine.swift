@@ -630,6 +630,10 @@ public final class Engine {
             self?.objectChats.refused(op, because: reason)
         }
 
+        collaboration.onLabLeft = { [weak self] in
+            self?.objectChats.followLab()
+        }
+
         collaboration.onMissionRemovedInLab = { [weak self] missionID in
             self?.endMissionRemovedInLab(missionID)
         }

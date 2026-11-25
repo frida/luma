@@ -60,8 +60,10 @@ public final class ObjectChats {
         threads.values.flatMap(\.toolCalls).filter { $0.status == .proposed && isMine($0.executor) }
     }
 
-    public var conversationID: UUID {
-        labID.map(ObjectChat.conversationID(ofLab:)) ?? ObjectChat.soloConversationID
+    public private(set) var conversationID = ObjectChat.soloConversationID
+
+    func followLab() {
+        conversationID = labID.map(ObjectChat.conversationID(ofLab:)) ?? ObjectChat.soloConversationID
     }
 
     public var conversation: ObjectChat? {
@@ -335,8 +337,9 @@ public final class ObjectChats {
     }
 
     public func column(of chatID: UUID) async throws -> PharoObject {
+        guard let chat = chat(withID: chatID) else { throw ObjectChatError.noSuchChat }
         let image = try await image(of: chatID)
-        try? await reviveSubject(of: chat(chatID), in: image)
+        try? await reviveSubject(of: chat, in: image)
         return try await image.column()
     }
 
@@ -354,6 +357,7 @@ public final class ObjectChats {
         named name: String?,
         inPlaceOf standsFor: String? = nil
     ) async throws -> ObjectChatObject {
+        guard chat(withID: chatID) != nil else { throw ObjectChatError.noSuchChat }
         guard thread(of: chatID).objects.count < Self.objectsPerChat else { throw ObjectChatError.full("objects", Self.objectsPerChat) }
         let image = try await image(of: chatID)
         let objectID = nextObjectID(in: chatID)
@@ -464,18 +468,34 @@ public final class ObjectChats {
 
     private func systemPrompt(for chat: ObjectChat) async -> String {
         let thread = thread(of: chat.id)
-        let first = thread.objects.first { $0.objectID == "o1" }!
         var slots: [(name: String, value: String)] = []
         if thread.liveObjectIDs.contains("o1"), let image = try? await image(of: chat.id) {
             slots = (try? await image.slots(of: "o1")) ?? []
         }
-        let subject = ObjectChatSystemPrompt.Subject(
-            className: first.className,
-            printString: first.printString,
-            views: first.snapshot?.views.map(\.title) ?? [],
-            slots: slots
-        )
-        return ObjectChatSystemPrompt.build(for: chat, subject: subject, objects: thread.objects)
+        let subject = Self.promptSubject(of: chat, stored: thread.objects.first { $0.objectID == "o1" }, slots: slots)
+        let instruction = await instructionContext(of: chat)
+        return ObjectChatSystemPrompt.build(for: chat, subject: subject, instruction: instruction, objects: thread.objects)
+    }
+
+    private static func promptSubject(
+        of chat: ObjectChat, stored: ObjectChatObject?, slots: [(name: String, value: String)]
+    ) -> ObjectChatSystemPrompt.Subject {
+        switch chat.subject {
+        case .project:
+            return ObjectChatSystemPrompt.Subject(className: "LumaProject class", printString: "LumaProject", views: [], slots: slots)
+        case .instruction(_, let anchor):
+            return ObjectChatSystemPrompt.Subject(
+                className: stored?.className ?? "LumaInstruction", printString: stored?.printString ?? anchor.displayString,
+                views: stored?.snapshot?.views.map(\.title) ?? [], slots: slots)
+        case .object(_, _, _, let className, let printString, let snapshot):
+            return ObjectChatSystemPrompt.Subject(
+                className: className, printString: printString, views: snapshot?.views.map(\.title) ?? [], slots: slots)
+        }
+    }
+
+    private func instructionContext(of chat: ObjectChat) async -> InstructionContext? {
+        guard case .instruction(let sessionID, let anchor) = chat.subject else { return nil }
+        return await engine!.instructionContext(sessionID: sessionID, anchor: anchor)
     }
 
     private func history(of chatID: UUID) -> [LLMMessage] {
@@ -565,7 +585,8 @@ public final class ObjectChats {
         guard call.argsJSON.utf8.count <= Self.argsByteLimit else {
             return .refused("the call's arguments are over \(Self.argsByteLimit / 1024) KiB")
         }
-        let executor = executor(of: call, in: chat(turn.chatID))
+        guard let chat = chat(withID: turn.chatID) else { return .refused("the chat was deleted") }
+        let executor = executor(of: call, in: chat)
         let recorded = ObjectChatToolCall(
             chatID: turn.chatID,
             messageID: turn.messageID,
@@ -621,7 +642,7 @@ public final class ObjectChats {
     }
 
     func finishCall(_ callID: UUID, with outcome: ToolCallOutcome) {
-        var finished = call(callID)!
+        guard var finished = call(callID) else { return }
         switch outcome {
         case .completed(let result):
             finished.status = result.isError ? .failed : .succeeded
@@ -651,7 +672,7 @@ public final class ObjectChats {
 
     private func execute(_ call: ObjectChatToolCall) async {
         let engine = engine!
-        let chat = chat(call.chatID)
+        guard let chat = chat(withID: call.chatID) else { return }
         let args = (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(call.args))) as? [String: Any] ?? [:]
         let mission = Mission(
             id: chat.id,
@@ -684,9 +705,9 @@ public final class ObjectChats {
     }
 
     public func runAgain(_ callID: UUID) async throws {
-        let chatID = call(callID)!.chatID
+        guard let chatID = call(callID)?.chatID, let chat = chat(withID: chatID) else { throw ObjectChatError.noSuchChat }
         let image = try await image(of: chatID)
-        try? await reviveSubject(of: chat(chatID), in: image)
+        try? await reviveSubject(of: chat, in: image)
         for step in chain(endingAt: callID) {
             try await reevaluate(step, in: image)
         }
@@ -704,7 +725,7 @@ public final class ObjectChats {
                 ordered.append(step)
             }
         }
-        visit(call(callID)!)
+        call(callID).map(visit)
         return ordered
     }
 
@@ -1003,6 +1024,7 @@ public final class ObjectChats {
     }
 
     func load() {
+        followLab()
         let store = engine!.store
         chats = (try? store.fetchObjectChats()) ?? []
         for chat in chats {
@@ -1081,6 +1103,7 @@ public final class ObjectChats {
 
     func adopt(_ labThreads: [ObjectChatThread]) {
         let store = engine!.store
+        followLab()
         rekeySoloConversation(heldByLab: labThreads.contains { $0.chat.id == conversationID })
         let labChatIDs = Set(labThreads.map(\.chat.id))
         let pending = Set(((try? store.fetchOutboxOps(ObjectChatOp.self)) ?? []).map(\.outboxSubject))
@@ -1109,6 +1132,7 @@ public final class ObjectChats {
     }
 
     private func rekeySoloConversation(heldByLab: Bool) {
+        followLab()
         guard labID != nil, let solo = chats.first(where: { $0.id == ObjectChat.soloConversationID }) else { return }
         var rekeyed = conversation ?? solo
         rekeyed.id = conversationID
@@ -1294,7 +1318,7 @@ public final class ObjectChats {
     }
 
     private func sessionID(of call: ObjectChatToolCall) -> UUID? {
-        guard case .string(let text) = call.args["session_id"] else { return chat(call.chatID).sessionID }
+        guard case .string(let text) = call.args["session_id"] else { return chat(withID: call.chatID)?.sessionID }
         return UUID(uuidString: text)
     }
 
@@ -1341,6 +1365,7 @@ public enum ObjectChatError: Error, LocalizedError {
     case notYours
     case conversationStays
     case gone
+    case noSuchChat
     case noSuchObject(String)
     case noSuchView(String, among: [String])
     case notLiveHere(String, producedIn: String?, canRunAgain: Bool)
@@ -1357,6 +1382,8 @@ public enum ObjectChatError: Error, LocalizedError {
             "The project's conversation is kept for as long as the project."
         case .gone:
             "This chat was deleted in the lab; what you wrote was not sent."
+        case .noSuchChat:
+            "This chat is not in the project any more."
         case .noSuchObject(let objectID):
             "This chat holds no object \(objectID)."
         case .noSuchView(let view, let views):

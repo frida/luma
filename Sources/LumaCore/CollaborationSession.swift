@@ -324,6 +324,7 @@ public final class CollaborationSession {
     public var onObjectChatMessageRefused: ((ObjectChatMessage, String) -> Void)?
     public var onObjectChatOpRefused: ((ObjectChatOp, String) -> Void)?
     public var onMissionRemovedInLab: ((UUID) -> Void)?
+    public var onLabLeft: (() -> Void)?
     public var onCustomInstrumentRemovedInLab: ((UUID) -> Void)?
     public var onPatternRemovedInLab: ((UUID) -> Void)?
     public var onMissionSnapshot: ((MissionSnapshot) -> Void)?
@@ -829,6 +830,7 @@ public final class CollaborationSession {
         try! store.deleteLabMemberships()
         membership = nil
         await stop()
+        onLabLeft?()
     }
 
     @discardableResult
