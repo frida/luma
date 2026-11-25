@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct ConversationInputBar: View {
+struct ConversationInputBar<Accessory: View>: View {
     @Binding var draft: String
     let isSending: Bool
     let failure: String?
@@ -8,6 +8,7 @@ struct ConversationInputBar: View {
     var secondary: ConversationInputAction? = nil
     let primary: ConversationInputAction
     let onStop: () -> Void
+    @ViewBuilder let accessory: Accessory
 
     var body: some View {
         VStack(spacing: 6) {
@@ -17,6 +18,10 @@ struct ConversationInputBar: View {
                     .foregroundStyle(.red)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            HStack(spacing: 6) {
+                accessory
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
             HStack(alignment: .center, spacing: 6) {
                 TextEditor(text: $draft)
                     .font(.body)
@@ -33,8 +38,8 @@ struct ConversationInputBar: View {
                                 .frame(width: 18, height: 18)
                         }
                         .buttonStyle(.bordered)
-                        .help(secondary.help)
-                        .disabled(isSending || draft.isEmpty)
+                        .help(secondary.unavailableReason ?? secondary.help)
+                        .disabled(isSending || draft.isEmpty || secondary.unavailableReason != nil)
                         .accessibilityIdentifier("conversation.secondary")
                     }
                     Spacer(minLength: 0)
@@ -55,8 +60,8 @@ struct ConversationInputBar: View {
                         .frame(width: 18, height: 18)
                     }
                     .buttonStyle(.borderedProminent)
-                    .help(isSending ? "Cancel reply" : primary.help)
-                    .disabled(!isSending && draft.isEmpty)
+                    .help(isSending ? "Cancel reply" : primary.unavailableReason ?? primary.help)
+                    .disabled(!isSending && (draft.isEmpty || primary.unavailableReason != nil))
                     .accessibilityIdentifier("conversation.send")
                 }
                 .frame(height: 64)
@@ -69,5 +74,6 @@ struct ConversationInputBar: View {
 struct ConversationInputAction {
     let symbol: String
     let help: String
+    var unavailableReason: String? = nil
     let run: () -> Void
 }

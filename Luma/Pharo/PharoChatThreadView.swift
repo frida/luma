@@ -12,6 +12,9 @@ struct PharoChatThreadView: View {
     @State private var editingMessageID: UUID?
     @State private var editingDraft = ""
     @State private var pendingDeleteMessage: ObjectChatMessage?
+    @State private var answerUnavailableReason: String?
+    @State private var isSettingUpProvider = false
+    @State private var providerSetups = 0
 
     @FocusState private var inputFocused: Bool
     @FocusState private var editFocused: Bool
@@ -41,8 +44,24 @@ struct PharoChatThreadView: View {
                 focus: $inputFocused,
                 secondary: hasCompany ? askAction : postAction,
                 primary: hasCompany ? postAction : askAction,
-                onStop: { chats.cancel(chatID) })
+                onStop: { chats.cancel(chatID) }
+            ) {
+                ObjectChatModelPicker(engine: engine, chatID: chatID, onSetUp: { isSettingUpProvider = true })
+                if let answerUnavailableReason {
+                    Label(answerUnavailableReason, systemImage: "exclamationmark.circle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                    Button("Set Up…") { isSettingUpProvider = true }
+                        .buttonStyle(.borderless)
+                        .font(.caption)
+                }
+            }
         }
+        .sheet(isPresented: $isSettingUpProvider) {
+            ObjectChatProviderSetupSheet(engine: engine, chatID: chatID, onDone: { providerSetups += 1 })
+        }
+        .task(id: answerCheck) { answerUnavailableReason = await chats.answerUnavailableReason(in: chatID) }
         .onAppear { chats.markRead(chatID) }
         .onChange(of: thread.messages.count) { chats.markRead(chatID) }
         .confirmationDialog(
@@ -61,6 +80,11 @@ struct PharoChatThreadView: View {
 
     private var chats: ObjectChats {
         engine.objectChats
+    }
+
+    private var answerCheck: String {
+        let choice = chats.modelChoice(in: chatID)
+        return "\(choice.providerID) \(choice.modelID) \(providerSetups)"
     }
 
     private var thread: ObjectChats.Thread {
@@ -161,7 +185,7 @@ struct PharoChatThreadView: View {
     }
 
     private var askAction: ConversationInputAction {
-        ConversationInputAction(symbol: "sparkles", help: "Ask the Assistant", run: ask)
+        ConversationInputAction(symbol: "sparkles", help: "Ask the Assistant", unavailableReason: answerUnavailableReason, run: ask)
     }
 
     private var postAction: ConversationInputAction {
@@ -224,7 +248,7 @@ struct PharoChatThreadView: View {
                     role: .assistant,
                     author: nil,
                     bodyMarkdown: text,
-                    modelID: chats.chats.first { $0.id == chatID }?.modelID ?? LumaAppState.shared.missionDefaults.modelID),
+                    modelID: chats.modelChoice(in: chatID).modelID),
                 calls: thread.toolCalls.filter { !answered.contains($0.messageID) })
         }
     }
