@@ -4654,7 +4654,7 @@ public final class Engine {
 
     private func hydrateWidgetStatesFromStore(_ grouped: [UUID: [InstrumentInstance]]) {
         for instances in grouped.values {
-            for instance in instances where widgetStates[instance.id] == nil && instance.kind == .custom {
+            for instance in instances where widgetStates[instance.id] == nil && instrumentChildren[instance.id] == nil && instance.kind == .custom {
                 guard let def = UUID(uuidString: instance.sourceIdentifier).flatMap(customInstruments.def(withId:)) else { continue }
                 _ = hydrateRestoredState(instanceID: instance.id, def: def)
             }
