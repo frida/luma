@@ -837,7 +837,7 @@ public final class ObjectChats {
         guard chats.contains(where: { $0.id == chatID }) else { return }
         guard canDelete(chatID) else { throw ObjectChatError.notYours }
         deletedHere.insert(chatID)
-        guard !removedInLab.contains(chatID), !isLocalOnly(chatID) else { return await drop(chatID) }
+        guard !removedInLab.contains(chatID), !isInSessionTheLabLacks(chatID) else { return await drop(chatID) }
         await drop(chatID)
         enqueue(.chatRemove(chatID: chatID))
     }
@@ -1255,11 +1255,11 @@ public final class ObjectChats {
 
     private func enqueue(_ change: ObjectChatOp.Change) {
         let chatID = ObjectChatOp(change).chatID
-        guard !isLocalOnly(chatID) else { return }
+        guard !isInSessionTheLabLacks(chatID) else { return }
         persist(in: chatID) { _ in try engine!.collaboration.enqueueObjectChat(change) }
     }
 
-    public func isLocalOnly(_ chatID: UUID) -> Bool {
+    private func isInSessionTheLabLacks(_ chatID: UUID) -> Bool {
         guard let sessionID = chat(withID: chatID)?.sessionID else { return false }
         return engine!.collaboration.isCollaborative && !engine!.collaboration.labHolds(sessionID: sessionID)
     }
