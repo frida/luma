@@ -4,10 +4,10 @@ import Gtk
 import LumaCore
 
 @MainActor
-final class CustomInstrumentFeaturesDialog {
+final class CustomInstrumentSettingsDialog {
     private let engine: Engine
     private let def: CustomInstrumentDef
-    private var draftFeatures: [CustomInstrumentDef.Feature]
+    private var draftSettings: [CustomInstrumentDef.Setting]
     private let dialog: Adw.Dialog
     private let listBox: Box
     private let addRowBox: Box
@@ -20,14 +20,14 @@ final class CustomInstrumentFeaturesDialog {
     private var nameAutoFilled: Bool = true
     private var suppressIDChange: Bool = false
     private var suppressNameChange: Bool = false
-    private var expandedFeatureID: String? = nil
-    private var featureSchemaEditors: [CustomInstrumentSchemaEditor] = []
-    private var featureBodies: [String: (body: Box, chevron: Button)] = [:]
+    private var expandedSettingID: String? = nil
+    private var settingSchemaEditors: [CustomInstrumentSchemaEditor] = []
+    private var settingBodies: [String: (body: Box, chevron: Button)] = [:]
 
     init(engine: Engine, def: CustomInstrumentDef) {
         self.engine = engine
         self.def = def
-        self.draftFeatures = def.features
+        self.draftSettings = def.settings
 
         dialog = Adw.Dialog()
         dialog.set(title: "Settings")
@@ -107,13 +107,13 @@ final class CustomInstrumentFeaturesDialog {
         addRowBox.append(child: kindDropdown)
         addButton.sensitive = false
         addButton.onClicked { [weak self] _ in
-            MainActor.assumeIsolated { self?.appendFeature() }
+            MainActor.assumeIsolated { self?.appendSetting() }
         }
         idEntry.onActivate { [weak self] _ in
-            MainActor.assumeIsolated { self?.appendFeature() }
+            MainActor.assumeIsolated { self?.appendSetting() }
         }
         nameEntry.onActivate { [weak self] _ in
-            MainActor.assumeIsolated { self?.appendFeature() }
+            MainActor.assumeIsolated { self?.appendSetting() }
         }
         idEntry.onChanged { [weak self] _ in
             MainActor.assumeIsolated { self?.handleIDChanged() }
@@ -159,7 +159,7 @@ final class CustomInstrumentFeaturesDialog {
     private func toggleAdding() {
         let nowVisible = !addRowBox.visible
         if !nowVisible {
-            appendFeature()
+            appendSetting()
         }
         addRowBox.visible = nowVisible
         CustomInstrumentEditorChrome.setAddToggle(toggleAddButton, label: "Add Setting", isAdding: nowVisible)
@@ -172,12 +172,12 @@ final class CustomInstrumentFeaturesDialog {
         }
     }
 
-    private func appendFeature() {
+    private func appendSetting() {
         let id = (idEntry.text ?? "").trimmingCharacters(in: .whitespaces)
         let name = (nameEntry.text ?? "").trimmingCharacters(in: .whitespaces)
-        guard !id.isEmpty, !name.isEmpty, !draftFeatures.contains(where: { $0.id == id }) else { return }
+        guard !id.isEmpty, !name.isEmpty, !draftSettings.contains(where: { $0.id == id }) else { return }
         let kindHasChildren = draftKind.hasChildren
-        draftFeatures.append(
+        draftSettings.append(
             .init(
                 id: id,
                 name: name,
@@ -185,7 +185,7 @@ final class CustomInstrumentFeaturesDialog {
                 optional: false
             )
         )
-        expandedFeatureID = kindHasChildren ? id : nil
+        expandedSettingID = kindHasChildren ? id : nil
         resetDraft()
         rebuildList()
         if kindHasChildren {
@@ -213,10 +213,10 @@ final class CustomInstrumentFeaturesDialog {
 
     private func commit() {
         if addRowBox.visible {
-            appendFeature()
+            appendSetting()
         }
-        let features = draftFeatures
-        engine.updateCustomInstrument(def.id) { $0.features = features }
+        let settings = draftSettings
+        engine.updateCustomInstrument(def.id) { $0.settings = settings }
         close()
     }
 
@@ -228,21 +228,21 @@ final class CustomInstrumentFeaturesDialog {
         while let child = listBox.firstChild {
             listBox.remove(child: child)
         }
-        featureSchemaEditors.removeAll()
-        featureBodies.removeAll()
-        if draftFeatures.isEmpty {
+        settingSchemaEditors.removeAll()
+        settingBodies.removeAll()
+        if draftSettings.isEmpty {
             let empty = Label(str: "No settings defined.")
             empty.add(cssClass: "dim-label")
             empty.halign = .start
             listBox.append(child: empty)
             return
         }
-        for (index, feature) in draftFeatures.enumerated() {
-            listBox.append(child: featureRow(feature: feature, index: index))
+        for (index, setting) in draftSettings.enumerated() {
+            listBox.append(child: settingRow(setting: setting, index: index))
         }
     }
 
-    private func featureRow(feature: CustomInstrumentDef.Feature, index: Int) -> Box {
+    private func settingRow(setting: CustomInstrumentDef.Setting, index: Int) -> Box {
         let card = Box(orientation: .vertical, spacing: 0)
         card.add(cssClass: "card")
 
@@ -253,9 +253,9 @@ final class CustomInstrumentFeaturesDialog {
         column.marginBottom = 12
         card.append(child: column)
 
-        let booleanFeature = isBoolean(feature.schema)
-        let isExpanded = expandedFeatureID == feature.id
-        let featureID = feature.id
+        let booleanSetting = isBoolean(setting.schema)
+        let isExpanded = expandedSettingID == setting.id
+        let settingID = setting.id
 
         let chevronButton = Button()
         chevronButton.add(cssClass: "flat")
@@ -263,7 +263,7 @@ final class CustomInstrumentFeaturesDialog {
         chevronButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                let newID: String? = (self.expandedFeatureID == featureID) ? nil : featureID
+                let newID: String? = (self.expandedSettingID == settingID) ? nil : settingID
                 self.applyExpansion(to: newID)
             }
         }
@@ -271,7 +271,7 @@ final class CustomInstrumentFeaturesDialog {
         let header = Box(orientation: .horizontal, spacing: 8)
         header.append(child: chevronButton)
 
-        let idLabel = Label(str: feature.id)
+        let idLabel = Label(str: setting.id)
         idLabel.halign = .start
         header.append(child: idLabel)
 
@@ -279,19 +279,19 @@ final class CustomInstrumentFeaturesDialog {
         dash.add(cssClass: "dim-label")
         header.append(child: dash)
 
-        let nameLabel = Label(str: feature.name)
+        let nameLabel = Label(str: setting.name)
         nameLabel.halign = .start
         nameLabel.hexpand = true
         header.append(child: nameLabel)
 
-        let kindDropdown = makeKindDropdown(initial: SchemaKind(from: feature.schema)) { [weak self] kind in
-            guard let self, index < self.draftFeatures.count else { return }
+        let kindDropdown = makeKindDropdown(initial: SchemaKind(from: setting.schema)) { [weak self] kind in
+            guard let self, index < self.draftSettings.count else { return }
             let newSchema = kind.defaultSchema()
-            self.draftFeatures[index].schema = newSchema
-            if self.isBoolean(newSchema), self.draftFeatures[index].optional {
-                self.draftFeatures[index].optional = false
+            self.draftSettings[index].schema = newSchema
+            if self.isBoolean(newSchema), self.draftSettings[index].optional {
+                self.draftSettings[index].optional = false
             }
-            self.expandedFeatureID = self.draftFeatures[index].id
+            self.expandedSettingID = self.draftSettings[index].id
             self.rebuildList()
         }
         header.append(child: kindDropdown)
@@ -299,10 +299,10 @@ final class CustomInstrumentFeaturesDialog {
         let removeButton = CustomInstrumentEditorChrome.iconButton("list-remove-symbolic", tooltip: "Remove")
         removeButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, index < self.draftFeatures.count else { return }
-                let removedID = self.draftFeatures[index].id
-                self.draftFeatures.remove(at: index)
-                if self.expandedFeatureID == removedID { self.expandedFeatureID = nil }
+                guard let self, index < self.draftSettings.count else { return }
+                let removedID = self.draftSettings[index].id
+                self.draftSettings.remove(at: index)
+                if self.expandedSettingID == removedID { self.expandedSettingID = nil }
                 self.rebuildList()
             }
         }
@@ -314,44 +314,44 @@ final class CustomInstrumentFeaturesDialog {
 
         let optionalRow = Box(orientation: .horizontal, spacing: 8)
         let optionalToggle = Switch()
-        optionalToggle.active = feature.optional
+        optionalToggle.active = setting.optional
         optionalToggle.valign = .center
         optionalRow.append(child: optionalToggle)
         let optionalLabel = Label(str: "Optional (user can disable)")
         optionalLabel.halign = .start
         optionalRow.append(child: optionalLabel)
-        optionalRow.visible = !booleanFeature
+        optionalRow.visible = !booleanSetting
 
         let enabledRow = Box(orientation: .horizontal, spacing: 8)
         let enabledToggle = Switch()
-        enabledToggle.active = feature.enabledByDefault
+        enabledToggle.active = setting.enabledByDefault
         enabledToggle.valign = .center
         enabledRow.append(child: enabledToggle)
         let enabledLabel = Label(str: "Enabled by default")
         enabledLabel.halign = .start
         enabledRow.append(child: enabledLabel)
-        enabledRow.visible = !booleanFeature && feature.optional
+        enabledRow.visible = !booleanSetting && setting.optional
 
-        let editor = CustomInstrumentSchemaEditor(schema: feature.schema) { [weak self] updated in
+        let editor = CustomInstrumentSchemaEditor(schema: setting.schema) { [weak self] updated in
             MainActor.assumeIsolated {
-                guard let self, index < self.draftFeatures.count else { return }
-                self.draftFeatures[index].schema = updated
+                guard let self, index < self.draftSettings.count else { return }
+                self.draftSettings[index].schema = updated
             }
         }
-        featureSchemaEditors.append(editor)
+        settingSchemaEditors.append(editor)
 
         optionalToggle.onStateSet { [weak self] _, state in
             MainActor.assumeIsolated {
-                guard let self, index < self.draftFeatures.count else { return false }
-                self.draftFeatures[index].optional = state
+                guard let self, index < self.draftSettings.count else { return false }
+                self.draftSettings[index].optional = state
                 enabledRow.visible = state
                 return false
             }
         }
         enabledToggle.onStateSet { [weak self] _, state in
             MainActor.assumeIsolated {
-                guard let self, index < self.draftFeatures.count else { return false }
-                self.draftFeatures[index].enabledByDefault = state
+                guard let self, index < self.draftSettings.count else { return false }
+                self.draftSettings[index].enabledByDefault = state
                 return false
             }
         }
@@ -361,19 +361,19 @@ final class CustomInstrumentFeaturesDialog {
         body.append(child: editor.widget)
         column.append(child: body)
 
-        featureBodies[featureID] = (body, chevronButton)
+        settingBodies[settingID] = (body, chevronButton)
 
         return card
     }
 
-    private func isBoolean(_ schema: FeatureSchema) -> Bool {
+    private func isBoolean(_ schema: SettingSchema) -> Bool {
         if case .boolean = schema { return true }
         return false
     }
 
     private func applyExpansion(to newID: String?) {
-        expandedFeatureID = newID
-        for (rowID, entry) in featureBodies {
+        expandedSettingID = newID
+        for (rowID, entry) in settingBodies {
             let shouldExpand = newID == rowID
             entry.body.visible = shouldExpand
             entry.chevron.set(iconName: shouldExpand ? "pan-down-symbolic" : "pan-end-symbolic")

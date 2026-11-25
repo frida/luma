@@ -5081,7 +5081,7 @@ public final class Engine {
             name: uniquedCustomInstrumentName(name),
             icon: icon,
             entrypoint: CustomInstrumentDef.defaultEntrypointFilename,
-            features: [],
+            settings: [],
             createdAt: now,
             updatedAt: now
         )

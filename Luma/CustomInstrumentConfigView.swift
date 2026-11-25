@@ -18,16 +18,16 @@ struct CustomInstrumentConfigView: View {
             VStack(alignment: .leading, spacing: 12) {
                 header
 
-                if let def, !def.features.isEmpty {
+                if let def, !def.settings.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Settings")
                             .font(.subheadline)
                         GroupBox {
                             VStack(alignment: .leading, spacing: 12) {
-                                ForEach(def.features) { feature in
-                                    InstrumentFeatureRow(
-                                        feature: feature,
-                                        state: stateBinding(for: feature)
+                                ForEach(def.settings) { setting in
+                                    InstrumentSettingRow(
+                                        setting: setting,
+                                        state: stateBinding(for: setting)
                                     )
                                 }
                             }
@@ -76,15 +76,15 @@ struct CustomInstrumentConfigView: View {
         }
     }
 
-    private func stateBinding(for feature: CustomInstrumentDef.Feature) -> Binding<FeatureState> {
+    private func stateBinding(for setting: CustomInstrumentDef.Setting) -> Binding<SettingState> {
         Binding(
             get: {
-                config.features[feature.id]
-                    ?? FeatureState(enabled: feature.enabledByDefault, value: feature.schema.defaultValue)
+                config.settings[setting.id]
+                    ?? SettingState(enabled: setting.enabledByDefault, value: setting.schema.defaultValue)
             },
             set: { newValue in
                 var updated = config
-                updated.features[feature.id] = newValue
+                updated.settings[setting.id] = newValue
                 config = updated
             }
         )

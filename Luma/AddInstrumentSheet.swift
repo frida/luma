@@ -443,7 +443,7 @@ struct AddInstrumentSheet: View {
         let def = engine.createCustomInstrument()
         let configJSON = CustomInstrumentConfig(
             defID: def.id,
-            features: CustomInstrumentLibrary.initialFeatureStates(for: def)
+            settings: CustomInstrumentLibrary.initialSettingStates(for: def)
         ).encode()
         let added = await engine.addInstrument(
             kind: .custom,
@@ -510,7 +510,7 @@ struct AddInstrumentSheet: View {
             Task { @MainActor in
                 let configJSON = CustomInstrumentConfig(
                     defID: def.id,
-                    features: CustomInstrumentLibrary.initialFeatureStates(for: def)
+                    settings: CustomInstrumentLibrary.initialSettingStates(for: def)
                 ).encode()
                 let added = await engine.addInstrument(
                     kind: .custom,

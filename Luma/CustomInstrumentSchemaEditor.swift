@@ -2,7 +2,7 @@ import LumaCore
 import SwiftUI
 
 struct SchemaKindPicker: View {
-    @Binding var schema: FeatureSchema
+    @Binding var schema: SettingSchema
 
     var body: some View {
         Picker("", selection: kindBinding) {
@@ -24,7 +24,7 @@ struct SchemaKindPicker: View {
 }
 
 struct CustomInstrumentSchemaEditor: View {
-    @Binding var schema: FeatureSchema
+    @Binding var schema: SettingSchema
 
     var body: some View {
         schemaFields
@@ -667,7 +667,7 @@ enum SchemaKind: String, CaseIterable, Identifiable {
         }
     }
 
-    init(from schema: FeatureSchema) {
+    init(from schema: SettingSchema) {
         switch schema {
         case .boolean: self = .boolean
         case .int: self = .int
@@ -681,7 +681,7 @@ enum SchemaKind: String, CaseIterable, Identifiable {
         }
     }
 
-    func defaultSchema() -> FeatureSchema {
+    func defaultSchema() -> SettingSchema {
         switch self {
         case .boolean: return .boolean(default: false)
         case .int: return .int(default: 0, min: nil, max: nil)

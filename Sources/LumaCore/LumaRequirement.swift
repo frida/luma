@@ -37,7 +37,7 @@ extension CustomInstrumentDef {
     }
 
     fileprivate func lumaRequirement(given files: [CustomInstrumentFile]) -> StoreVersion? {
-        if !widgets.isEmpty || !features.isEmpty {
+        if !widgets.isEmpty || !settings.isEmpty {
             return .widgetsAndSettings
         }
         if files.contains(where: { HostCode.isHostCode($0.path) }) {

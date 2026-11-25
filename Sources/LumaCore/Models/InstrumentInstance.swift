@@ -55,15 +55,29 @@ public struct InstrumentInstance: Codable, Identifiable, Sendable, FetchableReco
 
     public func toWireJSON() -> [String: Any]? {
         guard let data = try? Self.wireEncoder.encode(self),
-            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            var obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let config = Self.wireConfig(configJSON)
         else { return nil }
+        obj["config_json"] = nil
+        obj["config"] = config
         return obj
     }
 
     public static func fromWireJSON(_ obj: [String: Any]) -> InstrumentInstance? {
-        guard let data = try? JSONSerialization.data(withJSONObject: obj),
+        var stored = obj
+        guard let config = stored.removeValue(forKey: "config"), let configJSON = storedConfig(config) else { return nil }
+        stored["config_json"] = configJSON.base64EncodedString()
+        guard let data = try? JSONSerialization.data(withJSONObject: stored),
             let inst = try? wireDecoder.decode(InstrumentInstance.self, from: data)
         else { return nil }
         return inst
+    }
+
+    public static func wireConfig(_ configJSON: Data) -> Any? {
+        try? JSONSerialization.jsonObject(with: configJSON, options: .fragmentsAllowed)
+    }
+
+    public static func storedConfig(_ config: Any) -> Data? {
+        try? JSONSerialization.data(withJSONObject: config, options: [.fragmentsAllowed, .sortedKeys])
     }
 }

@@ -1981,7 +1981,7 @@ public final class ProjectStore: Sendable {
             t.column("min_app_version", .text)
             t.column("entrypoint", .text).notNull()
             t.column("dependencies_json", .text).notNull().defaults(to: "{}")
-            t.column("features_json", .text).notNull().defaults(to: "[]")
+            t.column("settings_json", .text).notNull().defaults(to: "[]")
             t.column("widgets_json", .text).notNull().defaults(to: "[]")
             t.column("created_at", .datetime).notNull()
             t.column("updated_at", .datetime).notNull()

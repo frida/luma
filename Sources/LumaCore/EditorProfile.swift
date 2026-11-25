@@ -338,7 +338,7 @@ public enum CustomInstrumentTypings {
     )
 
     public static func settingMap(for def: CustomInstrumentDef) -> AmbientDeclarations? {
-        guard !def.features.isEmpty || !def.widgets.isEmpty else { return nil }
+        guard !def.settings.isEmpty || !def.widgets.isEmpty else { return nil }
         return AmbientDeclarations(
             content: defScopedDeclarations(for: def),
             fileName: "custom-instrument-\(def.id.uuidString).d.ts"
@@ -356,7 +356,7 @@ public enum CustomInstrumentTypings {
 
     public static func defScopedDeclarations(for def: CustomInstrumentDef) -> String {
         var sections: [String] = []
-        if !def.features.isEmpty {
+        if !def.settings.isEmpty {
             sections.append(settingMapDeclarations(for: def))
         }
         if !def.widgets.isEmpty {
@@ -375,10 +375,10 @@ public enum CustomInstrumentTypings {
 
     public static func settingMapDeclarations(for def: CustomInstrumentDef) -> String {
         var lines: [String] = ["declare interface CustomInstrumentSettingMap {"]
-        for feature in def.features {
-            let optionalMark = feature.optional ? "?" : ""
-            lines.append("    /** \(jsDocText(feature.name)) */")
-            lines.append("    \(featureKey(feature.id))\(optionalMark): \(typeScriptType(for: feature.schema, optional: feature.optional));")
+        for setting in def.settings {
+            let optionalMark = setting.optional ? "?" : ""
+            lines.append("    /** \(jsDocText(setting.name)) */")
+            lines.append("    \(propertyKey(setting.id))\(optionalMark): \(typeScriptType(for: setting.schema, optional: setting.optional));")
         }
         lines.append("}")
         return lines.joined(separator: "\n")
@@ -388,7 +388,7 @@ public enum CustomInstrumentTypings {
         var lines: [String] = ["declare interface CustomInstrumentWidgetMap {"]
         for widget in def.widgets {
             lines.append("    /** \(jsDocText(widget.label)) */")
-            lines.append("    \(featureKey(widget.id)): \(widgetType(for: widget));")
+            lines.append("    \(propertyKey(widget.id)): \(widgetType(for: widget));")
         }
         lines.append("}")
         return lines.joined(separator: "\n")
@@ -405,7 +405,7 @@ public enum CustomInstrumentTypings {
             if !widget.kind.rowActions.isEmpty {
                 variants.append("{ widget: \(widgetLiteral); action: \(stringLiteralUnion(widget.kind.rowActions.map(\.id))); item: string }")
             }
-            lines.append("    \(featureKey(widget.id)): \(variants.joined(separator: " | "));")
+            lines.append("    \(propertyKey(widget.id)): \(variants.joined(separator: " | "));")
         }
         lines.append("}")
         return lines.joined(separator: "\n")
@@ -415,7 +415,7 @@ public enum CustomInstrumentTypings {
         var lines: [String] = ["declare interface CustomInstrumentRestoredState {"]
         for widget in persistentWidgets {
             lines.append("    /** \(jsDocText(widget.label)) */")
-            lines.append("    \(featureKey(widget.id)): \(snapshotType(for: widget.kind));")
+            lines.append("    \(propertyKey(widget.id)): \(snapshotType(for: widget.kind));")
         }
         lines.append("}")
         return lines.joined(separator: "\n")
@@ -474,7 +474,7 @@ public enum CustomInstrumentTypings {
         return ids.map(jsStringLiteral).joined(separator: " | ")
     }
 
-    private static func featureKey(_ id: String) -> String {
+    private static func propertyKey(_ id: String) -> String {
         isValidJSIdentifier(id) ? id : jsStringLiteral(id)
     }
 
@@ -487,7 +487,7 @@ public enum CustomInstrumentTypings {
         return true
     }
 
-    private static func typeScriptType(for schema: FeatureSchema, optional: Bool) -> String {
+    private static func typeScriptType(for schema: SettingSchema, optional: Bool) -> String {
         switch schema {
         case .boolean: return optional ? "true" : "boolean"
         case .int, .uint, .double: return "number"
@@ -515,7 +515,7 @@ public enum CustomInstrumentTypings {
         guard !fields.isEmpty else { return "{}" }
         let entries = fields.map { field in
             let optionalMark = field.optional ? "?" : ""
-            return "/** \(jsDocText(field.name)) */ \(featureKey(field.id))\(optionalMark): \(typeScriptType(for: field.schema, optional: field.optional))"
+            return "/** \(jsDocText(field.name)) */ \(propertyKey(field.id))\(optionalMark): \(typeScriptType(for: field.schema, optional: field.optional))"
         }
         return "{ \(entries.joined(separator: "; ")) }"
     }

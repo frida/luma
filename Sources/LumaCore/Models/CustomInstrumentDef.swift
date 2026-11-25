@@ -11,22 +11,22 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
     public var minAppVersion: StoreVersion?
     public var entrypoint: String
     public var dependencies: [String: String]
-    public var features: [Feature]
+    public var settings: [Setting]
     public var widgets: [InstrumentWidget]
     public var createdAt: Date
     public var updatedAt: Date
 
-    public struct Feature: Codable, Identifiable, Sendable, Equatable {
+    public struct Setting: Codable, Identifiable, Sendable, Equatable {
         public var id: String
         public var name: String
-        public var schema: FeatureSchema
+        public var schema: SettingSchema
         public var optional: Bool
         public var enabledByDefault: Bool
 
         public init(
             id: String,
             name: String,
-            schema: FeatureSchema = .boolean(default: false),
+            schema: SettingSchema = .boolean(default: false),
             optional: Bool = false,
             enabledByDefault: Bool = true
         ) {
@@ -43,7 +43,7 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
             self.init(
                 id: try c.decode(String.self, forKey: .id),
                 name: try c.decode(String.self, forKey: .name),
-                schema: try c.decodeIfPresent(FeatureSchema.self, forKey: .schema) ?? .boolean(default: false),
+                schema: try c.decodeIfPresent(SettingSchema.self, forKey: .schema) ?? .boolean(default: false),
                 optional: try c.decodeIfPresent(Bool.self, forKey: .optional) ?? false,
                 enabledByDefault: try c.decodeIfPresent(Bool.self, forKey: .enabledByDefault) ?? true)
         }
@@ -57,7 +57,7 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
         minAppVersion: StoreVersion? = nil,
         entrypoint: String,
         dependencies: [String: String] = [:],
-        features: [Feature] = [],
+        settings: [Setting] = [],
         widgets: [InstrumentWidget] = [],
         createdAt: Date = Date(),
         updatedAt: Date = Date()
@@ -69,7 +69,7 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
         self.minAppVersion = minAppVersion
         self.entrypoint = entrypoint
         self.dependencies = dependencies
-        self.features = features
+        self.settings = settings
         self.widgets = widgets
         self.createdAt = createdAt
         self.updatedAt = updatedAt
@@ -85,8 +85,8 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
         entrypoint = row["entrypoint"]
         let dependenciesJSON: String = row["dependencies_json"]
         dependencies = try JSONDecoder().decode([String: String].self, from: Data(dependenciesJSON.utf8))
-        let featuresJSON: String = row["features_json"]
-        features = try JSONDecoder().decode([Feature].self, from: Data(featuresJSON.utf8))
+        let settingsJSON: String = row["settings_json"]
+        settings = try JSONDecoder().decode([Setting].self, from: Data(settingsJSON.utf8))
         let widgetsJSON: String = row["widgets_json"]
         widgets = try JSONDecoder().decode([InstrumentWidget].self, from: Data(widgetsJSON.utf8))
         createdAt = row["created_at"]
@@ -101,7 +101,7 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
         container["min_app_version"] = minAppVersion?.description
         container["entrypoint"] = entrypoint
         container["dependencies_json"] = dependenciesJSONString
-        container["features_json"] = featuresJSONString
+        container["settings_json"] = settingsJSONString
         container["widgets_json"] = widgetsJSONString
         container["created_at"] = createdAt
         container["updated_at"] = updatedAt
@@ -114,7 +114,7 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
             "icon": icon.toJSON(),
             "entrypoint": entrypoint,
             "dependencies": dependencies,
-            "features": features.map(featureToJSON),
+            "settings": settings.map(settingToJSON),
             "widgets": widgets.map { $0.toWireJSON() },
             "created_at": ISO8601DateFormatter().string(from: createdAt),
             "updated_at": ISO8601DateFormatter().string(from: updatedAt),
@@ -137,7 +137,7 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
         else { return nil }
         let compatibility = parseCompatibility(obj["compatibility"])
         let minAppVersion = ((obj["engines"] as? [String: Any])?["luma"] as? String).flatMap(StoreVersion.least(inEngineRange:))
-        let features = parseFeatures(obj["features"])
+        let settings = parseSettings(obj["settings"])
         let widgets = parseWidgets(obj["widgets"])
         let isoFmt = ISO8601DateFormatter()
         let createdAt = (obj["created_at"] as? String).flatMap(isoFmt.date(from:)) ?? Date()
@@ -150,7 +150,7 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
             minAppVersion: minAppVersion,
             entrypoint: entrypoint,
             dependencies: dependencies,
-            features: features,
+            settings: settings,
             widgets: widgets,
             createdAt: createdAt,
             updatedAt: updatedAt
@@ -162,8 +162,8 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
         return String(decoding: data, as: UTF8.self)
     }
 
-    private var featuresJSONString: String {
-        let data = try! JSONEncoder().encode(features)
+    private var settingsJSONString: String {
+        let data = try! JSONEncoder().encode(settings)
         return String(decoding: data, as: UTF8.self)
     }
 
@@ -193,9 +193,9 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
         return decoded
     }
 
-    private static func parseFeatures(_ raw: Any?) -> [Feature] {
+    private static func parseSettings(_ raw: Any?) -> [Setting] {
         guard let arr = raw as? [[String: Any]] else { return [] }
-        return arr.compactMap(parseFeature)
+        return arr.compactMap(parseSetting)
     }
 
     private static func parseWidgets(_ raw: Any?) -> [InstrumentWidget] {
@@ -203,50 +203,115 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
         return arr.compactMap(InstrumentWidget.fromWireJSON)
     }
 
-    private static func parseFeature(_ obj: [String: Any]) -> Feature? {
+    private static func parseSetting(_ obj: [String: Any]) -> Setting? {
         guard let id = obj["id"] as? String, let name = obj["name"] as? String else { return nil }
-        let schema = parseFeatureSchema(obj["schema"]) ?? .boolean(default: false)
+        let schema = parseSettingSchema(obj["schema"]) ?? .boolean(default: false)
         let optional = (obj["optional"] as? Bool) ?? false
         let enabledByDefault = (obj["enabled_by_default"] as? Bool) ?? true
-        return Feature(id: id, name: name, schema: schema, optional: optional, enabledByDefault: enabledByDefault)
+        return Setting(id: id, name: name, schema: schema, optional: optional, enabledByDefault: enabledByDefault)
     }
 
-    private static func parseFeatureSchema(_ raw: Any?) -> FeatureSchema? {
-        guard let obj = raw as? [String: Any] else { return nil }
+    private static func parseSettingSchema(_ raw: Any?) -> SettingSchema? {
+        guard let wire = raw as? [String: Any] else { return nil }
+        let obj = localSchema(wire)
         let data: Data
         do {
             data = try JSONSerialization.data(withJSONObject: obj)
         } catch {
             return nil
         }
-        return try? JSONDecoder().decode(FeatureSchema.self, from: data)
+        return try? JSONDecoder().decode(SettingSchema.self, from: data)
     }
 
-    private func featureToJSON(_ feature: Feature) -> [String: Any] {
+    private func settingToJSON(_ setting: Setting) -> [String: Any] {
         var out: [String: Any] = [
-            "id": feature.id,
-            "name": feature.name,
-            "optional": feature.optional,
-            "enabled_by_default": feature.enabledByDefault,
+            "id": setting.id,
+            "name": setting.name,
+            "optional": setting.optional,
+            "enabled_by_default": setting.enabledByDefault,
         ]
-        if let data = try? JSONEncoder().encode(feature.schema),
+        if let data = try? JSONEncoder().encode(setting.schema),
             let schemaObj = try? JSONSerialization.jsonObject(with: data)
         {
-            out["schema"] = schemaObj
+            out["schema"] = Self.wireSchema(schemaObj)
         }
         return out
     }
 
+    private static func wireSchema(_ local: Any) -> Any {
+        guard var schema = local as? [String: Any] else { return local }
+        if let fields = schema["fields"] as? [[String: Any]] {
+            schema["fields"] = fields.map { field -> [String: Any] in
+                var wire = field
+                wire["enabled_by_default"] = wire.removeValue(forKey: "enabledByDefault")
+                wire["schema"] = wire["schema"].map(wireSchema)
+                return wire
+            }
+        }
+        schema["item"] = schema["item"].map(wireSchema)
+        if schema["kind"] as? String == "array", let values = schema["default"] as? [[String: Any]] {
+            schema["default"] = values.map(plainValue)
+        }
+        return schema
+    }
+
+    private static func plainValue(_ tagged: [String: Any]) -> Any {
+        switch tagged["value"] {
+        case let fields as [String: [String: Any]]: fields.mapValues(plainValue)
+        case let items as [[String: Any]]: items.map(plainValue)
+        case let value?: value
+        case nil: NSNull()
+        }
+    }
+
+    private static func localSchema(_ wire: Any) -> Any {
+        guard var schema = wire as? [String: Any] else { return wire }
+        if let fields = schema["fields"] as? [[String: Any]] {
+            schema["fields"] = fields.map { field -> [String: Any] in
+                var local = field
+                local["enabledByDefault"] = local.removeValue(forKey: "enabled_by_default")
+                local["schema"] = local["schema"].map(localSchema)
+                return local
+            }
+        }
+        schema["item"] = schema["item"].map(localSchema)
+        if schema["kind"] as? String == "array", let item = schema["item"] as? [String: Any], let values = schema["default"] as? [Any] {
+            schema["default"] = values.map { taggedValue($0, as: item) }
+        }
+        return schema
+    }
+
+    private static func taggedValue(_ plain: Any, as schema: [String: Any]) -> [String: Any] {
+        switch schema["kind"] as? String {
+        case "combo":
+            return ["kind": "string", "value": plain]
+        case "object":
+            let fields = (schema["fields"] as? [[String: Any]]) ?? []
+            let values = (plain as? [String: Any]) ?? [:]
+            var tagged: [String: Any] = [:]
+            for field in fields {
+                guard let id = field["id"] as? String, let value = values[id], let fieldSchema = field["schema"] as? [String: Any] else { continue }
+                tagged[id] = taggedValue(value, as: fieldSchema)
+            }
+            return ["kind": "object", "value": tagged]
+        case "array":
+            let item = (schema["item"] as? [String: Any]) ?? [:]
+            return ["kind": "array", "value": ((plain as? [Any]) ?? []).map { taggedValue($0, as: item) }]
+        case let kind:
+            return ["kind": kind ?? "string", "value": plain]
+        }
+    }
+
     public mutating func normalize() {
-        for i in features.indices {
-            features[i].schema = CustomInstrumentDef.normalizedSchema(features[i].schema)
-            if case .boolean = features[i].schema, features[i].optional {
-                features[i].optional = false
+        for i in settings.indices {
+            settings[i].schema = CustomInstrumentDef.normalizedSchema(settings[i].schema)
+            if case .boolean = settings[i].schema, settings[i].optional {
+                settings[i].optional = false
             }
         }
     }
 
-    private static func normalizedSchema(_ schema: FeatureSchema) -> FeatureSchema {
+    private static func normalizedSchema(_ schema: SettingSchema) -> SettingSchema {
         switch schema {
         case .object(let fields):
             return .object(fields: fields.map(normalizedField))
@@ -339,7 +404,7 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
         // appear on `restored`.
         //
         // The example below assumes:
-        //   - one feature `logStack` (Boolean)
+        //   - one setting `logStack` (Boolean)
         //   - one graph widget `opens` with series `length` and
         //     Persistence = Session (required for `restored.opens`
         //     to type-check)

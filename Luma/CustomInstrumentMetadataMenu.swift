@@ -148,7 +148,7 @@ private struct CustomInstrumentMenuPresentations: ViewModifier {
                 CustomInstrumentCompatibilityPopover(def: def, engine: engine)
             }
             .popover(isPresented: $presentation.isShowingSettings, arrowEdge: .trailing) {
-                CustomInstrumentFeaturesPopover(def: def, engine: engine)
+                CustomInstrumentSettingsPopover(def: def, engine: engine)
             }
             .popover(isPresented: $presentation.isShowingWidgets, arrowEdge: .trailing) {
                 CustomInstrumentWidgetsPopover(def: def, engine: engine)

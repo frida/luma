@@ -6,16 +6,16 @@ import Gtk
 import LumaCore
 
 @MainActor
-final class FeatureValueEditor {
+final class SettingValueEditor {
     let widget: Box
-    private(set) var value: FeatureValue
-    private let schema: FeatureSchema
-    private let onChanged: (FeatureValue) -> Void
+    private(set) var value: SettingValue
+    private let schema: SettingSchema
+    private let onChanged: (SettingValue) -> Void
 
-    private var childEditors: [FeatureValueEditor] = []
+    private var childEditors: [SettingValueEditor] = []
     private var comboChoices: [ComboChoice] = []
 
-    init(schema: FeatureSchema, value: FeatureValue, onChanged: @escaping (FeatureValue) -> Void) {
+    init(schema: SettingSchema, value: SettingValue, onChanged: @escaping (SettingValue) -> Void) {
         self.schema = schema
         self.value = value
         self.onChanged = onChanged
@@ -172,7 +172,7 @@ final class FeatureValueEditor {
 
         let fieldID = field.id
         let initialValue = currentObjectField(id: fieldID, schema: field.schema)
-        let editor = FeatureValueEditor(schema: field.schema, value: initialValue) { [weak self] newValue in
+        let editor = SettingValueEditor(schema: field.schema, value: initialValue) { [weak self] newValue in
             self?.applyObjectField(id: fieldID, value: newValue)
         }
         childEditors.append(editor)
@@ -211,7 +211,7 @@ final class FeatureValueEditor {
 
         if !isBooleanSchema(fieldSchema) {
             let initialValue = currentObjectField(id: fieldID, schema: fieldSchema)
-            let editor = FeatureValueEditor(schema: fieldSchema, value: initialValue) { [weak self] newValue in
+            let editor = SettingValueEditor(schema: fieldSchema, value: initialValue) { [weak self] newValue in
                 self?.applyObjectField(id: fieldID, value: newValue)
             }
             childEditors.append(editor)
@@ -235,8 +235,8 @@ final class FeatureValueEditor {
         return false
     }
 
-    private func setObjectFieldPresent(id: String, schema: FeatureSchema, present: Bool) {
-        var fields: [String: FeatureValue] = [:]
+    private func setObjectFieldPresent(id: String, schema: SettingSchema, present: Bool) {
+        var fields: [String: SettingValue] = [:]
         if case .object(let f) = value { fields = f }
         if present {
             if fields[id] == nil { fields[id] = schema.defaultValue }
@@ -247,7 +247,7 @@ final class FeatureValueEditor {
         onChanged(value)
     }
 
-    private func isBooleanSchema(_ schema: FeatureSchema) -> Bool {
+    private func isBooleanSchema(_ schema: SettingSchema) -> Bool {
         if case .boolean = schema { return true }
         return false
     }
@@ -290,7 +290,7 @@ final class FeatureValueEditor {
     private func arrayItemRow(itemSchema: ArrayItemSchema, index: Int, listBox: Box) -> Box {
         let row = Box(orientation: .horizontal, spacing: 6)
         let itemValue = currentArrayItems()[index]
-        let editor = FeatureValueEditor(schema: itemSchema.asFeatureSchema, value: itemValue) { [weak self] newValue in
+        let editor = SettingValueEditor(schema: itemSchema.asSettingSchema, value: itemValue) { [weak self] newValue in
             self?.applyArrayItem(at: index, value: newValue)
         }
         childEditors.append(editor)
@@ -340,12 +340,12 @@ final class FeatureValueEditor {
         return ""
     }
 
-    private func currentArrayItems() -> [FeatureValue] {
+    private func currentArrayItems() -> [SettingValue] {
         if case .array(let items) = value { return items }
         return []
     }
 
-    private func currentObjectField(id: String, schema: FeatureSchema) -> FeatureValue {
+    private func currentObjectField(id: String, schema: SettingSchema) -> SettingValue {
         if case .object(let fields) = value, let v = fields[id] {
             return v
         }
@@ -402,15 +402,15 @@ final class FeatureValueEditor {
         onChanged(value)
     }
 
-    private func applyObjectField(id: String, value newValue: FeatureValue) {
-        var fields: [String: FeatureValue] = [:]
+    private func applyObjectField(id: String, value newValue: SettingValue) {
+        var fields: [String: SettingValue] = [:]
         if case .object(let f) = value { fields = f }
         fields[id] = newValue
         value = .object(fields)
         onChanged(value)
     }
 
-    private func applyArrayItem(at index: Int, value newValue: FeatureValue) {
+    private func applyArrayItem(at index: Int, value newValue: SettingValue) {
         var items = currentArrayItems()
         guard index < items.count else { return }
         items[index] = newValue
@@ -484,7 +484,7 @@ final class FeatureValueEditor {
         g_signal_connect_data(
             widgetPtr,
             "notify::selected",
-            unsafeBitCast(featureValueEditorComboChanged, to: GCallback.self),
+            unsafeBitCast(settingValueEditorComboChanged, to: GCallback.self),
             context,
             nil,
             GConnectFlags(rawValue: 0)
@@ -493,7 +493,7 @@ final class FeatureValueEditor {
     }
 }
 
-private let featureValueEditorComboChanged: @convention(c) (
+private let settingValueEditorComboChanged: @convention(c) (
     UnsafeMutableRawPointer,
     UnsafeMutableRawPointer?,
     UnsafeMutableRawPointer?
@@ -502,7 +502,7 @@ private let featureValueEditorComboChanged: @convention(c) (
     let editorPtr = UnsafeMutableRawPointer(bitPattern: UInt(bitPattern: userData))!
     let widgetPtr = UnsafeMutablePointer<GtkDropDown>(OpaquePointer(bitPattern: UInt(bitPattern: widget))!)
     MainActor.assumeIsolated {
-        let editor = Unmanaged<FeatureValueEditor>.fromOpaque(editorPtr).takeUnretainedValue()
+        let editor = Unmanaged<SettingValueEditor>.fromOpaque(editorPtr).takeUnretainedValue()
         editor.applyComboSelection(Int(gtk_drop_down_get_selected(widgetPtr)))
     }
 }

@@ -54,7 +54,7 @@ public final class CustomInstrumentLibrary {
 
     public func descriptor(for def: CustomInstrumentDef) -> InstrumentDescriptor {
         let defID = def.id
-        let initialFeatures = initialFeatureStates(for: def)
+        let initialSettings = initialSettingStates(for: def)
         return InstrumentDescriptor(
             id: "custom:\(defID.uuidString)",
             kind: .custom,
@@ -63,19 +63,19 @@ public final class CustomInstrumentLibrary {
             icon: def.icon,
             compatibility: def.compatibility,
             makeInitialConfigJSON: {
-                CustomInstrumentConfig(defID: defID, features: initialFeatures).encode()
+                CustomInstrumentConfig(defID: defID, settings: initialSettings).encode()
             }
         )
     }
 
-    public static func initialFeatureStates(for def: CustomInstrumentDef) -> [String: FeatureState] {
-        Dictionary(uniqueKeysWithValues: def.features.map {
-            ($0.id, FeatureState(enabled: $0.enabledByDefault, value: $0.schema.defaultValue))
+    public static func initialSettingStates(for def: CustomInstrumentDef) -> [String: SettingState] {
+        Dictionary(uniqueKeysWithValues: def.settings.map {
+            ($0.id, SettingState(enabled: $0.enabledByDefault, value: $0.schema.defaultValue))
         })
     }
 
-    private func initialFeatureStates(for def: CustomInstrumentDef) -> [String: FeatureState] {
-        Self.initialFeatureStates(for: def)
+    private func initialSettingStates(for def: CustomInstrumentDef) -> [String: SettingState] {
+        Self.initialSettingStates(for: def)
     }
 
     private func applyDefsChange(_ defs: [CustomInstrumentDef]) {

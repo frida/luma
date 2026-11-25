@@ -1,6 +1,6 @@
 import Foundation
 
-public enum FeatureSchema: Sendable, Equatable {
+public enum SettingSchema: Sendable, Equatable {
     case boolean(default: Bool)
     case int(default: Int64, min: Int64?, max: Int64?)
     case uint(default: UInt64, min: UInt64?, max: UInt64?)
@@ -9,9 +9,9 @@ public enum FeatureSchema: Sendable, Equatable {
     case regex(default: String)
     case combo(choices: [ComboChoice], default: String?)
     case object(fields: [ObjectField])
-    case array(item: ArrayItemSchema, default: [FeatureValue])
+    case array(item: ArrayItemSchema, default: [SettingValue])
 
-    public var defaultValue: FeatureValue {
+    public var defaultValue: SettingValue {
         switch self {
         case .boolean(let d): return .boolean(d)
         case .int(let d, _, _): return .int(d)
@@ -21,7 +21,7 @@ public enum FeatureSchema: Sendable, Equatable {
         case .regex(let d): return .regex(d)
         case .combo(let choices, let d): return .string(d ?? choices.first?.id ?? "")
         case .object(let fields):
-            let entries = fields.compactMap { field -> (String, FeatureValue)? in
+            let entries = fields.compactMap { field -> (String, SettingValue)? in
                 guard !field.optional || field.enabledByDefault else { return nil }
                 return (field.id, field.schema.defaultValue)
             }
@@ -44,14 +44,14 @@ public struct ComboChoice: Sendable, Equatable, Codable, Identifiable {
 public struct ObjectField: Sendable, Equatable, Codable {
     public var id: String
     public var name: String
-    public var schema: FeatureSchema
+    public var schema: SettingSchema
     public var optional: Bool
     public var enabledByDefault: Bool
 
     public init(
         id: String,
         name: String,
-        schema: FeatureSchema,
+        schema: SettingSchema,
         optional: Bool = false,
         enabledByDefault: Bool = true
     ) {
@@ -73,7 +73,7 @@ public enum ArrayItemSchema: Sendable, Equatable {
     case combo(choices: [ComboChoice])
     case object(fields: [ObjectField])
 
-    public var defaultValue: FeatureValue {
+    public var defaultValue: SettingValue {
         switch self {
         case .boolean: return .boolean(false)
         case .int: return .int(0)
@@ -83,7 +83,7 @@ public enum ArrayItemSchema: Sendable, Equatable {
         case .regex: return .regex("")
         case .combo(let choices): return .string(choices.first?.id ?? "")
         case .object(let fields):
-            let entries = fields.compactMap { field -> (String, FeatureValue)? in
+            let entries = fields.compactMap { field -> (String, SettingValue)? in
                 guard !field.optional || field.enabledByDefault else { return nil }
                 return (field.id, field.schema.defaultValue)
             }
@@ -91,7 +91,7 @@ public enum ArrayItemSchema: Sendable, Equatable {
         }
     }
 
-    public var asFeatureSchema: FeatureSchema {
+    public var asSettingSchema: SettingSchema {
         switch self {
         case .boolean: return .boolean(default: false)
         case .int: return .int(default: 0, min: nil, max: nil)
@@ -120,13 +120,13 @@ extension ObjectField {
         self.init(
             id: try c.decode(String.self, forKey: .id),
             name: try c.decode(String.self, forKey: .name),
-            schema: try c.decode(FeatureSchema.self, forKey: .schema),
+            schema: try c.decode(SettingSchema.self, forKey: .schema),
             optional: try c.decodeIfPresent(Bool.self, forKey: .optional) ?? false,
             enabledByDefault: try c.decodeIfPresent(Bool.self, forKey: .enabledByDefault) ?? true)
     }
 }
 
-extension FeatureSchema: Codable {
+extension SettingSchema: Codable {
     private enum CodingKeys: String, CodingKey {
         case kind
         case `default`
@@ -207,12 +207,12 @@ extension FeatureSchema: Codable {
         return d
     }
 
-    private static func decodeArrayDefault(from c: KeyedDecodingContainer<CodingKeys>, of item: ArrayItemSchema) throws -> [FeatureValue] {
+    private static func decodeArrayDefault(from c: KeyedDecodingContainer<CodingKeys>, of item: ArrayItemSchema) throws -> [SettingValue] {
         var elements = try c.nestedUnkeyedContainer(forKey: .default)
-        var values: [FeatureValue] = []
+        var values: [SettingValue] = []
         while !elements.isAtEnd {
             let element = try elements.superDecoder()
-            let value = try FeatureValue(from: element)
+            let value = try SettingValue(from: element)
             guard value.matches(schema: item) else {
                 throw DecodingError.dataCorrupted(.init(codingPath: element.codingPath, debugDescription: "does not match the item schema"))
             }

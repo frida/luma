@@ -824,11 +824,11 @@ final class AddInstrumentDialog {
         outer.append(child: header)
 
         customSettingRows.removeAll()
-        if !def.features.isEmpty {
-            outer.append(child: InstrumentSettingRow.makeGroup(features: def.features, config: config, keeping: &customSettingRows) {
+        if !def.settings.isEmpty {
+            outer.append(child: InstrumentSettingRow.makeGroup(settings: def.settings, config: config, keeping: &customSettingRows) {
                 [weak self] id, state in
                 guard let self, var cfg = try? CustomInstrumentConfig.decode(from: self.pendingConfigJSON) else { return }
-                cfg.features[id] = state
+                cfg.settings[id] = state
                 self.pendingConfigJSON = cfg.encode()
             })
         }
@@ -1128,7 +1128,7 @@ final class AddInstrumentDialog {
             let def = engine.createCustomInstrument()
             let configJSON = CustomInstrumentConfig(
                 defID: def.id,
-                features: CustomInstrumentLibrary.initialFeatureStates(for: def)
+                settings: CustomInstrumentLibrary.initialSettingStates(for: def)
             ).encode()
             let instance = await engine.addInstrument(
                 kind: .custom,
@@ -1219,7 +1219,7 @@ final class AddInstrumentDialog {
             Task { @MainActor in
                 let configJSON = CustomInstrumentConfig(
                     defID: def.id,
-                    features: CustomInstrumentLibrary.initialFeatureStates(for: def)
+                    settings: CustomInstrumentLibrary.initialSettingStates(for: def)
                 ).encode()
                 let instance = await engine.addInstrument(
                     kind: .custom,

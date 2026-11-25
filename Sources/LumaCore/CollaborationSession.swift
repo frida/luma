@@ -1272,7 +1272,7 @@ public final class CollaborationSession {
             payload: [
                 "kind": kind.rawValue,
                 "source_identifier": sourceIdentifier,
-                "config_json": configJSON.base64EncodedString(),
+                "config": InstrumentInstance.wireConfig(configJSON)!,
             ]
         )
     }
@@ -1286,7 +1286,7 @@ public final class CollaborationSession {
         sendNotification(
             to: "/labs/\(labID)/sessions/\(sessionID.uuidString)/instruments/\(instanceID.uuidString)",
             type: "+update-config",
-            payload: ["config_json": configJSON.base64EncodedString()]
+            payload: ["config": InstrumentInstance.wireConfig(configJSON)!]
         )
     }
 
@@ -1910,8 +1910,7 @@ public final class CollaborationSession {
                 let kindRaw = payload["kind"] as? String,
                 let kind = InstrumentKind(rawValue: kindRaw),
                 let sourceIdentifier = payload["source_identifier"] as? String,
-                let configB64 = payload["config_json"] as? String,
-                let configJSON = Data(base64Encoded: configB64)
+                let configJSON = payload["config"].flatMap(InstrumentInstance.storedConfig)
             else { return }
             onSessionInstrumentAddRequested?(sessionID, kind, sourceIdentifier, configJSON)
 
@@ -1919,8 +1918,7 @@ public final class CollaborationSession {
             where s.count == 6 && s[0] == "labs" && s[2] == "sessions" && s[4] == "instruments":
             guard let sessionID = UUID(uuidString: s[3]),
                 let instanceID = UUID(uuidString: s[5]),
-                let configB64 = payload["config_json"] as? String,
-                let configJSON = Data(base64Encoded: configB64)
+                let configJSON = payload["config"].flatMap(InstrumentInstance.storedConfig)
             else { return }
             onSessionInstrumentUpdateConfigRequested?(sessionID, instanceID, configJSON)
 

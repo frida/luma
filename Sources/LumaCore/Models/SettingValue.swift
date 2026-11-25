@@ -1,28 +1,28 @@
 import Foundation
 
-public enum FeatureValue: Sendable, Equatable {
+public enum SettingValue: Sendable, Equatable {
     case boolean(Bool)
     case int(Int64)
     case uint(UInt64)
     case double(Double)
     case string(String)
     case regex(String)
-    case object([String: FeatureValue])
-    case array([FeatureValue])
+    case object([String: SettingValue])
+    case array([SettingValue])
 
-    public func reconciled(with schema: FeatureSchema) -> FeatureValue {
+    public func reconciled(with schema: SettingSchema) -> SettingValue {
         switch (self, schema) {
         case (.object(let values), .object(let fields)):
-            return .object(FeatureValue.reconciled(values, with: fields))
+            return .object(SettingValue.reconciled(values, with: fields))
         case (.array(let items), .array(let item, _)):
-            return .array(items.map { $0.reconciled(with: item.asFeatureSchema) })
+            return .array(items.map { $0.reconciled(with: item.asSettingSchema) })
         default:
             return matches(schema: schema) ? self : schema.defaultValue
         }
     }
 
-    private static func reconciled(_ values: [String: FeatureValue], with fields: [ObjectField]) -> [String: FeatureValue] {
-        var kept: [String: FeatureValue] = [:]
+    private static func reconciled(_ values: [String: SettingValue], with fields: [ObjectField]) -> [String: SettingValue] {
+        var kept: [String: SettingValue] = [:]
         for field in fields {
             if let value = values[field.id] {
                 kept[field.id] = value.reconciled(with: field.schema)
@@ -33,7 +33,7 @@ public enum FeatureValue: Sendable, Equatable {
         return kept
     }
 
-    public func matches(schema: FeatureSchema) -> Bool {
+    public func matches(schema: SettingSchema) -> Bool {
         switch (self, schema) {
         case (.boolean, .boolean): return true
         case (.int, .int): return true
@@ -42,7 +42,7 @@ public enum FeatureValue: Sendable, Equatable {
         case (.string, .string), (.string, .combo): return true
         case (.regex, .regex): return true
         case (.object(let valueFields), .object(let schemaFields)):
-            return FeatureValue.objectFieldsMatch(valueFields: valueFields, schemaFields: schemaFields)
+            return SettingValue.objectFieldsMatch(valueFields: valueFields, schemaFields: schemaFields)
         case (.array(let items), .array(let item, _)):
             return items.allSatisfy { $0.matches(schema: item) }
         default:
@@ -59,14 +59,14 @@ public enum FeatureValue: Sendable, Equatable {
         case (.string, .string), (.string, .combo): return true
         case (.regex, .regex): return true
         case (.object(let valueFields), .object(let schemaFields)):
-            return FeatureValue.objectFieldsMatch(valueFields: valueFields, schemaFields: schemaFields)
+            return SettingValue.objectFieldsMatch(valueFields: valueFields, schemaFields: schemaFields)
         default:
             return false
         }
     }
 
     private static func objectFieldsMatch(
-        valueFields: [String: FeatureValue],
+        valueFields: [String: SettingValue],
         schemaFields: [ObjectField]
     ) -> Bool {
         let knownIDs = Set(schemaFields.map(\.id))
@@ -97,7 +97,7 @@ public enum FeatureValue: Sendable, Equatable {
     }
 }
 
-extension FeatureValue: Codable {
+extension SettingValue: Codable {
     private enum CodingKeys: String, CodingKey {
         case kind
         case value
@@ -125,8 +125,8 @@ extension FeatureValue: Codable {
         case .double: self = .double(try c.decode(Double.self, forKey: .value))
         case .string: self = .string(try c.decode(String.self, forKey: .value))
         case .regex: self = .regex(try c.decode(String.self, forKey: .value))
-        case .object: self = .object(try c.decode([String: FeatureValue].self, forKey: .value))
-        case .array: self = .array(try c.decode([FeatureValue].self, forKey: .value))
+        case .object: self = .object(try c.decode([String: SettingValue].self, forKey: .value))
+        case .array: self = .array(try c.decode([SettingValue].self, forKey: .value))
         }
     }
 

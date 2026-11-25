@@ -1,9 +1,9 @@
 import LumaCore
 import SwiftUI
 
-struct FeatureValueEditor: View {
-    let schema: FeatureSchema
-    @Binding var value: FeatureValue
+struct SettingValueEditor: View {
+    let schema: SettingSchema
+    @Binding var value: SettingValue
 
     var body: some View {
         switch schema {
@@ -117,7 +117,7 @@ struct FeatureValueEditor: View {
                 Text(field.name)
                     .font(.system(.caption, design: .monospaced))
                     .gridColumnAlignment(.trailing)
-                FeatureValueEditor(
+                SettingValueEditor(
                     schema: field.schema,
                     value: objectFieldBinding(id: field.id, schema: field.schema)
                 )
@@ -136,7 +136,7 @@ struct FeatureValueEditor: View {
             if enabled.wrappedValue, case .boolean = field.schema {
                 EmptyView()
             } else if enabled.wrappedValue {
-                FeatureValueEditor(
+                SettingValueEditor(
                     schema: field.schema,
                     value: objectFieldBinding(id: field.id, schema: field.schema)
                 )
@@ -145,14 +145,14 @@ struct FeatureValueEditor: View {
         }
     }
 
-    private func objectFieldEnabledBinding(id: String, schema: FeatureSchema) -> Binding<Bool> {
+    private func objectFieldEnabledBinding(id: String, schema: SettingSchema) -> Binding<Bool> {
         Binding(
             get: {
                 if case .object(let fields) = value { return fields[id] != nil }
                 return false
             },
             set: { newValue in
-                var fields: [String: FeatureValue] = [:]
+                var fields: [String: SettingValue] = [:]
                 if case .object(let f) = value { fields = f }
                 if newValue {
                     if fields[id] == nil {
@@ -260,7 +260,7 @@ struct FeatureValueEditor: View {
         )
     }
 
-    private func objectFieldBinding(id: String, schema: FeatureSchema) -> Binding<FeatureValue> {
+    private func objectFieldBinding(id: String, schema: SettingSchema) -> Binding<SettingValue> {
         Binding(
             get: {
                 if case .object(let fields) = value, let v = fields[id] {
@@ -269,7 +269,7 @@ struct FeatureValueEditor: View {
                 return schema.defaultValue
             },
             set: { newValue in
-                var fields: [String: FeatureValue] = [:]
+                var fields: [String: SettingValue] = [:]
                 if case .object(let f) = value { fields = f }
                 fields[id] = newValue
                 value = .object(fields)
@@ -277,7 +277,7 @@ struct FeatureValueEditor: View {
         )
     }
 
-    private var arrayBinding: Binding<[FeatureValue]> {
+    private var arrayBinding: Binding<[SettingValue]> {
         Binding(
             get: {
                 if case .array(let items) = value { return items }
@@ -290,7 +290,7 @@ struct FeatureValueEditor: View {
 
 struct ArrayValueEditor: View {
     let itemSchema: ArrayItemSchema
-    @Binding var items: [FeatureValue]
+    @Binding var items: [SettingValue]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -299,8 +299,8 @@ struct ArrayValueEditor: View {
             } else {
                 ForEach(items.indices, id: \.self) { index in
                     HStack(spacing: 6) {
-                        FeatureValueEditor(
-                            schema: itemSchema.asFeatureSchema,
+                        SettingValueEditor(
+                            schema: itemSchema.asSettingSchema,
                             value: itemBinding(at: index)
                         )
                         Button {
@@ -321,7 +321,7 @@ struct ArrayValueEditor: View {
         }
     }
 
-    private func itemBinding(at index: Int) -> Binding<FeatureValue> {
+    private func itemBinding(at index: Int) -> Binding<SettingValue> {
         Binding(
             get: {
                 index < items.count ? items[index] : itemSchema.defaultValue

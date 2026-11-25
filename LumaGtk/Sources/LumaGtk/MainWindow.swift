@@ -1737,7 +1737,7 @@ final class MainWindow: InstrumentUIHost {
             [
                 .init("Rename & Icon\u{2026}") { [weak self] in self?.presentCustomInstrumentRenameDialog(def: def) },
                 .init("Compatibility\u{2026}") { [weak self] in self?.presentCustomInstrumentCompatibilityDialog(def: def) },
-                .init("Settings\u{2026}") { [weak self] in self?.presentCustomInstrumentFeaturesDialog(def: def) },
+                .init("Settings\u{2026}") { [weak self] in self?.presentCustomInstrumentSettingsDialog(def: def) },
                 .init("Widgets\u{2026}") { [weak self] in self?.presentCustomInstrumentWidgetsDialog(def: def) },
                 .init("Packages\u{2026}") { [weak self] in self?.presentCustomInstrumentPackagesDialog(def: def) },
             ],
@@ -1961,9 +1961,9 @@ final class MainWindow: InstrumentUIHost {
         }
     }
 
-    private func presentCustomInstrumentFeaturesDialog(def: LumaCore.CustomInstrumentDef) {
+    private func presentCustomInstrumentSettingsDialog(def: LumaCore.CustomInstrumentDef) {
         guard let engine else { return }
-        CustomInstrumentFeaturesDialog(engine: engine, def: def).present(parent: window)
+        CustomInstrumentSettingsDialog(engine: engine, def: def).present(parent: window)
     }
 
     private func presentCustomInstrumentWidgetsDialog(def: LumaCore.CustomInstrumentDef) {

@@ -2,11 +2,16 @@ import Foundation
 
 public struct CustomInstrumentConfig: Codable, Equatable, Sendable {
     public var defID: UUID
-    public var features: [String: FeatureState]
+    public var settings: [String: SettingState]
 
-    public init(defID: UUID, features: [String: FeatureState] = [:]) {
+    enum CodingKeys: String, CodingKey {
+        case defID = "def_id"
+        case settings
+    }
+
+    public init(defID: UUID, settings: [String: SettingState] = [:]) {
         self.defID = defID
-        self.features = features
+        self.settings = settings
     }
 
     public static func decode(from data: Data) throws -> CustomInstrumentConfig {
@@ -19,21 +24,21 @@ public struct CustomInstrumentConfig: Codable, Equatable, Sendable {
 
     public mutating func normalize(against def: CustomInstrumentDef) {
         defID = def.id
-        var newFeatures: [String: FeatureState] = [:]
-        for feature in def.features {
-            if let existing = features[feature.id] {
-                newFeatures[feature.id] = FeatureState(
+        var newSettings: [String: SettingState] = [:]
+        for setting in def.settings {
+            if let existing = settings[setting.id] {
+                newSettings[setting.id] = SettingState(
                     enabled: existing.enabled,
-                    value: existing.value.reconciled(with: feature.schema)
+                    value: existing.value.reconciled(with: setting.schema)
                 )
             } else {
-                newFeatures[feature.id] = FeatureState(
-                    enabled: feature.enabledByDefault,
-                    value: feature.schema.defaultValue
+                newSettings[setting.id] = SettingState(
+                    enabled: setting.enabledByDefault,
+                    value: setting.schema.defaultValue
                 )
             }
         }
-        features = newFeatures
+        settings = newSettings
     }
 
     public func normalized(against def: CustomInstrumentDef) -> CustomInstrumentConfig {
@@ -44,20 +49,20 @@ public struct CustomInstrumentConfig: Codable, Equatable, Sendable {
 
     public func toAgentJSON(def: CustomInstrumentDef) -> [String: Any] {
         let current = normalized(against: def)
-        let entries = def.features.compactMap { feature -> (String, Any)? in
-            guard let state = current.features[feature.id] else { return nil }
-            if feature.optional && !state.enabled { return nil }
-            return (feature.id, state.value.toJSONNative())
+        let entries = def.settings.compactMap { setting -> (String, Any)? in
+            guard let state = current.settings[setting.id] else { return nil }
+            if setting.optional && !state.enabled { return nil }
+            return (setting.id, state.value.toJSONNative())
         }
         return ["settings": Dictionary(uniqueKeysWithValues: entries)]
     }
 }
 
-public struct FeatureState: Codable, Equatable, Sendable {
+public struct SettingState: Codable, Equatable, Sendable {
     public var enabled: Bool
-    public var value: FeatureValue
+    public var value: SettingValue
 
-    public init(enabled: Bool, value: FeatureValue) {
+    public init(enabled: Bool, value: SettingValue) {
         self.enabled = enabled
         self.value = value
     }

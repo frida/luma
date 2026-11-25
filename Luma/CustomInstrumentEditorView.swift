@@ -232,20 +232,20 @@ struct CustomInstrumentEditorView: View {
     }
 }
 
-struct CustomInstrumentFeaturesPopover: View {
+struct CustomInstrumentSettingsPopover: View {
     let def: CustomInstrumentDef
     let engine: Engine
     @Environment(\.dismiss) private var dismiss
 
-    @State private var draftFeatures: [CustomInstrumentDef.Feature] = []
-    @State private var newFeatureID: String = ""
-    @State private var newFeatureName: String = ""
-    @State private var newFeatureKind: SchemaKind = .boolean
-    @State private var isAddingFeature: Bool = false
+    @State private var draftSettings: [CustomInstrumentDef.Setting] = []
+    @State private var newSettingID: String = ""
+    @State private var newSettingName: String = ""
+    @State private var newSettingKind: SchemaKind = .boolean
+    @State private var isAddingSetting: Bool = false
     @State private var nameAutoFilled: Bool = true
-    @State private var expandedFeatureID: String? = nil
+    @State private var expandedSettingID: String? = nil
     @State private var isCancelled = false
-    @FocusState private var draftFocus: NewFeatureField?
+    @FocusState private var draftFocus: NewSettingField?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -255,26 +255,26 @@ struct CustomInstrumentFeaturesPopover: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            featureList
+            settingList
 
-            if isAddingFeature {
+            if isAddingSetting {
                 HStack(spacing: 6) {
-                    TextField("id", text: $newFeatureID)
+                    TextField("id", text: $newSettingID)
                         .frame(width: 110)
                         .focused($draftFocus, equals: .id)
-                        .onChange(of: newFeatureID) { _, newValue in
+                        .onChange(of: newSettingID) { _, newValue in
                             applyIDChange(newValue)
                         }
-                        .onSubmit(addFeature)
-                    TextField("Name", text: $newFeatureName)
+                        .onSubmit(addSetting)
+                    TextField("Name", text: $newSettingName)
                         .focused($draftFocus, equals: .name)
-                        .onChange(of: newFeatureName) { _, newValue in
-                            if newValue != CamelCase.humanized(newFeatureID) {
+                        .onChange(of: newSettingName) { _, newValue in
+                            if newValue != CamelCase.humanized(newSettingID) {
                                 nameAutoFilled = false
                             }
                         }
-                        .onSubmit(addFeature)
-                    Picker("", selection: $newFeatureKind) {
+                        .onSubmit(addSetting)
+                    Picker("", selection: $newSettingKind) {
                         ForEach(SchemaKind.allCases) { k in
                             Text(k.label).tag(k)
                         }
@@ -282,7 +282,7 @@ struct CustomInstrumentFeaturesPopover: View {
                     .labelsHidden()
                     .pickerStyle(.menu)
                     .frame(width: 130)
-                    Button("Add") { addFeature() }
+                    Button("Add") { addSetting() }
                         .disabled(addDisabled)
                 }
             }
@@ -292,8 +292,8 @@ struct CustomInstrumentFeaturesPopover: View {
                     toggleAdding()
                 } label: {
                     Label(
-                        isAddingFeature ? "Done Adding" : "Add Setting",
-                        systemImage: isAddingFeature ? "checkmark" : "plus"
+                        isAddingSetting ? "Done Adding" : "Add Setting",
+                        systemImage: isAddingSetting ? "checkmark" : "plus"
                     )
                 }
                 Spacer()
@@ -308,63 +308,63 @@ struct CustomInstrumentFeaturesPopover: View {
         }
         .padding(12)
         .popoverFormSheet(width: 520)
-        .onAppear { draftFeatures = def.features }
+        .onAppear { draftSettings = def.settings }
         .onDisappear {
             if !isCancelled { commit() }
         }
     }
 
     private func toggleAdding() {
-        if isAddingFeature {
+        if isAddingSetting {
             flushDraft()
-            isAddingFeature = false
+            isAddingSetting = false
         } else {
-            isAddingFeature = true
-            expandedFeatureID = nil
+            isAddingSetting = true
+            expandedSettingID = nil
             DispatchQueue.main.async { draftFocus = .id }
         }
     }
 
     private func flushDraft() {
-        addFeature()
+        addSetting()
         resetDraft()
     }
 
     private func resetDraft() {
-        newFeatureID = ""
-        newFeatureName = ""
-        newFeatureKind = .boolean
+        newSettingID = ""
+        newSettingName = ""
+        newSettingKind = .boolean
         nameAutoFilled = true
     }
 
     private var addDisabled: Bool {
-        let id = newFeatureID.trimmingCharacters(in: .whitespaces)
-        let name = newFeatureName.trimmingCharacters(in: .whitespaces)
+        let id = newSettingID.trimmingCharacters(in: .whitespaces)
+        let name = newSettingName.trimmingCharacters(in: .whitespaces)
         return id.isEmpty || name.isEmpty
     }
 
     private func applyIDChange(_ newValue: String) {
         let lowered = CamelCase.sanitized(newValue)
         if lowered != newValue {
-            newFeatureID = lowered
+            newSettingID = lowered
             return
         }
         if nameAutoFilled {
-            newFeatureName = CamelCase.humanized(lowered)
+            newSettingName = CamelCase.humanized(lowered)
         }
     }
 
     @ViewBuilder
-    private var featureList: some View {
+    private var settingList: some View {
         let content = VStack(alignment: .leading, spacing: 8) {
-            if draftFeatures.isEmpty {
+            if draftSettings.isEmpty {
                 Text("No settings defined.").font(.caption).foregroundStyle(.secondary)
             } else {
-                ForEach($draftFeatures) { $feature in
-                    FeatureRow(feature: $feature, expandedID: $expandedFeatureID) {
-                        let removedID = feature.id
-                        draftFeatures.removeAll { $0.id == removedID }
-                        if expandedFeatureID == removedID { expandedFeatureID = nil }
+                ForEach($draftSettings) { $setting in
+                    SettingRow(setting: $setting, expandedID: $expandedSettingID) {
+                        let removedID = setting.id
+                        draftSettings.removeAll { $0.id == removedID }
+                        if expandedSettingID == removedID { expandedSettingID = nil }
                     }
                 }
             }
@@ -378,52 +378,52 @@ struct CustomInstrumentFeaturesPopover: View {
         .fixedSize(horizontal: false, vertical: true)
     }
 
-    private func addFeature() {
-        let id = newFeatureID.trimmingCharacters(in: .whitespaces)
-        let name = newFeatureName.trimmingCharacters(in: .whitespaces)
-        guard !id.isEmpty, !name.isEmpty, !draftFeatures.contains(where: { $0.id == id }) else { return }
-        let kindHasChildren = newFeatureKind.hasChildren
-        draftFeatures.append(
+    private func addSetting() {
+        let id = newSettingID.trimmingCharacters(in: .whitespaces)
+        let name = newSettingName.trimmingCharacters(in: .whitespaces)
+        guard !id.isEmpty, !name.isEmpty, !draftSettings.contains(where: { $0.id == id }) else { return }
+        let kindHasChildren = newSettingKind.hasChildren
+        draftSettings.append(
             .init(
                 id: id,
                 name: name,
-                schema: newFeatureKind.defaultSchema(),
+                schema: newSettingKind.defaultSchema(),
                 optional: false
             )
         )
-        newFeatureID = ""
-        newFeatureName = ""
+        newSettingID = ""
+        newSettingName = ""
         nameAutoFilled = true
         if kindHasChildren {
-            expandedFeatureID = id
-            isAddingFeature = false
-            newFeatureKind = .boolean
+            expandedSettingID = id
+            isAddingSetting = false
+            newSettingKind = .boolean
         } else {
-            expandedFeatureID = nil
+            expandedSettingID = nil
             draftFocus = .id
         }
     }
 
     private func commit() {
-        if isAddingFeature {
+        if isAddingSetting {
             flushDraft()
         }
-        let features = draftFeatures
-        engine.updateCustomInstrument(def.id) { $0.features = features }
+        let settings = draftSettings
+        engine.updateCustomInstrument(def.id) { $0.settings = settings }
     }
 }
 
-private enum NewFeatureField: Hashable { case id, name }
+private enum NewSettingField: Hashable { case id, name }
 
-private struct FeatureRow: View {
-    @Binding var feature: CustomInstrumentDef.Feature
+private struct SettingRow: View {
+    @Binding var setting: CustomInstrumentDef.Setting
     @Binding var expandedID: String?
     let onDelete: () -> Void
 
-    private var isExpanded: Bool { expandedID == feature.id }
+    private var isExpanded: Bool { expandedID == setting.id }
 
     private var isBooleanSchema: Bool {
-        if case .boolean = feature.schema { return true }
+        if case .boolean = setting.schema { return true }
         return false
     }
 
@@ -431,16 +431,16 @@ private struct FeatureRow: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
                 Button {
-                    expandedID = isExpanded ? nil : feature.id
+                    expandedID = isExpanded ? nil : setting.id
                 } label: {
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                 }
                 .buttonStyle(.borderless)
-                Text(feature.id).font(.system(.caption, design: .monospaced))
+                Text(setting.id).font(.system(.caption, design: .monospaced))
                 Text("—").foregroundStyle(.secondary)
-                Text(feature.name)
+                Text(setting.name)
                 Spacer()
-                SchemaKindPicker(schema: $feature.schema)
+                SchemaKindPicker(schema: $setting.schema)
                 Button {
                     onDelete()
                 } label: {
@@ -451,14 +451,14 @@ private struct FeatureRow: View {
             if isExpanded {
                 VStack(alignment: .leading, spacing: 6) {
                     if !isBooleanSchema {
-                        Toggle("Optional (user can disable)", isOn: $feature.optional)
+                        Toggle("Optional (user can disable)", isOn: $setting.optional)
                             .platformCheckboxToggleStyle()
-                        if feature.optional {
-                            Toggle("Enabled by default", isOn: $feature.enabledByDefault)
+                        if setting.optional {
+                            Toggle("Enabled by default", isOn: $setting.enabledByDefault)
                                 .platformCheckboxToggleStyle()
                         }
                     }
-                    CustomInstrumentSchemaEditor(schema: $feature.schema)
+                    CustomInstrumentSchemaEditor(schema: $setting.schema)
                 }
                 .padding(.leading, 20)
                 .padding(.top, 4)
@@ -467,11 +467,11 @@ private struct FeatureRow: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .background(RoundedRectangle(cornerRadius: 6).fill(Color.gray.opacity(0.08)))
-        .onChange(of: feature.schema) { _, newSchema in
-            if case .boolean = newSchema, feature.optional {
-                feature.optional = false
+        .onChange(of: setting.schema) { _, newSchema in
+            if case .boolean = newSchema, setting.optional {
+                setting.optional = false
             }
-            expandedID = feature.id
+            expandedID = setting.id
         }
     }
 }

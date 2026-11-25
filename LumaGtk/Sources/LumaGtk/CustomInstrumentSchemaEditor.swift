@@ -8,13 +8,13 @@ import LumaCore
 @MainActor
 final class CustomInstrumentSchemaEditor {
     let widget: Box
-    private(set) var schema: FeatureSchema
-    private let onChanged: (FeatureSchema) -> Void
+    private(set) var schema: SettingSchema
+    private let onChanged: (SettingSchema) -> Void
     private let fieldsBox: Box
     private var childEditors: [AnyObject] = []
     private var comboDefaultRow: Box?
 
-    init(schema: FeatureSchema, onChanged: @escaping (FeatureSchema) -> Void) {
+    init(schema: SettingSchema, onChanged: @escaping (SettingSchema) -> Void) {
         self.schema = schema
         self.onChanged = onChanged
 
@@ -25,7 +25,7 @@ final class CustomInstrumentSchemaEditor {
         rebuildFields()
     }
 
-    func updateSchema(_ newSchema: FeatureSchema) {
+    func updateSchema(_ newSchema: SettingSchema) {
         guard schema != newSchema else { return }
         schema = newSchema
         rebuildFields()
@@ -743,7 +743,7 @@ final class ObjectFieldsEditor {
         return card
     }
 
-    private func isBoolean(_ schema: FeatureSchema) -> Bool {
+    private func isBoolean(_ schema: SettingSchema) -> Bool {
         if case .boolean = schema { return true }
         return false
     }
@@ -893,7 +893,7 @@ enum SchemaKind: CaseIterable {
         Self.allCases.firstIndex(of: self)!
     }
 
-    init(from schema: FeatureSchema) {
+    init(from schema: SettingSchema) {
         switch schema {
         case .boolean: self = .boolean
         case .int: self = .int
@@ -907,7 +907,7 @@ enum SchemaKind: CaseIterable {
         }
     }
 
-    func defaultSchema() -> FeatureSchema {
+    func defaultSchema() -> SettingSchema {
         switch self {
         case .boolean: return .boolean(default: false)
         case .int: return .int(default: 0, min: nil, max: nil)

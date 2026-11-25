@@ -117,7 +117,7 @@ public struct InstrumentFolder: Sendable {
             minAppVersion: minAppVersion,
             entrypoint: prefix + manifest.main,
             dependencies: manifest.dependencies ?? [:],
-            features: manifest.luma?.settings ?? [],
+            settings: manifest.luma?.settings ?? [],
             widgets: manifest.luma?.widgets?.map(\.widget) ?? [],
             createdAt: createdAt,
             updatedAt: updatedAt
@@ -217,7 +217,7 @@ public struct InstrumentFolder: Sendable {
             store: existing?.luma?.store,
             icon: icon,
             compatibility: def.compatibility.isUniversal ? nil : def.compatibility,
-            settings: def.features,
+            settings: def.settings,
             widgets: def.widgets.map(Manifest.Widget.init)
         )
         var package: [String: Any] =
@@ -498,7 +498,7 @@ public struct InstrumentFolder: Sendable {
             var store: StoreListing?
             var icon: Icon?
             var compatibility: InstrumentCompatibility?
-            var settings: [CustomInstrumentDef.Feature]?
+            var settings: [CustomInstrumentDef.Setting]?
             var widgets: [Widget]?
 
             var iconFilePath: String? {
@@ -585,7 +585,7 @@ extension InstrumentFolder.Manifest.Section {
             store: try c.decodeIfPresent(StoreListing.self, forKey: .store),
             icon: try c.decodeIfPresent(InstrumentFolder.Manifest.Icon.self, forKey: .icon),
             compatibility: try c.decodeIfPresent(InstrumentCompatibility.self, forKey: .compatibility),
-            settings: try c.decodeIfPresent([CustomInstrumentDef.Feature].self, forKey: .settings),
+            settings: try c.decodeIfPresent([CustomInstrumentDef.Setting].self, forKey: .settings),
             widgets: try c.decodeIfPresent([InstrumentFolder.Manifest.Widget].self, forKey: .widgets))
         if let problem = InstrumentWidget.countProblem(widgets?.count ?? 0) {
             throw DecodingError.dataCorrupted(.init(codingPath: c.codingPath + [CodingKeys.widgets], debugDescription: problem))

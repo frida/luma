@@ -1760,7 +1760,7 @@ public enum MissionTools {
             else { return nil }
             entry["kind"] = "custom"
             entry["def_id"] = defID.uuidString
-            entry["setting_count"] = def.features.count
+            entry["setting_count"] = def.settings.count
             entry["widget_count"] = def.widgets.count
             entry.merge(linkedInstrumentFolderJSON(defID: defID, engine: engine)) { _, new in new }
         case .codeShare:
@@ -1846,7 +1846,7 @@ public enum MissionTools {
             if !compatibility.isUniversal || !dependencies.isEmpty || !settings.isEmpty || !widgets.isEmpty {
                 def.compatibility = compatibility
                 def.dependencies = dependencies
-                def.features = settings
+                def.settings = settings
                 def.widgets = widgets
                 engine.updateCustomInstrument(def)
             }
@@ -1883,7 +1883,7 @@ public enum MissionTools {
                     def.dependencies = dependencies
                 }
                 if invocation.args["settings"] != nil {
-                    def.features = parseSettingsArg(invocation.args["settings"])
+                    def.settings = parseSettingsArg(invocation.args["settings"])
                 }
                 if invocation.args["widgets"] != nil {
                     def.widgets = parseWidgetsArg(invocation.args["widgets"])
@@ -2882,12 +2882,12 @@ public enum MissionTools {
         return InstrumentCompatibility(platforms: platforms, osIDs: osIDs, archs: archs)
     }
 
-    private static func parseSettingsArg(_ raw: Any?) -> [CustomInstrumentDef.Feature] {
+    private static func parseSettingsArg(_ raw: Any?) -> [CustomInstrumentDef.Setting] {
         guard let arr = raw as? [[String: Any]] else { return [] }
         return arr.compactMap { obj in
             guard let id = obj["id"] as? String, let name = obj["name"] as? String else { return nil }
             let enabled = (obj["enabled_by_default"] as? Bool) ?? true
-            return CustomInstrumentDef.Feature(id: id, name: name, schema: .boolean(default: enabled), optional: false, enabledByDefault: enabled)
+            return CustomInstrumentDef.Setting(id: id, name: name, schema: .boolean(default: enabled), optional: false, enabledByDefault: enabled)
         }
     }
 
@@ -3018,11 +3018,11 @@ public enum MissionTools {
     }
 
     private static func customInstrumentJSON(def: CustomInstrumentDef, files: [CustomInstrumentFile]) -> [String: Any] {
-        let settings: [[String: Any]] = def.features.map { feature in
+        let settings: [[String: Any]] = def.settings.map { setting in
             [
-                "id": feature.id,
-                "name": feature.name,
-                "enabled_by_default": feature.enabledByDefault,
+                "id": setting.id,
+                "name": setting.name,
+                "enabled_by_default": setting.enabledByDefault,
             ]
         }
         let widgets: [[String: Any]] = def.widgets.map(customInstrumentWidgetJSON)

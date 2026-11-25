@@ -4,13 +4,13 @@ import LumaCore
 @MainActor
 final class InstrumentSettingRow {
     let widget = Box(orientation: .vertical, spacing: 4)
-    private var valueEditor: FeatureValueEditor?
+    private var valueEditor: SettingValueEditor?
 
     static func makeGroup(
-        features: [CustomInstrumentDef.Feature],
+        settings: [CustomInstrumentDef.Setting],
         config: CustomInstrumentConfig,
         keeping rows: inout [InstrumentSettingRow],
-        onChange: @escaping (_ id: String, _ state: FeatureState) -> Void
+        onChange: @escaping (_ id: String, _ state: SettingState) -> Void
     ) -> Box {
         let group = Box(orientation: .vertical, spacing: 4)
         let heading = Label(str: "Settings")
@@ -25,9 +25,9 @@ final class InstrumentSettingRow {
         column.marginTop = 12
         column.marginBottom = 12
         card.append(child: column)
-        for feature in features {
-            let state = config.features[feature.id] ?? FeatureState(enabled: feature.enabledByDefault, value: feature.schema.defaultValue)
-            let row = InstrumentSettingRow(feature: feature, state: state) { onChange(feature.id, $0) }
+        for setting in settings {
+            let state = config.settings[setting.id] ?? SettingState(enabled: setting.enabledByDefault, value: setting.schema.defaultValue)
+            let row = InstrumentSettingRow(setting: setting, state: state) { onChange(setting.id, $0) }
             rows.append(row)
             column.append(child: row.widget)
         }
@@ -35,18 +35,18 @@ final class InstrumentSettingRow {
         return group
     }
 
-    init(feature: CustomInstrumentDef.Feature, state: FeatureState, onChange: @escaping (FeatureState) -> Void) {
+    init(setting: CustomInstrumentDef.Setting, state: SettingState, onChange: @escaping (SettingState) -> Void) {
         var current = state
-        let isBoolean = if case .boolean = feature.schema { true } else { false }
+        let isBoolean = if case .boolean = setting.schema { true } else { false }
         widget.hexpand = true
 
-        if feature.optional || isBoolean {
-            let check = CheckButton(label: feature.name)
-            check.active = feature.optional ? state.enabled : state.value == .boolean(true)
+        if setting.optional || isBoolean {
+            let check = CheckButton(label: setting.name)
+            check.active = setting.optional ? state.enabled : state.value == .boolean(true)
             widget.append(child: check)
             check.onToggled { [weak self] ref in
                 MainActor.assumeIsolated {
-                    if feature.optional {
+                    if setting.optional {
                         current.enabled = ref.active
                         self?.valueEditor?.widget.sensitive = ref.active
                     } else {
@@ -57,17 +57,17 @@ final class InstrumentSettingRow {
             }
             if isBoolean { return }
         } else {
-            let nameLabel = Label(str: feature.name)
+            let nameLabel = Label(str: setting.name)
             nameLabel.halign = .start
             widget.append(child: nameLabel)
         }
 
-        let editor = FeatureValueEditor(schema: feature.schema, value: state.value) { newValue in
+        let editor = SettingValueEditor(schema: setting.schema, value: state.value) { newValue in
             current.value = newValue
             onChange(current)
         }
         editor.widget.marginStart = 20
-        editor.widget.sensitive = !feature.optional || state.enabled
+        editor.widget.sensitive = !setting.optional || state.enabled
         widget.append(child: editor.widget)
         valueEditor = editor
     }

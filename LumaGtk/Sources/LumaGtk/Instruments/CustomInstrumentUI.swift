@@ -85,9 +85,9 @@ private final class CustomDetailUI: InstrumentDetailUI {
 
         outer.append(child: makeHeader(def: def))
 
-        if !def.features.isEmpty {
-            outer.append(child: InstrumentSettingRow.makeGroup(features: def.features, config: config, keeping: &settingRows) { [weak self] id, state in
-                self?.mutate { $0.features[id] = state }
+        if !def.settings.isEmpty {
+            outer.append(child: InstrumentSettingRow.makeGroup(settings: def.settings, config: config, keeping: &settingRows) { [weak self] id, state in
+                self?.mutate { $0.settings[id] = state }
             })
         }
 
