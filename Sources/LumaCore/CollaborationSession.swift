@@ -324,6 +324,8 @@ public final class CollaborationSession {
     private var sentWidgetActions: [(id: UUID, action: SentWidgetAction)] = []
     private var receivingStreams: [UUID: RemoteStreamReceiver] = [:]
     private var relayedStreams: Set<UUID> = []
+    private var instancesHeldByLab: Set<UUID> = []
+    private var childrenHeldByLab: Set<HeldChild> = []
     public var onSessionViewStateReceived: ((UUID, UUID, String, WidgetViewState) -> Void)?
     public var onSessionViewEventReceived: ((UUID, UUID, String, WidgetViewPayload) -> Void)?
     public var onSessionViewMessageReceived: ((UUID, UUID, String, WidgetViewPayload, UserInfo) -> Void)?
@@ -1178,7 +1180,7 @@ public final class CollaborationSession {
     }
 
     public func sendWidgetUpdate(sessionID: UUID, update: WidgetUpdate) {
-        guard case .joined(let labID) = status else { return }
+        guard case .joined(let labID) = status, labHolds(instance: update.instanceID, widget: update.widget) else { return }
         sendNotification(
             to: "/labs/\(labID)/sessions/\(sessionID.uuidString)/widget-updates",
             type: "+widget-update",
@@ -1194,7 +1196,7 @@ public final class CollaborationSession {
         item: String?,
         savesFile: Bool
     ) {
-        guard case .joined(let labID) = status else { return }
+        guard case .joined(let labID) = status, labHolds(instance: instanceID, widget: widget) else { return }
         let actionID = UUID()
         var payload: [String: Any] = [
             "action_id": actionID.uuidString,
@@ -1216,13 +1218,20 @@ public final class CollaborationSession {
 
     private static let maxSentWidgetActions = 32
 
+    func labHolds(instance instanceID: UUID, widget: String) -> Bool {
+        guard instancesHeldByLab.contains(instanceID) else { return false }
+        guard let child = WidgetSlot.split(widget).child else { return true }
+        return childrenHeldByLab.contains(HeldChild(instanceID: instanceID, ref: child))
+    }
+
     func sendChild(_ child: InstrumentChild, sessionID: UUID, instanceID: UUID) {
-        guard case .joined(let labID) = status else { return }
+        guard case .joined(let labID) = status, instancesHeldByLab.contains(instanceID) else { return }
+        childrenHeldByLab.insert(HeldChild(instanceID: instanceID, ref: child.ref))
         sendNotification(to: Self.childrenPath(labID: labID, sessionID: sessionID, instanceID: instanceID), type: "+child", payload: child.toWireJSON())
     }
 
     func sendChildRemoval(_ ref: ChildRef, sessionID: UUID, instanceID: UUID) {
-        guard case .joined(let labID) = status else { return }
+        guard case .joined(let labID) = status, childrenHeldByLab.remove(HeldChild(instanceID: instanceID, ref: ref)) != nil else { return }
         sendNotification(
             to: Self.childrenPath(labID: labID, sessionID: sessionID, instanceID: instanceID), type: "+child-remove", payload: ref.toWireJSON())
     }
@@ -1400,6 +1409,7 @@ public final class CollaborationSession {
     }
 
     private func sendSessionOpOverWire(_ op: SessionOp, labID: String) {
+        noteHeldInstances(after: op)
         sendNotification(
             to: "/labs/\(labID)/sessions/\(op.sessionID.uuidString)",
             type: "+op",
@@ -1413,7 +1423,20 @@ public final class CollaborationSession {
         apply(op)
     }
 
+    private func noteHeldInstances(after op: SessionOp) {
+        switch op {
+        case .addInstrument(let a):
+            instancesHeldByLab.insert(a.instance.id)
+        case .removeInstrument(let r):
+            instancesHeldByLab.remove(r.instanceID)
+            childrenHeldByLab = childrenHeldByLab.filter { $0.instanceID != r.instanceID }
+        default:
+            break
+        }
+    }
+
     private func apply(_ op: SessionOp) {
+        noteHeldInstances(after: op)
         switch op {
         case .add(let a):
             sessionsHeldByLab.insert(a.sessionID)
@@ -1749,16 +1772,19 @@ public final class CollaborationSession {
             }.map(\.opID))
         replayOutbox(knownSessions: Set(sessions.map(\.id))) { onSessionsSnapshot?(sessions) }
 
-        let widgetStateDicts = (payload["widget_states"] as? [JSONObject]) ?? []
-        let viewStateDicts = (payload["view_states"] as? [JSONObject]) ?? []
-        onWidgetStatesSnapshot?(widgetStateDicts.compactMap(WidgetStateSnapshot.fromWireJSON))
         var children: [UUID: [InstrumentChild]] = [:]
         for entry in (payload["instrument_children"] as? [JSONObject]) ?? [] {
             guard let instanceID = (entry["instance_id"] as? String).flatMap(UUID.init(uuidString:)), let child = InstrumentChild.fromWireJSON(entry)
             else { continue }
             children[instanceID, default: []].append(child)
         }
+        instancesHeldByLab.formUnion(sessions.flatMap(\.instruments).map(\.id))
+        childrenHeldByLab = Set(children.flatMap { instanceID, list in list.map { HeldChild(instanceID: instanceID, ref: $0.ref) } })
         onChildrenSnapshot?(children, Set(sessions.map(\.id)))
+
+        let widgetStateDicts = (payload["widget_states"] as? [JSONObject]) ?? []
+        let viewStateDicts = (payload["view_states"] as? [JSONObject]) ?? []
+        onWidgetStatesSnapshot?(widgetStateDicts.compactMap(WidgetStateSnapshot.fromWireJSON))
 
         ingestViewStates(viewStateDicts, labID: labID)
 
@@ -2076,10 +2102,12 @@ public final class CollaborationSession {
 
         case ("+child", let s) where s.count == 7 && s[0] == "labs" && s[2] == "sessions" && s[4] == "instruments" && s[6] == "children":
             guard let instanceID = UUID(uuidString: s[5]), let child = InstrumentChild.fromWireJSON(payload) else { return }
+            childrenHeldByLab.insert(HeldChild(instanceID: instanceID, ref: child.ref))
             onChildReceived?(child, instanceID)
 
         case ("+child-remove", let s) where s.count == 7 && s[0] == "labs" && s[2] == "sessions" && s[4] == "instruments" && s[6] == "children":
             guard let instanceID = UUID(uuidString: s[5]), let ref = ChildRef.fromWireJSON(payload) else { return }
+            childrenHeldByLab.remove(HeldChild(instanceID: instanceID, ref: ref))
             onChildRemoved?(ref, instanceID)
 
         case ("+show", let s) where s.count == 7 && s[0] == "labs" && s[2] == "sessions" && s[4] == "widget-actions" && s[6] == "show":
@@ -2188,6 +2216,8 @@ public final class CollaborationSession {
             break
         case .disconnected, .connecting, .error:
             sentWidgetActions = []
+            instancesHeldByLab = []
+            childrenHeldByLab = []
             for receiver in receivingStreams.values {
                 receiver.abortAll(reason: Self.connectionLost)
             }
@@ -2206,4 +2236,9 @@ private struct SentWidgetAction {
     let sessionID: UUID
     let instanceID: UUID
     let savesFile: Bool
+}
+
+private struct HeldChild: Hashable {
+    let instanceID: UUID
+    let ref: ChildRef
 }

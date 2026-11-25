@@ -124,6 +124,19 @@ extension Engine {
         }
     }
 
+    func republishChildren(over snapshot: [UUID: [InstrumentChild]], sessionIDs: Set<UUID>) {
+        for instance in sessionIDs.flatMap({ instrumentsBySession[$0] ?? [] }) {
+            let local = children(of: instance.id)
+            for child in local {
+                publishChild(child, of: instance.id)
+            }
+            let localRefs = Set(local.map(\.ref))
+            for child in snapshot[instance.id] ?? [] where !localRefs.contains(child.ref) {
+                publishChildRemoval(child.ref, of: instance.id)
+            }
+        }
+    }
+
     func show(_ request: ShowRequest?, toChooserOf actionID: UUID, recipient: FileRecipient?, instance: InstrumentInstance) {
         guard let request, let recipient else { return }
         switch recipient {

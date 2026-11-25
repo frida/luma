@@ -912,7 +912,8 @@ public final class Engine {
 
         collaboration.onChildrenSnapshot = { [weak self] snapshot, sessionIDs in
             guard let self else { return }
-            adoptRemoteChildren(snapshot, sessionIDs: Set(sessionIDs.filter { !self.localUserHosts($0) }))
+            adoptRemoteChildren(snapshot, sessionIDs: sessionIDs.filter { !self.localUserHosts($0) })
+            republishChildren(over: snapshot, sessionIDs: sessionIDs.filter { self.localUserHosts($0) })
         }
 
         collaboration.onOfferedStream = { [weak self] instanceID, stream in

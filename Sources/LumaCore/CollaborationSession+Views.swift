@@ -4,7 +4,7 @@ extension CollaborationSession {
     static let viewStateChunkBytes = 1024 * 1024
 
     public func sendViewState(_ state: WidgetViewState, sessionID: UUID, instanceID: UUID, widget: String) {
-        guard case .joined(let labID) = status else { return }
+        guard case .joined(let labID) = status, labHolds(instance: instanceID, widget: widget) else { return }
         let size = state.payload.data?.count ?? 0
         var offset = 0
         repeat {
@@ -26,7 +26,7 @@ extension CollaborationSession {
     }
 
     public func sendViewEvent(_ event: WidgetViewPayload, sessionID: UUID, instanceID: UUID, widget: String) {
-        guard case .joined(let labID) = status else { return }
+        guard case .joined(let labID) = status, labHolds(instance: instanceID, widget: widget) else { return }
         var payload: JSONObject = ["instance_id": instanceID.uuidString, "value": event.value as Any]
         WidgetSlot.addTarget(widget, to: &payload)
         sendNotification(
@@ -34,7 +34,7 @@ extension CollaborationSession {
     }
 
     public func sendViewMessage(_ message: WidgetViewPayload, sessionID: UUID, instanceID: UUID, widget: String) {
-        guard case .joined(let labID) = status else { return }
+        guard case .joined(let labID) = status, labHolds(instance: instanceID, widget: widget) else { return }
         var payload: JSONObject = ["instance_id": instanceID.uuidString, "value": message.value as Any]
         WidgetSlot.addTarget(widget, to: &payload)
         sendNotification(
