@@ -182,7 +182,10 @@ struct PhoneSessionsListView: View {
                 titleVisibility: .visible,
                 presenting: pendingDeleteSession
             ) { session in
-                Button("Delete Session", role: .destructive) { deleteSession(session) }
+                Button(
+                    engine.canRemoveFromLab(session) ? "Delete for Everyone in the Lab" : "Remove from This Project",
+                    role: .destructive
+                ) { deleteSession(session) }
                 Button("Cancel", role: .cancel) {}
             } message: { _ in
                 Text("This will remove the session and its history.")
@@ -373,10 +376,7 @@ struct PhoneSessionsListView: View {
     }
 
     private func deleteSession(_ session: LumaCore.ProcessSession) {
-        if let node = engine.node(forSessionID: session.id) {
-            engine.removeNode(node)
-        }
-        try? engine.store.deleteSession(id: session.id)
+        engine.deleteSession(id: session.id)
     }
 }
 

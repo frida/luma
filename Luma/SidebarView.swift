@@ -738,15 +738,7 @@ private struct SidebarSessionHeaderRow: View {
 
                 Divider()
 
-                Button(role: .destructive) {
-                    presentConfirmation(
-                        title: "Delete Session?",
-                        message: "This will remove the session and its history.",
-                        destructiveLabel: "Delete Session"
-                    ) { deleteSession() }
-                } label: {
-                    Label("Delete Session", systemImage: "trash")
-                }
+                deleteSessionButton
             } else {
                 if session.lastAttachedAt != nil, engine.canTakeHosting(session) {
                     Button {
@@ -760,15 +752,7 @@ private struct SidebarSessionHeaderRow: View {
 
                 Divider()
 
-                Button(role: .destructive) {
-                    presentConfirmation(
-                        title: "Delete Session?",
-                        message: "This will remove the session and its history.",
-                        destructiveLabel: "Delete Session"
-                    ) { deleteSession() }
-                } label: {
-                    Label("Delete Session", systemImage: "trash")
-                }
+                deleteSessionButton
             }
         }
         .confirmationDialog(
@@ -951,10 +935,9 @@ private struct SidebarSessionHeaderRow: View {
     }
 
     private func deleteSession() {
-        if let node { engine.removeNode(node) }
         let sessionID = session.id
 
-        try? engine.store.deleteSession(id: sessionID)
+        engine.deleteSession(id: sessionID)
 
         switch selection {
         case .session(let id) where id == sessionID,
@@ -965,6 +948,18 @@ private struct SidebarSessionHeaderRow: View {
             selection = .notebook
         default:
             break
+        }
+    }
+
+    private var deleteSessionButton: some View {
+        Button(role: .destructive) {
+            presentConfirmation(
+                title: "Delete Session?",
+                message: "This will remove the session and its history.",
+                destructiveLabel: engine.canRemoveFromLab(session) ? "Delete for Everyone in the Lab" : "Remove from This Project"
+            ) { deleteSession() }
+        } label: {
+            Label("Delete Session", systemImage: "trash")
         }
     }
 

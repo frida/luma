@@ -131,7 +131,7 @@ struct PhoneSessionView: View {
             isPresented: $pendingDelete,
             titleVisibility: .visible
         ) {
-            Button("Delete Session", role: .destructive) { deleteSession() }
+            Button(deleteLabel, role: .destructive) { deleteSession() }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This will remove the session and its history.")
@@ -450,9 +450,13 @@ struct PhoneSessionView: View {
         }
     }
 
+    private var deleteLabel: String {
+        guard let session, engine.canRemoveFromLab(session) else { return "Remove from This Project" }
+        return "Delete for Everyone in the Lab"
+    }
+
     private func deleteSession() {
-        if let node { engine.removeNode(node) }
-        try? engine.store.deleteSession(id: sessionID)
+        engine.deleteSession(id: sessionID)
         if !path.isEmpty { path.removeLast() }
     }
 }
