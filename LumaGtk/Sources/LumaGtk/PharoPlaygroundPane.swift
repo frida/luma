@@ -97,7 +97,7 @@ final class PharoPlaygroundPane {
             MainActor.assumeIsolated { self?.engine?.setPharoPageWidth(Double(paned.position)) }
         }
 
-        inspector.drive(overviewBar, naming: "Snippets")
+        inspector.drive(overviewBar) { "Snippets" }
         inspector.onChanged = { [weak self] in self?.overviewBar.reload() }
         inspector.chatOrigin = { [weak self] in self?.chatOrigin }
 

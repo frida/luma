@@ -63,7 +63,7 @@ final class InstrumentViewWidget {
         widget.append(child: overviewSeparator)
         widget.append(child: overlay)
 
-        inspector.drive(overviewBar, naming: name)
+        inspector.drive(overviewBar) { name }
         inspector.onChanged = { [weak self] in
             guard let self else { return }
             let isDrilling = !self.inspector.isEmpty

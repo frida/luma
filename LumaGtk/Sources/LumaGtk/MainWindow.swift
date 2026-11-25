@@ -690,6 +690,10 @@ final class MainWindow: InstrumentUIHost {
             }
         )
         panel.onShow = { [weak self] subject in self?.show(subject) }
+        panel.onOpenProjectChat = { [weak self] in
+            guard let self, let engine = self.engine else { return }
+            self.select(.chat(engine.objectChats.openConversation().id))
+        }
         collaborationPanel = panel
         collaborationButton.set(child: panel.toggleContent)
 

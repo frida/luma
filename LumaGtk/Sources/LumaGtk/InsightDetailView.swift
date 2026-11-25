@@ -195,12 +195,23 @@ final class InsightDetailView {
             engine: engine, runtime: PharoRuntime.shared, maximizingOver: overlay, highlight: PharoHighlighting.apply)
         columns.widget.visible = false
         let paned = Paned(orientation: .horizontal)
+        let overviewBar = PharoOverviewBar()
+        let overviewSeparator = Separator(orientation: .horizontal)
+        overviewBar.widget.visible = false
+        overviewSeparator.visible = false
+        columns.drive(overviewBar) { [weak self, weak engine] in
+            guard let self, let engine else { return "" }
+            return engine.displayTitle(for: self.insight)
+        }
         columns.onChanged = { [weak columns] in
             guard let columns else { return }
             if columns.widget.visible == columns.isEmpty {
                 columns.widget.visible = !columns.isEmpty
+                overviewBar.widget.visible = !columns.isEmpty
+                overviewSeparator.visible = !columns.isEmpty
                 paned.position = max(paned.width - Self.columnsWidth, paned.width / 3)
             }
+            overviewBar.reload()
         }
         self.columns = columns
         openColumn = { [weak columns] object in columns?.present(object) }
@@ -212,7 +223,13 @@ final class InsightDetailView {
         paned.startChild = WidgetRef(content)
         paned.endChild = WidgetRef(columns.widget)
         overlay.set(child: paned)
-        return overlay
+        let stack = Box(orientation: .vertical, spacing: 0)
+        stack.hexpand = true
+        stack.vexpand = true
+        stack.append(child: overviewBar.widget)
+        stack.append(child: overviewSeparator)
+        stack.append(child: overlay)
+        return stack
     }
 
     private func followChats() {

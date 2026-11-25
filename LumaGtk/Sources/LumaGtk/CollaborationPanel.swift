@@ -15,6 +15,7 @@ final class CollaborationPanel {
     let widget: Box
     let toggleContent: Box
     var onShow: (LabSubject) -> Void = { _ in }
+    var onOpenProjectChat: () -> Void = {}
 
     private weak var engine: Engine?
     private weak var desktopNotifier: DesktopNotifier?
@@ -26,6 +27,7 @@ final class CollaborationPanel {
     private let participantsScroll: ScrolledWindow
     private let notificationsButton: Button
     private let conversationHost: Box
+    private let chatSection = Box(orientation: .vertical, spacing: 6)
     private let unreadBadge: Label
     private let problemNotices: Box
     private var conversation: PharoObjectChatPage?
@@ -113,19 +115,28 @@ final class CollaborationPanel {
         problemNotices = Box(orientation: .vertical, spacing: 6)
         problemNotices.visible = false
         body.append(child: problemNotices)
-        body.append(child: Separator(orientation: .horizontal))
 
-        let chatSection = Box(orientation: .vertical, spacing: 6)
         chatSection.vexpand = true
-        let chatHeader = Label(str: "Project Chat")
-        chatHeader.halign = .start
-        chatHeader.add(cssClass: "heading")
+        chatSection.append(child: Separator(orientation: .horizontal))
+        let chatHeader = Box(orientation: .horizontal, spacing: 6)
+        let chatTitle = Label(str: "Project Chat")
+        chatTitle.halign = .start
+        chatTitle.hexpand = true
+        chatTitle.add(cssClass: "heading")
+        chatHeader.append(child: chatTitle)
+        let openInMainView = Button(iconName: "view-fullscreen-symbolic")
+        openInMainView.add(cssClass: "flat")
+        openInMainView.tooltipText = "Open the Project Chat in the main view"
+        chatHeader.append(child: openInMainView)
         chatSection.append(child: chatHeader)
 
         conversationHost = Box(orientation: .vertical, spacing: 0)
         conversationHost.vexpand = true
         conversationHost.setSizeRequest(width: -1, height: 240)
         chatSection.append(child: conversationHost)
+        openInMainView.onClicked { [weak self] _ in
+            MainActor.assumeIsolated { self?.onOpenProjectChat() }
+        }
 
         body.append(child: chatSection)
 
@@ -453,7 +464,7 @@ final class CollaborationPanel {
 
     private func showUnread() {
         guard let engine else { return }
-        let unread = engine.objectChats.unreadCount(in: engine.objectChats.conversationID)
+        let unread = engine.collaboration.isCollaborative ? engine.objectChats.unreadTotal : 0
         unreadBadge.label = "\(unread)"
         unreadBadge.visible = unread > 0
     }
@@ -595,6 +606,9 @@ final class CollaborationPanel {
         guard let engine else { return }
 
         let status = engine.collaboration.status
+        chatSection.visible = engine.collaboration.isCollaborative
+        refreshConversation()
+        showUnread()
         if case .joined = status {
             activeCollaboration.visible = true
         } else {
@@ -918,7 +932,7 @@ final class CollaborationPanel {
     }
 
     private func refreshConversation() {
-        guard isShown, let engine else { return }
+        guard isShown, let engine, engine.collaboration.isCollaborative else { return }
         let chats = engine.objectChats
         guard conversation?.chatID != chats.conversationID else { return }
         let chat = chats.openConversation()

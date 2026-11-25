@@ -154,7 +154,7 @@ final class PharoColumnsView {
 
     /// The strip stands over the whole page: a square for the page, then one
     /// per inspector column, with the current one drawn brightest.
-    func drive(_ bar: PharoOverviewBar, naming pageName: String) {
+    func drive(_ bar: PharoOverviewBar, naming pageName: @escaping () -> String) {
         bar.slotCount = { [weak self] in 1 + (self?.columnCount ?? 0) }
         bar.isCurrent = { [weak self] slot in
             guard let self else { return false }
@@ -162,7 +162,7 @@ final class PharoColumnsView {
         }
         bar.tooltip = { [weak self] slot in
             guard let self else { return "" }
-            return slot == 0 ? pageName : self.printString(at: slot - 1)
+            return slot == 0 ? pageName() : self.printString(at: slot - 1)
         }
         bar.activate = { [weak self] slot in
             guard let self else { return }
