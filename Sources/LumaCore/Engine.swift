@@ -3701,6 +3701,7 @@ public final class Engine {
         try? store.deleteInstrument(id: instance.id)
         forgetViewData(of: instance)
         widgetStates.removeValue(forKey: instance.id)
+        forgetCounterAndConsoleTallies(of: instance.id)
         instrumentChildren.removeValue(forKey: instance.id)
         widgetPlacements.removeValue(forKey: instance.id)
         onSessionListChanged?(.instrumentRemoved(id: instance.id, sessionID: instance.sessionID))
@@ -4525,7 +4526,7 @@ public final class Engine {
         config: CustomInstrumentConfig,
         on node: ProcessNode
     ) async throws -> Bool {
-        consoleEntriesDropped = consoleEntriesDropped.filter { $0.key.instanceID != instanceID }
+        forgetCounterAndConsoleTallies(of: instanceID)
         let def = bundle.def
         guard await instrumentViews.isAllowed(instanceID) else {
             broadcastInstrumentStatus(instanceID: instanceID, sessionID: node.sessionID)
@@ -4644,6 +4645,11 @@ public final class Engine {
         case .view:
             return ["state": state.view?.payload.value ?? NSNull()]
         }
+    }
+
+    private func forgetCounterAndConsoleTallies(of instanceID: UUID) {
+        consoleEntriesDropped = consoleEntriesDropped.filter { $0.key.instanceID != instanceID }
+        fractionalCounters = fractionalCounters.filter { $0.key.instanceID != instanceID }
     }
 
     public func counterText(_ counter: WidgetCounterValue, instanceID: UUID, widget: String) -> CounterText {
