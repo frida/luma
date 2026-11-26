@@ -5502,6 +5502,21 @@ public final class Engine {
         canReachAgent(of: instance)
     }
 
+    public func widgetActionRefusal(of instance: InstrumentInstance) -> String? {
+        guard !canReachAgent(of: instance) else { return nil }
+        let hosting = isHostingNode(instance.sessionID)
+        if !hosting && !isHostedRemotelyLive(instance.sessionID) {
+            return "The session is not attached."
+        }
+        if !hosting && !collaboration.isOwner {
+            return "Only the member hosting this session and the lab’s owners can run this instrument’s actions."
+        }
+        if let waiting = gate(of: instance).waitingLabel {
+            return "\(waiting) this instrument’s code to run."
+        }
+        return "The instrument is not running."
+    }
+
     public func canChoose(_ action: String, of widget: String, instance: InstrumentInstance) -> Bool {
         canReachAgent(of: instance) && agentState(of: instance).isEnabled(action, of: widget)
     }

@@ -30,6 +30,8 @@ final class InstrumentWidgetsRenderer {
         actionGate = WidgetActionGate { [weak engine] action, widget in
             guard let engine, let instance else { return false }
             return action.map { engine.canChoose($0, of: widget, instance: instance) } ?? engine.canChooseWidgetActions(of: instance)
+        } refusal: { [weak engine] in
+            instance.flatMap { engine?.widgetActionRefusal(of: $0) }
         }
 
         widget = Box(orientation: .vertical, spacing: 0)
@@ -424,10 +426,12 @@ enum WidgetCardMetrics {
 @MainActor
 private final class WidgetActionGate {
     private let allows: (_ action: String?, _ widget: String) -> Bool
-    private var controls: [(control: Widget, widget: String, actions: [String?])] = []
+    private let refusal: () -> String?
+    private var controls: [(control: Widget, widget: String, actions: [String?], tooltip: String?)] = []
 
-    init(allows: @escaping (_ action: String?, _ widget: String) -> Bool) {
+    init(allows: @escaping (_ action: String?, _ widget: String) -> Bool, refusal: @escaping () -> String? = { nil }) {
         self.allows = allows
+        self.refusal = refusal
     }
 
     func refresh() {
@@ -437,20 +441,22 @@ private final class WidgetActionGate {
     }
 
     func adoptWidgetActions(_ control: Widget, widget: String, actions: [String]) {
-        adopt((control, widget, actions))
+        adopt((control, widget, actions, control.tooltipText))
     }
 
     func adoptRowAction(_ control: Widget) {
-        adopt((control, "", [nil]))
+        adopt((control, "", [nil], control.tooltipText))
     }
 
-    private func adopt(_ entry: (control: Widget, widget: String, actions: [String?])) {
+    private func adopt(_ entry: (control: Widget, widget: String, actions: [String?], tooltip: String?)) {
         controls.append(entry)
         apply(entry)
     }
 
-    private func apply(_ entry: (control: Widget, widget: String, actions: [String?])) {
-        entry.control.sensitive = entry.actions.contains { allows($0, entry.widget) }
+    private func apply(_ entry: (control: Widget, widget: String, actions: [String?], tooltip: String?)) {
+        let sensitive = entry.actions.contains { allows($0, entry.widget) }
+        entry.control.sensitive = sensitive
+        entry.control.tooltipText = sensitive ? entry.tooltip : refusal() ?? entry.tooltip
     }
 }
 

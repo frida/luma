@@ -149,6 +149,7 @@ private struct WidgetCard: View {
                 WidgetHeaderActions(
                     actions: widget.actions,
                     isEnabled: canChoose,
+                    refusal: instance.flatMap(engine.widgetActionRefusal),
                     onPress: invoke)
             }
         }
@@ -375,6 +376,7 @@ private struct WidgetCanvas: View {
             if !actions.isEmpty {
                 TableRowActions(
                     actions: actions, shown: shownActions, isEnabled: { _ in canChooseActions },
+                    refusal: instance.flatMap(engine.widgetActionRefusal),
                     onPress: { invoke(action: $0, item: row.id) })
             }
         }
@@ -385,7 +387,9 @@ private struct WidgetCanvas: View {
     }
 
     private func actionButtons(_ actions: [InstrumentWidget.Action], item: String) -> some View {
-        ActionButtons(actions: actions, isEnabled: { _ in canChooseActions }, onPress: { invoke(action: $0, item: item) })
+        ActionButtons(
+            actions: actions, isEnabled: { _ in canChooseActions }, refusal: instance.flatMap(engine.widgetActionRefusal),
+            onPress: { invoke(action: $0, item: item) })
     }
 
     private var canChooseActions: Bool {
@@ -710,11 +714,12 @@ private struct ScrollingRows<Rows: View>: View {
 private struct WidgetHeaderActions: View {
     let actions: [InstrumentWidget.Action]
     let isEnabled: (String) -> Bool
+    let refusal: String?
     let onPress: (String) -> Void
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
-            ActionButtons(actions: actions, isEnabled: isEnabled, onPress: onPress)
+            ActionButtons(actions: actions, isEnabled: isEnabled, refusal: refusal, onPress: onPress)
             Menu {
                 ForEach(actions) { action in
                     Button(action.name) { onPress(action.id) }
@@ -735,6 +740,7 @@ private struct WidgetHeaderActions: View {
 private struct ActionButtons: View {
     let actions: [InstrumentWidget.Action]
     let isEnabled: (String) -> Bool
+    var refusal: String? = nil
     let onPress: (String) -> Void
 
     var body: some View {
@@ -743,6 +749,7 @@ private struct ActionButtons: View {
                 Button(action.name) { onPress(action.id) }
                     .buttonStyle(RowActionButtonStyle())
                     .disabled(!isEnabled(action.id))
+                    .help(isEnabled(action.id) ? "" : refusal ?? "")
             }
         }
         .fixedSize()
@@ -753,11 +760,12 @@ private struct TableRowActions: View {
     let actions: [InstrumentWidget.Action]
     let shown: Int
     let isEnabled: (String) -> Bool
+    var refusal: String? = nil
     let onPress: (String) -> Void
 
     var body: some View {
         HStack(spacing: RowActionFit.spacing) {
-            ActionButtons(actions: Array(actions.prefix(shown)), isEnabled: isEnabled, onPress: onPress)
+            ActionButtons(actions: Array(actions.prefix(shown)), isEnabled: isEnabled, refusal: refusal, onPress: onPress)
             if shown < actions.count {
                 Menu {
                     ForEach(actions.dropFirst(shown)) { action in
