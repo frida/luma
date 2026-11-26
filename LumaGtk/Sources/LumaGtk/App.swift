@@ -35,22 +35,23 @@ final class LumaApplication {
         self.app = app
     }
 
-    func run(_ arguments: [String] = CommandLine.arguments) -> Int {
+    func run() -> Int {
         let context = Unmanaged.passRetained(self).toOpaque()
         luma_app_set_open_handler(
             UnsafeMutableRawPointer(app.application_ptr),
             lumaOpenFilesThunk,
             context
         )
-        return app.run(
-            arguments: arguments,
-            startupHandler: { [weak self] _ in
-                MainActor.assumeIsolated { self?.startup() }
-            },
-            activationHandler: { [weak self] _ in
-                MainActor.assumeIsolated { self?.activate() }
-            }
-        )
+        app.onStartup { [weak self] _ in
+            MainActor.assumeIsolated { self?.startup() }
+        }
+        app.onActivation { [weak self] _ in
+            MainActor.assumeIsolated { self?.activate() }
+        }
+        let status = app.application_ptr.withMemoryRebound(to: GApplication.self, capacity: 1) {
+            Int(g_application_run($0, CommandLine.argc, CommandLine.unsafeArgv))
+        }
+        return status
     }
 
     private func startup() {
