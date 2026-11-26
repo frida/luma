@@ -29,7 +29,7 @@ final class FileDialogRequest {
             request.dialog.initialName = initialName
         }
         if let mediaType {
-            request.dialog.setDefault(filter: filter(for: mediaType))
+            request.dialog.setDefault(filter: filter(for: mediaType, naming: initialName))
         }
         request.start(parent: Gtk.WindowRef(parent))
     }
@@ -40,10 +40,13 @@ final class FileDialogRequest {
         self.completion = completion
     }
 
-    private static func filter(for mediaType: String) -> FileFilter {
+    private static func filter(for mediaType: String, naming name: String?) -> FileFilter {
         let filter = FileFilter()
         filter.set(name: mediaType)
         filter.add(mimeType: mediaType)
+        if let suffix = name.map({ URL(fileURLWithPath: $0).pathExtension }), !suffix.isEmpty {
+            filter.add(suffix: suffix)
+        }
         return filter
     }
 
