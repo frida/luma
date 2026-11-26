@@ -25,10 +25,12 @@ public struct PharoTableLayout {
     }
 
     public static let flexibleMinimumCharacters = 6
+    public static let emptyMinimumCharacters = 2
     public static let fittedMaximumCharacters = 48
 
     public let columns: [PharoColumn]
     private let content: [Double]
+    private let widestCell: [Double]
     private let metrics: Metrics
 
     public static func isDeclared(_ columns: [PharoColumn]) -> Bool {
@@ -38,11 +40,13 @@ public struct PharoTableLayout {
     public init(columns: [PharoColumn], rows: [[PharoCell]], total: Int, metrics: Metrics) {
         self.columns = columns
         self.metrics = metrics
-        content = columns.indices.map { column in
-            let cells = column == 0
-                ? [metrics.measure(String(repeating: "0", count: max(String(total).count, 3)))]
-                : rows.map { Self.width(of: $0[column], metrics: metrics) }
-            return cells.reduce(metrics.measure(columns[column].title), max)
+        widestCell = columns.indices.map { column in
+            column == 0
+                ? metrics.measure(String(repeating: "0", count: max(String(total).count, 3)))
+                : rows.map { Self.width(of: $0[column], metrics: metrics) }.reduce(0, max)
+        }
+        content = columns.indices.map { [widestCell, metrics] column in
+            max(widestCell[column], metrics.measure(columns[column].title))
         }
     }
 
@@ -74,7 +78,7 @@ public struct PharoTableLayout {
 
     public func fit(of column: Int, width: Double?) -> Fit {
         guard let width else { return .dropped }
-        return width + 0.5 >= content[column] + metrics.padding ? .whole : .truncated
+        return width + 0.5 >= widestCell[column] + metrics.padding ? .whole : .truncated
     }
 
     private struct Plan {
@@ -101,9 +105,9 @@ public struct PharoTableLayout {
         case .points(let points):
             return Plan(want: points, minimum: min(minimum ?? points, points), weight: nil)
         case .weight(let weight):
-            return flexible(weight: weight, minimum: minimum)
+            return flexible(column, weight: weight, minimum: minimum)
         case nil:
-            return flexible(weight: 1, minimum: minimum)
+            return flexible(column, weight: 1, minimum: minimum)
         }
     }
 
@@ -111,9 +115,14 @@ public struct PharoTableLayout {
         count * metrics.characterWidth
     }
 
-    private func flexible(weight: Double, minimum: Double?) -> Plan {
-        let least = minimum ?? characters(Double(Self.flexibleMinimumCharacters)) + metrics.padding
+    private func flexible(_ column: Int, weight: Double, minimum: Double?) -> Plan {
+        let least = minimum ?? defaultMinimum(of: column)
         return Plan(want: least, minimum: least, weight: weight)
+    }
+
+    private func defaultMinimum(of column: Int) -> Double {
+        let shown = max(widestCell[column], characters(Double(Self.emptyMinimumCharacters)))
+        return min(shown, characters(Double(Self.flexibleMinimumCharacters))) + metrics.padding
     }
 
     private var givingWayOrder: [Int] {
