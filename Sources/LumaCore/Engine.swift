@@ -928,10 +928,11 @@ public final class Engine {
             self?.receiveShow(child, sessionID: sessionID, instanceID: instanceID)
         }
 
-        collaboration.onChildrenSnapshot = { [weak self] snapshot, sessionIDs in
+        collaboration.onChildrenSnapshot = { [weak self] snapshot, sessions in
             guard let self else { return }
-            adoptRemoteChildren(snapshot, sessionIDs: sessionIDs.filter { !self.localUserHosts($0) })
-            republishChildren(over: snapshot, sessionIDs: sessionIDs.filter { self.localUserHosts($0) })
+            let remote = sessions.filter { !self.localUserHosts($0.id) }
+            adoptRemoteChildren(snapshot, instanceIDs: Set(remote.flatMap { $0.instruments.map(\.id) + (self.instrumentsBySession[$0.id] ?? []).map(\.id) }))
+            republishChildren(over: snapshot, sessionIDs: Set(sessions.map(\.id).filter { self.localUserHosts($0) }))
         }
 
         collaboration.onOfferedStream = { [weak self] instanceID, stream in

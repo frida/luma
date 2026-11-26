@@ -5,6 +5,10 @@ extension Engine {
         instrumentChildren[instanceID] ?? []
     }
 
+    public func shownChildren(of instanceID: UUID) -> [InstrumentChild] {
+        gate(ofInstance: instanceID) == .none ? children(of: instanceID) : []
+    }
+
     public func childTemplate(_ template: String, of instance: InstrumentInstance) -> InstrumentChildTemplate? {
         customDef(of: instance.id)?.children.first { $0.id == template }
     }
@@ -113,14 +117,14 @@ extension Engine {
         forgetChild(ref, of: instanceID)
     }
 
-    func adoptRemoteChildren(_ snapshot: [UUID: [InstrumentChild]], sessionIDs: Set<UUID>) {
-        for instance in sessionIDs.flatMap({ instrumentsBySession[$0] ?? [] }) {
-            let adopted = (snapshot[instance.id] ?? []).sorted { $0.position < $1.position }
+    func adoptRemoteChildren(_ snapshot: [UUID: [InstrumentChild]], instanceIDs: Set<UUID>) {
+        for instanceID in instanceIDs {
+            let adopted = (snapshot[instanceID] ?? []).sorted { $0.position < $1.position }
             let adoptedRefs = Set(adopted.map(\.ref))
-            for child in children(of: instance.id) where !adoptedRefs.contains(child.ref) {
-                forgetChild(child.ref, of: instance.id)
+            for child in children(of: instanceID) where !adoptedRefs.contains(child.ref) {
+                forgetChild(child.ref, of: instanceID)
             }
-            instrumentChildren[instance.id] = adopted
+            instrumentChildren[instanceID] = adopted
         }
     }
 

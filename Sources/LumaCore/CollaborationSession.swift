@@ -317,7 +317,7 @@ public final class CollaborationSession {
     var onChildReceived: ((InstrumentChild, UUID) -> Void)?
     var onChildRemoved: ((ChildRef, UUID) -> Void)?
     var onChildShown: ((ChildRef?, UUID, UUID) -> Void)?
-    var onChildrenSnapshot: (([UUID: [InstrumentChild]], Set<UUID>) -> Void)?
+    var onChildrenSnapshot: (([UUID: [InstrumentChild]], [Session]) -> Void)?
     private var sentWidgetActions: [(id: UUID, action: SentWidgetAction)] = []
     private var receivingStreams: [UUID: RemoteStreamReceiver] = [:]
     private var relayedStreams: Set<UUID> = []
@@ -1790,7 +1790,7 @@ public final class CollaborationSession {
         }
         instancesHeldByLab.formUnion(sessions.flatMap(\.instruments).map(\.id))
         childrenHeldByLab = Set(children.flatMap { instanceID, list in list.map { HeldChild(instanceID: instanceID, ref: $0.ref) } })
-        onChildrenSnapshot?(children, Set(sessions.map(\.id)))
+        onChildrenSnapshot?(children, sessions)
 
         let widgetStateDicts = (payload["widget_states"] as? [JSONObject]) ?? []
         let viewStateDicts = (payload["view_states"] as? [JSONObject]) ?? []
