@@ -401,12 +401,15 @@ final class AddInstrumentDialog {
             awaitingStoreNotes.remove(child: child)
         }
         for outdated in storefront.installationsAwaitingStore {
+            let row = Box(orientation: .horizontal, spacing: 6)
+            row.append(child: InstrumentIconView.makeImage(for: outdated.icon, pixelSize: 16))
             let note = Label(str: "\(outdated.name): \(outdated.explanation)")
             note.halign = .start
             note.wrap = true
             note.add(cssClass: "caption")
             note.add(cssClass: "dim-label")
-            awaitingStoreNotes.append(child: note)
+            row.append(child: note)
+            awaitingStoreNotes.append(child: row)
         }
     }
 

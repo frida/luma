@@ -127,6 +127,11 @@ public final class Storefront {
         return outdated
     }
 
+    private static func iconLeftIn(_ folderURL: URL) -> InstrumentIcon {
+        let data = FileManager.default.contents(atPath: folderURL.appendingPathComponent(InstrumentFolder.defaultIconFileName).path)
+        return data.map(InstrumentIcon.pixels) ?? .symbolic(InstrumentIconCatalog.default.id)
+    }
+
     private func computeInstallationsNeedingUpdate() -> [OutdatedInstallation] {
         let unreadable = engine.instrumentFolders.unreadableFolders
         return installed.installations.values
@@ -139,7 +144,8 @@ public final class Storefront {
                     name: item?.name ?? folderName,
                     installedVersion: installation.version,
                     update: item.flatMap { LumaVersion.meets($0.minAppVersion) ? $0 : nil },
-                    isListed: item != nil)
+                    isListed: item != nil,
+                    icon: Self.iconLeftIn(installed.folderURL(for: installation.itemID)))
             }
     }
 
@@ -149,6 +155,7 @@ public final class Storefront {
         public let installedVersion: StoreVersion
         public let update: StoreItem?
         public let isListed: Bool
+        public let icon: InstrumentIcon
 
         public var explanation: String {
             if update != nil {

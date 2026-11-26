@@ -716,11 +716,14 @@ struct AddInstrumentSheet: View {
     }
 
     private func awaitingStoreRow(_ outdated: Storefront.OutdatedInstallation) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(outdated.name)
-            Text(outdated.explanation)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+        HStack {
+            InstrumentIconView(icon: outdated.icon, pointSize: 12)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(outdated.name)
+                Text(outdated.explanation)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .foregroundStyle(.secondary)
     }
