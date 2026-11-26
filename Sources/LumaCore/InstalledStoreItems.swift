@@ -53,7 +53,7 @@ final class InstalledStoreItems {
         let folderURL = folderURL(for: itemID)
         guard FileManager.default.fileExists(atPath: folderURL.path) else { return false }
         guard let installation = installations[itemID] else { return true }
-        let isFolderEdited = (try? snapshot(of: folderURL)) != installation.snapshot
+        let isFolderEdited = isEdited(folderURL, since: installation.snapshot)
         let isLinkedCopyEdited = linkedCopy != nil && linkedCopy != installation.snapshot
         return isFolderEdited || isLinkedCopyEdited
     }
@@ -107,6 +107,26 @@ final class InstalledStoreItems {
     private func latest(of installation: StoreInstallation) -> Storefront.LinkedInstallation.Latest {
         guard let item = items.first(where: { $0.id == installation.itemID }) else { return .unknown }
         return item.version > installation.version && LumaVersion.meets(item.minAppVersion) ? .newer(item) : .installed(item)
+    }
+
+    private func isEdited(_ folderURL: URL, since installed: InstrumentFolderLink.Snapshot) -> Bool {
+        if let current = try? snapshot(of: folderURL) {
+            return current != installed
+        }
+        return sourceDigests(in: folderURL) != installed.files
+    }
+
+    private func sourceDigests(in folderURL: URL) -> [String: String] {
+        let generated: Set<String> = [InstrumentFolder.manifestFileName, InstrumentFolder.typingsFileName]
+        let root = folderURL.standardizedFileURL.path + "/"
+        var digests: [String: String] = [:]
+        for case let fileURL as URL in FileManager.default.enumerator(at: folderURL, includingPropertiesForKeys: [.isRegularFileKey])!
+        where (try? fileURL.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true {
+            let path = String(fileURL.standardizedFileURL.path.dropFirst(root.count))
+            guard !generated.contains(path), let content = FileManager.default.contents(atPath: fileURL.path) else { continue }
+            digests[path] = InstrumentFolderLink.Snapshot.digest(content)
+        }
+        return digests
     }
 
     private func snapshot(of folderURL: URL) throws -> InstrumentFolderLink.Snapshot {
