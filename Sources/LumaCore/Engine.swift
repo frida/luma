@@ -51,7 +51,7 @@ public final class Engine {
 
     private let _widgetUpdates = AsyncEventSource<WidgetUpdate>()
     public var widgetUpdates: AsyncStream<WidgetUpdate> { _widgetUpdates.makeStream() }
-    private var widgetStates: [UUID: [String: WidgetState]] = [:]
+    @ObservationIgnored private var widgetStates: [UUID: [String: WidgetState]] = [:]
     private var widgetStateWrite = WidgetStateWrite.idle
     private static let widgetStateWriteDelay = Duration.seconds(1)
 

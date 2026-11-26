@@ -17,9 +17,11 @@ public final class EventLog {
     @ObservationIgnored public var onEventsCleared: ((@MainActor () -> Void))?
     @ObservationIgnored public var onEventsToPersist: ((@MainActor ([RuntimeEvent]) -> Void))?
     @ObservationIgnored private var allEvents: [RuntimeEvent] = []
+    @ObservationIgnored private var arrived: [RuntimeEvent] = []
     @ObservationIgnored private var pendingPersist: [RuntimeEvent] = []
     @ObservationIgnored private var isFlushScheduled = false
-    @ObservationIgnored private var lastFlushedCount = 0
+
+    private static let flushInterval = Duration.milliseconds(100)
 
     public init(maxVisible: Int = 1_000, maxInMemory: Int = 10_000) {
         self.maxVisible = maxVisible
@@ -27,22 +29,21 @@ public final class EventLog {
     }
 
     public func append(_ event: RuntimeEvent) {
-        totalReceived += 1
-        allEvents.append(event)
-        pendingPersist.append(event)
-
-        if allEvents.count > maxInMemory {
-            allEvents.removeFirst(allEvents.count - maxInMemory)
-        }
-
+        arrived.append(event)
         scheduleFlush()
     }
 
     public func event(id: RuntimeEvent.ID) -> RuntimeEvent? {
-        allEvents.last { $0.id == id }
+        arrived.last { $0.id == id } ?? allEvents.last { $0.id == id }
     }
 
     public func update(_ event: RuntimeEvent) {
+        if let index = arrived.lastIndex(where: { $0.id == event.id }) {
+            var revised = event
+            revised.revision = arrived[index].revision &+ 1
+            arrived[index] = revised
+            return
+        }
         guard let index = allEvents.lastIndex(where: { $0.id == event.id }) else { return }
         var revised = event
         revised.revision = allEvents[index].revision &+ 1
@@ -60,19 +61,17 @@ public final class EventLog {
     public func restore(_ events: [RuntimeEvent]) {
         allEvents = Array(events.suffix(maxInMemory))
         totalReceived = events.count
-        let visible = Array(allEvents.suffix(maxVisible))
-        self.events = visible
-        lastFlushedCount = visible.count
+        self.events = Array(allEvents.suffix(maxVisible))
         flushVersion &+= 1
     }
 
     public func clear() {
         allEvents.removeAll()
+        arrived.removeAll()
         events.removeAll()
         pendingPersist.removeAll()
         totalReceived = 0
         flushVersion = 0
-        lastFlushedCount = 0
         isFlushScheduled = false
         onEventsCleared?()
     }
@@ -87,29 +86,34 @@ public final class EventLog {
         isFlushScheduled = true
 
         Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 16_000_000)
+            try? await Task.sleep(for: Self.flushInterval)
             self?.flush()
         }
     }
 
     private func flush() {
         isFlushScheduled = false
-        let visible = Array(allEvents.suffix(maxVisible))
-        let newCount = visible.count
-        let prevCount = lastFlushedCount
-        events = visible
-        lastFlushedCount = newCount
-        flushVersion &+= 1
-        if newCount > prevCount {
-            onEventsAppended?(visible[prevCount...])
+        if !arrived.isEmpty {
+            let batch = arrived
+            arrived.removeAll(keepingCapacity: true)
+            allEvents.append(contentsOf: batch)
+            if allEvents.count > maxInMemory {
+                allEvents.removeFirst(allEvents.count - maxInMemory)
+            }
+            pendingPersist.append(contentsOf: batch)
+            let visible = Array(allEvents.suffix(maxVisible))
+            events = visible
+            totalReceived += batch.count
+            flushVersion &+= 1
+            onEventsAppended?(visible.suffix(batch.count))
         }
         persistPending()
     }
 
     private func persistPending() {
-        guard !pendingPersist.isEmpty, let onEventsToPersist else { return }
+        guard !pendingPersist.isEmpty else { return }
         let batch = pendingPersist
         pendingPersist.removeAll(keepingCapacity: true)
-        onEventsToPersist(batch)
+        onEventsToPersist?(batch)
     }
 }
