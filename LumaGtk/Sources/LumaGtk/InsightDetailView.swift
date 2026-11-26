@@ -160,6 +160,7 @@ final class InsightDetailView {
         disasmHost.append(child: disasmScroll)
 
         let keyController = EventControllerKey()
+        keyController.propagationPhase = .capture
         keyController.onKeyPressed { [weak self] _, keyval, _, _ in
             MainActor.assumeIsolated {
                 self?.handleDisasmKey(keyval: keyval) ?? false
