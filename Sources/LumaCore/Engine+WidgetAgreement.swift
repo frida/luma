@@ -55,8 +55,25 @@ extension Engine {
         restartWidgetState(slot, of: instanceID, as: widgetState(instanceID: instanceID, widget: slot), above: labRevision)
     }
 
+    func noteRows(of key: InstrumentViews.Key, changedBy update: WidgetUpdate) {
+        switch update.kind {
+        case .tableUpsert(let row):
+            beginRow(row.id, of: key, at: update.revision)
+        case .listUpsert(let item):
+            beginRow(item.id, of: key, at: update.revision)
+        case .tableRemove(let id), .listRemove(let id):
+            rowsBegun[key]?[id] = nil
+        case .clear:
+            rowsBegun[key] = [:]
+        case .snapshot(let state):
+            rowsBegun[key] = Self.rows(of: state, beginningAt: update.revision)
+        default:
+            break
+        }
+    }
+
     func refusal(
-        ofRemoteAction action: String, on slot: String, item: String?, instanceID: UUID, sessionID: UUID
+        ofRemoteAction action: String, on slot: String, item: String?, instanceID: UUID, sessionID: UUID, seenRevision: Int
     ) -> String? {
         guard let instance = instrumentsBySession[sessionID]?.first(where: { $0.id == instanceID }) else {
             return "the host does not have this instrument"
@@ -66,7 +83,14 @@ extension Engine {
             return "“\(name)” is waiting for its host to allow its code to run"
         }
         guard canReachAgent(of: instance) else { return "“\(name)” is not running at the host" }
-        guard item != nil || agentState(of: instance).isEnabled(action, of: slot) else { return "this action is turned off at the host" }
+        guard let item else {
+            return agentState(of: instance).isEnabled(action, of: slot) ? nil : "this action is turned off at the host"
+        }
+        let state = widgetState(instanceID: instanceID, widget: slot)
+        let present = state.tableRows.contains { $0.id == item } || state.listItems.contains { $0.id == item }
+        guard present, let began = rowsBegun[InstrumentViews.Key(instanceID: instanceID, widget: slot)]?[item], began <= seenRevision else {
+            return "this \(isList(slot, of: instanceID) ? "list" : "table") changed; try again"
+        }
         return nil
     }
 
@@ -99,6 +123,7 @@ extension Engine {
         state.view?.revision = state.revision
         widgetStates[instanceID, default: [:]][slot] = state
         consoleEntriesDropped[key] = 0
+        rowsBegun[key] = Self.rows(of: state, beginningAt: state.revision)
         _widgetUpdates.yield(WidgetUpdate(instanceID: instanceID, widget: slot, kind: .snapshot(state), revision: state.revision))
         guard localUserHosts(sessionID), let collabSID = collabSessionID(forSessionID: sessionID) else { return }
         publish(state, of: instanceID, widget: slot, sessionID: collabSID)
@@ -107,5 +132,19 @@ extension Engine {
     private func hasChild(of slot: String, in instanceID: UUID) -> Bool {
         guard let ref = WidgetSlot.split(slot).child else { return true }
         return children(of: instanceID).contains { $0.ref == ref }
+    }
+
+    private func beginRow(_ id: String, of key: InstrumentViews.Key, at revision: Int) {
+        guard rowsBegun[key]?[id] == nil else { return }
+        rowsBegun[key, default: [:]][id] = revision
+    }
+
+    private func isList(_ slot: String, of instanceID: UUID) -> Bool {
+        guard case .list = widget(forInstanceID: instanceID, widgetID: slot)?.kind else { return false }
+        return true
+    }
+
+    private static func rows(of state: WidgetState, beginningAt revision: Int) -> [String: Int] {
+        Dictionary(uniqueKeysWithValues: (state.tableRows.map(\.id) + state.listItems.map(\.id)).map { ($0, revision) })
     }
 }

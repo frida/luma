@@ -327,7 +327,7 @@ public final class CollaborationSession {
     public var onSessionEventReceived: ((UUID, RuntimeEvent) -> Void)?
     public var onSessionEventUpdated: ((UUID, RuntimeEvent) -> Void)?
     public var onSessionWidgetUpdateReceived: ((UUID, WidgetUpdate) -> Void)?
-    var onSessionWidgetActionRequested: ((UUID, UUID, String, String, String?, UUID) -> Void)?
+    var onSessionWidgetActionRequested: ((UUID, UUID, String, String, String?, UUID, Int) -> Void)?
     var onWidgetActionFailed: ((WidgetActionFailure) -> Void)?
     var onWidgetStale: ((UUID, UUID, String, Int) -> Void)?
     var onInstanceHeld: ((UUID, UUID) -> Void)?
@@ -1229,6 +1229,7 @@ public final class CollaborationSession {
         widget: String,
         action: String,
         item: String?,
+        revision: Int,
         savesFile: Bool
     ) {
         guard case .joined(let labID) = status, labHolds(instance: instanceID, widget: widget) else { return }
@@ -1237,6 +1238,7 @@ public final class CollaborationSession {
             "action_id": actionID.uuidString,
             "instance_id": instanceID.uuidString,
             "action": action,
+            "revision": revision,
         ]
         WidgetSlot.addTarget(widget, to: &payload)
         if let item { payload["item"] = item }
@@ -2134,9 +2136,10 @@ public final class CollaborationSession {
                 let widget = WidgetSlot.target(in: payload),
                 let action = payload["action"] as? String,
                 let actionIDStr = payload["action_id"] as? String,
-                let actionID = UUID(uuidString: actionIDStr)
+                let actionID = UUID(uuidString: actionIDStr),
+                let revision = payload["revision"] as? Int
             else { return }
-            onSessionWidgetActionRequested?(sessionID, instanceID, widget, action, payload["item"] as? String, actionID)
+            onSessionWidgetActionRequested?(sessionID, instanceID, widget, action, payload["item"] as? String, actionID, revision)
 
         case ("+outcome", let s) where s.count == 7 && s[0] == "labs" && s[2] == "sessions" && s[4] == "widget-actions" && s[6] == "outcome":
             guard let actionID = UUID(uuidString: s[5]) else { return }

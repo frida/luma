@@ -53,6 +53,7 @@ public final class Engine {
     public var widgetUpdates: AsyncStream<WidgetUpdate> { _widgetUpdates.makeStream() }
     @ObservationIgnored var widgetStates: [UUID: [String: WidgetState]] = [:]
     @ObservationIgnored var consoleEntriesDropped: [InstrumentViews.Key: Int] = [:]
+    @ObservationIgnored var rowsBegun: [InstrumentViews.Key: [String: Int]] = [:]
     @ObservationIgnored private var fractionalCounters: Set<FractionalCounter> = []
 
     private struct FractionalCounter: Hashable {
@@ -955,14 +956,15 @@ public final class Engine {
             self?.relayedStreamEnded(actionID: actionID, reason: reason)
         }
 
-        collaboration.onSessionWidgetActionRequested = { [weak self] sessionID, instanceID, widget, action, item, actionID in
+        collaboration.onSessionWidgetActionRequested = { [weak self] sessionID, instanceID, widget, action, item, actionID, revision in
             self?.handleRemoteWidgetActionRequest(
                 sessionID: sessionID,
                 instanceID: instanceID,
                 widget: widget,
                 action: action,
                 item: item,
-                actionID: actionID
+                actionID: actionID,
+                seenRevision: revision
             )
         }
 
@@ -5290,10 +5292,11 @@ public final class Engine {
         widget: String,
         action: String,
         item: String?,
-        actionID: UUID
+        actionID: UUID,
+        seenRevision: Int
     ) {
         guard isHostingNode(sessionID) else { return }
-        if let refusal = refusal(ofRemoteAction: action, on: widget, item: item, instanceID: instanceID, sessionID: sessionID) {
+        if let refusal = refusal(ofRemoteAction: action, on: widget, item: item, instanceID: instanceID, sessionID: sessionID, seenRevision: seenRevision) {
             return collaboration.sendOutcome(sessionID: sessionID, actionID: actionID, offersFile: false, error: refusal)
         }
         let instance = instrumentsBySession[sessionID]!.first { $0.id == instanceID }!
@@ -5371,6 +5374,9 @@ public final class Engine {
             consoleEntriesDropped[key] = dropped
         default:
             consoleEntriesDropped[key, default: 0] += dropped
+        }
+        if origin == .local, isHostingNode(sessionID) {
+            noteRows(of: key, changedBy: update)
         }
         _widgetUpdates.yield(update)
 
@@ -5665,6 +5671,7 @@ public final class Engine {
                 widget: widget,
                 action: action,
                 item: item,
+                revision: widgetState(instanceID: instance.id, widget: widget).revision,
                 savesFile: chooser == .person
             )
             return nil
