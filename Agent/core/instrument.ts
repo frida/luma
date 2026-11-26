@@ -308,19 +308,23 @@ export async function updateInstrumentConfig({ instanceId, config, marker }: {
     }
 }
 
-export async function disposeInstrument({ instanceId }: { instanceId: string }): Promise<void> {
-    const controller = instruments.get(instanceId);
-    if (controller === undefined) {
-        throw new Error(`No such instance: ${instanceId}`);
-    }
+export async function disposeInstrument({ instanceId, marker }: { instanceId: string, marker: string }): Promise<void> {
+    try {
+        const controller = instruments.get(instanceId);
+        if (controller === undefined) {
+            throw new Error(`No such instance: ${instanceId}`);
+        }
 
-    await controller.handle.dispose?.();
+        await controller.handle.dispose?.();
 
-    for (const stream of openFileStreams.get(instanceId) ?? []) {
-        stream.destroy(new Error("the instrument was unloaded"));
+        for (const stream of openFileStreams.get(instanceId) ?? []) {
+            stream.destroy(new Error("the instrument was unloaded"));
+        }
+        instruments.delete(instanceId);
+        forgetInstance(instanceId);
+    } finally {
+        markHandled(marker);
     }
-    instruments.delete(instanceId);
-    forgetInstance(instanceId);
 }
 
 function forgetInstance(instanceId: string): void {

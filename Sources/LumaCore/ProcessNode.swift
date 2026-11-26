@@ -407,6 +407,9 @@ public final class ProcessNode: Identifiable {
 
             case "instrument-batch":
                 guard let items = dict["items"] as? [[String: Any]] else { return false }
+                guard let instanceID = (dict["instance_id"] as? String).flatMap(UUID.init(uuidString:)),
+                    instruments.contains(where: { $0.id == instanceID })
+                else { return true }
                 for item in items {
                     let slice: [UInt8]?
                     switch Self.slice(of: item, in: data) {
@@ -1742,7 +1745,9 @@ public final class ProcessNode: Identifiable {
 
     public func disposeInstrumentOnAgent(instanceID: UUID) async throws {
         assemblingViewStates = assemblingViewStates.filter { $0.key.instanceID != instanceID }
-        _ = try await script.exports.disposeInstrument(["instanceId": instanceID.uuidString])
+        _ = try await marked { marker in
+            try await script.exports.disposeInstrument(JSValue(["instanceId": instanceID.uuidString, "marker": marker]))
+        }
     }
 
     public func pushInstrumentConfig(instanceID: UUID, config: Any) async throws {
