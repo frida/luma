@@ -51,13 +51,14 @@ struct PharoObjectChatView: View {
 
     private func header(_ chat: ObjectChat) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Image(systemName: "bubble.left.and.text.bubble.right")
                     .foregroundStyle(.secondary)
                 Text(chats.displayTitle(of: chat))
                     .font(.callout.weight(.semibold))
-                    .lineLimit(1)
+                    .lineLimit(2)
                     .truncationMode(.tail)
+                    .fixedSize(horizontal: false, vertical: true)
                 if !chat.editors.isEmpty {
                     AuthorAvatarStack(authors: chat.editors, avatarSize: 18)
                 }

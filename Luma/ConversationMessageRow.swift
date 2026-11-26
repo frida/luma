@@ -100,8 +100,8 @@ struct ConversationBubble: View {
 
     private var background: AnyShapeStyle {
         switch speaker {
-        case .user: return AnyShapeStyle(.quaternary)
-        case .assistant: return AnyShapeStyle(.tertiary)
+        case .user: return AnyShapeStyle(.fill.tertiary)
+        case .assistant: return AnyShapeStyle(.fill.secondary)
         }
     }
 }
