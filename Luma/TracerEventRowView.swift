@@ -44,6 +44,7 @@ struct TracerEventRowView: View {
                     )
                     .frame(minWidth: 520, minHeight: 280)
                     .padding()
+                    .errorAlertHost()
                 }
             }
         }

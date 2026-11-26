@@ -19,6 +19,7 @@ struct PharoInspectorSheet: View {
             PharoInspectorPane(engine: engine, first: first, overviewName: nil, onCloseAll: onDone)
         }
         .frame(minWidth: 640, minHeight: 480)
+        .errorAlertHost()
     }
 }
 

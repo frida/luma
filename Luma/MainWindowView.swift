@@ -47,6 +47,7 @@ struct MainWindowView: View {
                 noteDocumentRecorded: noteDocumentRecorded,
                 isShowingHostingBlockedAlert: $isShowingHostingBlockedAlert
             )
+            .offeredFileSaving(engine: engine)
             #if canImport(AppKit)
                 .background(DocumentWindowReader(edits: documentEdits))
             #endif
@@ -90,6 +91,7 @@ private struct ProjectContentView: View {
     let noteDocumentRecorded: () -> Void
 
     @Binding var isShowingHostingBlockedAlert: Bool
+    @Environment(\.errorPresenter) private var errorPresenter
 
     @State private var availableHeight: CGFloat = 800
     @State private var dragStartHeight: Double?
@@ -139,13 +141,12 @@ private struct ProjectContentView: View {
             #if os(macOS)
                 .toolbarBackground(.hidden, for: .windowToolbar)
             #endif
-            .alert(
-                "Only lab owners can host sessions",
-                isPresented: $isShowingHostingBlockedAlert
-            ) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text("You're a member of this lab. Ask an owner to promote you before starting a session.")
+            .onChange(of: isShowingHostingBlockedAlert) {
+                guard isShowingHostingBlockedAlert else { return }
+                isShowingHostingBlockedAlert = false
+                errorPresenter.present(
+                    "Only lab owners can host sessions",
+                    "You're a member of this lab. Ask an owner to promote you before starting a session.")
             }
             .frame(minHeight: Self.minMainContentHeight, maxHeight: .infinity, alignment: .topLeading)
             .environment(picker)
@@ -231,9 +232,7 @@ private struct ProjectContentView: View {
         .safeAreaInset(edge: .top, spacing: 0) {
             PartnerContactQuestion(storefront: engine.storefront)
         }
-        .offeredFileSaving(engine: engine)
         .childSelectionRequests(engine: engine)
-        .errorAlertHost()
     }
 
     @ViewBuilder
