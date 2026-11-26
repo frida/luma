@@ -91,24 +91,27 @@ struct ChildBadgeView: View {
     let tone: ChildBadge.Tone
     var truncates = false
 
+    @Environment(\.backgroundProminence) private var backgroundProminence
+
     var body: some View {
-        ZStack(alignment: .leading) {
+        ViewThatFits(in: .horizontal) {
+            Text(text)
             Text(shortest)
                 .fixedSize()
-                .hidden()
-            Text(text)
-                .lineLimit(1)
-                .truncationMode(.tail)
         }
         .font(.caption2.weight(.semibold))
         .fixedSize(horizontal: !truncates, vertical: false)
         .padding(.horizontal, 6)
         .padding(.vertical, 2)
-        .background(tone.color.opacity(0.18), in: Capsule())
-        .foregroundStyle(tone.color)
+        .background(isOnSelection ? tone.selectedFill : tone.color.opacity(0.18), in: Capsule())
+        .foregroundStyle(isOnSelection ? Color.white : tone.color)
         .help(text)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(text)
+    }
+
+    private var isOnSelection: Bool {
+        backgroundProminence == .increased
     }
 
     private var shortest: String {
@@ -126,6 +129,14 @@ extension ChildBadge.Tone {
         case .active: return .green
         case .waiting: return .orange
         case .failed: return .red
+        }
+    }
+
+    var selectedFill: Color {
+        switch self {
+        case .neutral: return .white.opacity(0.25)
+        case .ended: return .white.opacity(0.15)
+        case .active, .waiting, .failed: return color
         }
     }
 }
