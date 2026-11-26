@@ -617,7 +617,7 @@ final class CollaborationPanel {
 
         switch status {
         case .disconnected:
-            let storedLabID = (try? engine.store.fetchCollaborationState())?.labID
+            let storedLabID = engine.collaboration.projectLabID
             if let stored = storedLabID {
                 let hintLabel = Label(
                     str: "You're currently offline from the shared lab (lab \(truncatedLabID(stored))).")
