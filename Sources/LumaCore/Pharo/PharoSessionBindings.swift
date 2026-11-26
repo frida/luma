@@ -245,10 +245,10 @@ enum PharoSessionBindings {
                 priority: 1;
                 items: [ self instructions items ];
                 column: ''Address'' text: [ :each | each addressString ];
-                column: ''Bytes'' text: [ :each | each bytesString ];
                 column: ''Instruction'' text: [ :each | each text ];
                 column: ''Comment'' text: [ :each |
-                    (comments ifNil: [ comments := self comments ]) at: each addressString ifAbsent: [ '''' ] ]'.
+                    (comments ifNil: [ comments := self comments ]) at: each addressString ifAbsent: [ '''' ] ];
+                column: ''Bytes'' text: [ :each | each bytesString ]'.
         function compile: 'gtDecompileFor: aView
             <gtView>
             ^ aView text
@@ -415,8 +415,8 @@ enum PharoSessionBindings {
                 title: ''Instructions'';
                 items: [ items ];
                 column: ''Address'' text: [ :each | each addressString ];
-                column: ''Bytes'' text: [ :each | each bytesString ];
-                column: ''Instruction'' text: [ :each | each text ]'.
+                column: ''Instruction'' text: [ :each | each text ];
+                column: ''Bytes'' text: [ :each | each bytesString ]'.
 
         instruction := Object << #LumaInstruction slots: { #session. #anchor. #address. #op }; package: 'Luma'; install.
         instruction class compile: 'in: aSession at: anAddress
@@ -494,8 +494,8 @@ enum PharoSessionBindings {
                 items: [ self surroundings items ];
                 column: '''' text: [ :each | each = self ifTrue: [ ''▸'' ] ifFalse: [ '''' ] ];
                 column: ''Address'' text: [ :each | each addressString ];
-                column: ''Bytes'' text: [ :each | each bytesString ];
-                column: ''Instruction'' text: [ :each | each text ]'.
+                column: ''Instruction'' text: [ :each | each text ];
+                column: ''Bytes'' text: [ :each | each bytesString ]'.
         instruction compile: 'gtDecompileFor: aView
             <gtView>
             | function |
