@@ -257,10 +257,6 @@ extension ObjectChats {
         [conversationID] + listed.map(\.id).filter { $0 != conversationID }
     }
 
-    var otherChatCount: Int {
-        sidebarChatIDs.count - 1
-    }
-
     var unreadTotal: Int {
         sidebarChatIDs.reduce(0) { $0 + unreadCount(in: $1) }
     }

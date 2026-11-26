@@ -477,10 +477,6 @@ extension ObjectChats {
     var unreadTotal: Int {
         sidebarChatIDs.reduce(0) { $0 + unreadCount(in: $1) }
     }
-
-    fileprivate var otherChatCount: Int {
-        sidebarChatIDs.count - 1
-    }
 }
 
 private struct SidebarUnreadBadge: View {

@@ -109,6 +109,10 @@ public final class ObjectChats {
         return "\(provider.descriptor.displayName) needs an API key in this Luma."
     }
 
+    public var otherChatCount: Int {
+        listed.filter { $0.id != conversationID }.count
+    }
+
     public var listed: [ObjectChat] {
         chats.sorted { a, b in
             guard (a.id == conversationID) == (b.id == conversationID) else { return a.id == conversationID }
