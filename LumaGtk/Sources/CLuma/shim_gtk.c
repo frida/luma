@@ -355,6 +355,39 @@ luma_app_set_open_handler(void *gobject_application,
     g_signal_connect(G_APPLICATION(gobject_application), "open", G_CALLBACK(on_app_open), ctx);
 }
 
+// --- Termination signals ------------------------------------------------------
+
+#if !defined(_WIN32)
+
+#include <glib-unix.h>
+#include <signal.h>
+
+typedef struct {
+    LumaTerminationCallback callback;
+    void *user_data;
+} LumaTerminationCtx;
+
+static gboolean
+on_termination_signal(gpointer user_data)
+{
+    LumaTerminationCtx *ctx = (LumaTerminationCtx *)user_data;
+    ctx->callback(ctx->user_data);
+    return G_SOURCE_CONTINUE;
+}
+
+void
+luma_on_termination_signals(LumaTerminationCallback callback, void *user_data)
+{
+    LumaTerminationCtx *ctx = g_new0(LumaTerminationCtx, 1);
+    ctx->callback = callback;
+    ctx->user_data = user_data;
+    g_unix_signal_add(SIGTERM, on_termination_signal, ctx);
+    g_unix_signal_add(SIGINT, on_termination_signal, ctx);
+    g_unix_signal_add(SIGHUP, on_termination_signal, ctx);
+}
+
+#endif
+
 // --- Image normalization ----------------------------------------------------
 
 static GdkPixbuf *

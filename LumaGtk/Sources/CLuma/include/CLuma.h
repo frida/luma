@@ -66,6 +66,10 @@ void luma_folder_dialog_select(void *parent_window,
                                 LumaPathCallback callback,
                                 void *user_data);
 
+// SIGTERM, SIGINT and SIGHUP, delivered on the main loop (Unix only).
+typedef void (*LumaTerminationCallback)(void *user_data);
+void luma_on_termination_signals(LumaTerminationCallback callback, void *user_data);
+
 // GApplication::open signal wrapper.
 typedef void (*LumaOpenFilesCallback)(const char *path, void *user_data);
 void luma_app_set_open_handler(void *gobject_application,

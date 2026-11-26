@@ -26,9 +26,7 @@ final class LumaApplication {
     private var welcomeModel: WelcomeModel?
     private var activeWelcome: WelcomeWindow?
     private var signInPresenter: GitHubSignInPresenter?
-    #if !os(Windows)
-    private var terminationSignals: [DispatchSourceSignal] = []
-    #endif
+    private var isTerminating = false
 
     init() {
         guard let app = Adw.Application(id: "re.frida.Luma", flags: .handlesOpen) else {
@@ -76,22 +74,18 @@ final class LumaApplication {
 
     #if !os(Windows)
     private func shutDownWhenToldToTerminate() {
-        for number in [SIGTERM, SIGINT, SIGHUP] {
-            signal(number, SIG_IGN)
-            let source = DispatchSource.makeSignalSource(signal: number, queue: .global())
-            source.setEventHandler { @Sendable [weak self] in
-                Task { @MainActor in await self?.shutDownAndQuit() }
-            }
-            source.resume()
-            terminationSignals.append(source)
-        }
+        luma_on_termination_signals(lumaTerminationThunk, Unmanaged.passUnretained(self).toOpaque())
     }
 
-    private func shutDownAndQuit() async {
+    fileprivate func closeEverythingAndQuit() {
+        guard !isTerminating else { return }
+        isTerminating = true
+        activeWelcome?.window.destroy()
+        activeWelcome = nil
+        guard !openDocuments.isEmpty else { return app.quit() }
         for entry in openDocuments.values {
-            await entry.engine.shutdown()
+            entry.window.closeForTermination()
         }
-        app.quit()
     }
     #endif
 
@@ -278,7 +272,11 @@ final class LumaApplication {
             window.destroyWindow()
             app.release()
             if openDocuments.isEmpty && activeWelcome == nil {
-                showWelcome()
+                if isTerminating {
+                    app.quit()
+                } else {
+                    showWelcome()
+                }
             }
         }
     }
@@ -809,6 +807,17 @@ private let lumaActionThunk: @convention(c) (UnsafeMutableRawPointer?) -> Void =
         box.handler()
     }
 }
+
+#if !os(Windows)
+private let lumaTerminationThunk: @convention(c) (UnsafeMutableRawPointer?) -> Void = { userData in
+    guard let userData else { return }
+    let raw = UInt(bitPattern: userData)
+    MainActor.assumeIsolated {
+        let app = Unmanaged<LumaApplication>.fromOpaque(UnsafeMutableRawPointer(bitPattern: raw)!).takeUnretainedValue()
+        app.closeEverythingAndQuit()
+    }
+}
+#endif
 
 private let lumaOpenPathThunk: @convention(c) (
     UnsafePointer<CChar>?, UnsafeMutableRawPointer?
