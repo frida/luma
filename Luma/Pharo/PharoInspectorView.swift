@@ -635,7 +635,7 @@ struct PharoDeclaredView: View {
             PharoItemsList(
                 source: source,
                 view: declaration.methodSelector,
-                columns: (declaration.columns ?? []).map(\.title),
+                columns: declaration.columns ?? [],
                 reloadToken: reloadToken,
                 onSelect: onSelect)
         case "text":
@@ -760,7 +760,7 @@ extension PharoSearchField.Coordinator: NSSearchFieldDelegate {
 private struct PharoItemsList: View {
     let source: any PharoViewSource
     let view: String
-    let columns: [String]
+    let columns: [PharoColumn]
     let reloadToken: Int
     let onSelect: (PharoObject) -> Void
 
@@ -769,6 +769,7 @@ private struct PharoItemsList: View {
     @State private var failure: String?
     @State private var query = ""
     @State private var fullCount = 0
+    @State private var paneWidth: CGFloat = 0
 
     private let pageSize = 50
     private let searchThreshold = 12
@@ -776,9 +777,11 @@ private struct PharoItemsList: View {
     /// The rows and the columns that head them, held together so the table never
     /// renders one against the other's shape while a view switch is in flight.
     private struct Loaded {
-        var columns: [String] = []
+        var columns: [PharoColumn] = []
         var rows: [Row] = []
         var total = 0
+        var layout: PharoTableLayout?
+        var measured = ""
     }
 
     private struct Row: Identifiable {
@@ -797,6 +800,7 @@ private struct PharoItemsList: View {
             table
             footer
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { paneWidth = $0 }
         .pharoRowActivation(selection: $selection) { row in
             Task { await drill(into: row) }
         }
@@ -817,23 +821,64 @@ private struct PharoItemsList: View {
         }
     }
 
+    @ViewBuilder
     private var table: some View {
+        if !PharoTableLayout.isDeclared(loaded.columns) {
+            evenTable
+        } else if let layout = loaded.layout, paneWidth > 0 {
+            sizedTable(layout)
+        } else {
+            Color.clear
+        }
+    }
+
+    private var evenTable: some View {
         Table(loaded.rows, selection: $selection) {
-            TableColumnForEach(Array(loaded.columns.enumerated()), id: \.offset) { column, title in
-                TableColumn(title) { row in
+            TableColumnForEach(Array(loaded.columns.enumerated()), id: \.offset) { column, declared in
+                TableColumn(declared.title) { row in
                     cell(row.cells[column], isIndex: column == 0)
                 }
                 .width(column == 0 ? indexColumnWidth : nil)
             }
         }
-        .contextMenu(forSelectionType: Int.self) { ids in
-            if let id = ids.first, let row = loaded.rows.first(where: { $0.id == id }) {
-                Button { copyRow(row) } label: { Label("Copy", systemImage: "doc.on.doc") }
-            }
-        }
+        .contextMenu(forSelectionType: Int.self, menu: rowMenu)
         // A column-count change rebuilds the table rather than diffing a new
         // column onto rows still shaped for the old one, which AppKit traps on.
-        .id(loaded.columns)
+        .id(loaded.columns.map(\.title))
+    }
+
+    private func sizedTable(_ layout: PharoTableLayout) -> some View {
+        let widths = layout.widths(in: paneWidth - Self.tableChrome)
+        let shown = widths.indices.filter { widths[$0] != nil }
+        return Table(loaded.rows, selection: $selection) {
+            TableColumnForEach(shown, id: \.self) { column in
+                let width = widths[column]!
+                let isFlexible = layout.isFlexible(column)
+                TableColumn(loaded.columns[column].title) { row in
+                    cell(row.cells[column], isIndex: column == 0, isCut: layout.fit(of: column, width: width) == .truncated)
+                }
+                .width(min: isFlexible ? layout.minimumWidth(of: column) : width, ideal: width, max: isFlexible ? nil : width)
+            }
+        }
+        .contextMenu(forSelectionType: Int.self, menu: rowMenu)
+        .id(shown.map { loaded.columns[$0].title })
+    }
+
+    private static let tableChrome: CGFloat = 16
+
+    private static let tableMetrics = PharoTableLayout.Metrics(
+        measure: { ($0 as NSString).size(withAttributes: [.font: cellFont]).width },
+        iconWidth: 16,
+        padding: 6,
+        spacing: 17)
+
+    private static let cellFont = PlatformFont.preferredFont(forTextStyle: .body)
+
+    @ViewBuilder
+    private func rowMenu(_ ids: Set<Int>) -> some View {
+        if let id = ids.first, let row = loaded.rows.first(where: { $0.id == id }) {
+            Button { copyRow(row) } label: { Label("Copy", systemImage: "doc.on.doc") }
+        }
     }
 
     private func copyRow(_ row: Row) {
@@ -841,16 +886,23 @@ private struct PharoItemsList: View {
     }
 
     @ViewBuilder
-    private func cell(_ cell: PharoCell, isIndex: Bool) -> some View {
+    private func cell(_ cell: PharoCell, isIndex: Bool, isCut: Bool = false) -> some View {
         if let png = cell.png, let image = Image(platformImageData: png) {
             image
                 .resizable()
                 .frame(width: 16, height: 16)
+        } else if isCut {
+            text(of: cell, isIndex: isIndex)
+                .help(cell.text ?? "")
         } else {
-            Text(cell.text ?? "")
-                .foregroundStyle(isIndex ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
-                .lineLimit(1)
+            text(of: cell, isIndex: isIndex)
         }
+    }
+
+    private func text(of cell: PharoCell, isIndex: Bool) -> some View {
+        Text(cell.text ?? "")
+            .foregroundStyle(isIndex ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+            .lineLimit(1)
     }
 
     private var indexColumnWidth: CGFloat {
@@ -884,6 +936,10 @@ private struct PharoItemsList: View {
         query.isEmpty ? nil : query
     }
 
+    private var measurement: String {
+        "\(view)\u{1}\(reloadToken)"
+    }
+
     private func drill(into index: Int) async {
         do {
             onSelect(try await source.drill(view: view, index: index + 1, filter: filter))
@@ -893,7 +949,8 @@ private struct PharoItemsList: View {
     }
 
     private func reload() async {
-        loaded = Loaded(columns: columns)
+        let kept = loaded.measured == measurement ? loaded.layout : nil
+        loaded = Loaded(columns: columns, layout: kept, measured: kept == nil ? "" : measurement)
         selection = nil
         failure = nil
         await loadNextPage()
@@ -908,6 +965,11 @@ private struct PharoItemsList: View {
             loaded.total = page.total
             loaded.rows += rows
             if filter == nil { fullCount = page.total }
+            if loaded.layout == nil, PharoTableLayout.isDeclared(loaded.columns) {
+                loaded.layout = PharoTableLayout(
+                    columns: loaded.columns, rows: rows.map(\.cells), total: page.total, metrics: Self.tableMetrics)
+                loaded.measured = measurement
+            }
         } catch {
             failure = error.localizedDescription
         }
