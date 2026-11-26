@@ -47,8 +47,7 @@ struct PharoDisassemblyPage: View {
                 onChat: { address, chatID in
                     open { try await engine.chatColumn(chatID, aboutInstructionAt: address, in: place.sessionID) }
                 },
-                onActivate: { address in open { try await engine.instruction(at: address, in: place.sessionID, runtime: .shared) } },
-                scrollsHorizontally: true)
+                onActivate: { address in open { try await engine.instruction(at: address, in: place.sessionID, runtime: .shared) } })
         }
     }
 

@@ -99,8 +99,7 @@ struct AddressInsightDetailView: View {
                             onNeedMore: { loadMoreDisasm() },
                             jumpRequest: DisassemblyJumpRequests.shared.target(in: insightID),
                             onJumpTaken: { DisassemblyJumpRequests.shared.clear(in: insightID) },
-                            onChat: openChat,
-                            scrollsHorizontally: !columnPath.objects.isEmpty
+                            onChat: openChat
                         )
                         .frame(width: pageWidth(fitting: scroller.size.width))
                         .pharoColumnExtent(PharoColumnPath.pageID, in: columnPath)
@@ -285,7 +284,6 @@ struct DisassemblyView: View {
     var onJumpTaken: () -> Void = {}
     var onChat: ((UInt64, UUID?) -> Void)?
     var onActivate: ((UInt64) -> Void)?
-    var scrollsHorizontally = false
 
     @State private var selectedAddr: UInt64?
     @FocusState private var isFocused: Bool
@@ -303,7 +301,7 @@ struct DisassemblyView: View {
 
     var body: some View {
         ScrollViewReader { scrollProxy in
-            ScrollView(scrollsHorizontally ? [.horizontal, .vertical] : .vertical) {
+            ScrollView(.vertical) {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(lines) { line in
                         DisasmRow(
@@ -337,7 +335,7 @@ struct DisassemblyView: View {
                 }
                 .background { activationCatcher }
                 .frame(maxWidth: 800, alignment: .leading)
-                .frame(minWidth: scrollsHorizontally ? 800 : nil, maxWidth: .infinity, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.leading, 54)
                 .padding(.trailing, 12)
                 .overlay(alignment: .topLeading) {
@@ -571,6 +569,10 @@ private struct DisasmRow: View {
 
     @Environment(\.errorPresenter) private var errorPresenter
 
+    private static let instructionWidth: CGFloat = 240
+    private static let commentWidth: CGFloat = 320
+    private static let bytesWidth: CGFloat = 88
+
     var body: some View {
         let annotation = engine.addressAnnotations[sessionID]?[line.address]
         let decorations = annotation?.decorations ?? []
@@ -623,13 +625,6 @@ private struct DisasmRow: View {
                     }
                 }
 
-            Text(line.bytesText.attributed)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .font(.system(.footnote, design: .monospaced))
-                .foregroundStyle(.tertiary)
-                .frame(width: 88, alignment: .leading)
-
             HStack(spacing: 6) {
                 DisassemblyAsmText(
                     asm: line.asmText,
@@ -666,7 +661,8 @@ private struct DisasmRow: View {
                     }
                 }
             }
-            .frame(minWidth: 240, maxWidth: .infinity, alignment: .leading)
+            .frame(minWidth: 0, idealWidth: Self.instructionWidth, maxWidth: Self.instructionWidth, alignment: .leading)
+            .layoutPriority(2)
 
             Text(line.commentText?.attributed ?? AttributedString(""))
                 .lineLimit(1)
@@ -674,7 +670,15 @@ private struct DisasmRow: View {
                 .font(.system(.footnote, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
-                .frame(width: 320, alignment: .leading)
+                .frame(minWidth: 0, idealWidth: Self.commentWidth, maxWidth: Self.commentWidth, alignment: .leading)
+                .layoutPriority(1)
+
+            Text(line.bytesText.attributed)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .font(.system(.footnote, design: .monospaced))
+                .foregroundStyle(.tertiary)
+                .frame(minWidth: 0, idealWidth: Self.bytesWidth, maxWidth: Self.bytesWidth, alignment: .leading)
         }
         .frame(height: rowHeight - 4, alignment: .center)
         .padding(.horizontal, 6)
