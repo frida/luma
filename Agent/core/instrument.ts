@@ -263,10 +263,17 @@ export async function loadInstrument({ instanceId, moduleName, source, config, r
     childTemplates: string[],
 }): Promise<void> {
     const instrument = await loadInstrumentModule(moduleName, source);
+    liveInstances.add(instanceId);
     const ctx = makeInstrumentContext(instanceId, childTemplates, restored.children ?? {});
 
     ctx.post("instrument-actions-reset", {});
-    const handle = await instrument.create(ctx, config, withHexPointers(restored));
+    let handle: InstrumentHandle;
+    try {
+        handle = await instrument.create(ctx, config, withHexPointers(restored));
+    } catch (e) {
+        forgetInstance(instanceId);
+        throw e;
+    }
 
     const controller: InstrumentController = {
         instrument,
@@ -289,8 +296,11 @@ export async function updateInstrumentConfig({ instanceId, config }: {
 
     controller.config = config;
 
-    await controller.handle.updateConfig?.(config);
-    flushBatches();
+    try {
+        await controller.handle.updateConfig?.(config);
+    } finally {
+        flushBatches();
+    }
 }
 
 export async function disposeInstrument({ instanceId }: { instanceId: string }): Promise<void> {
@@ -305,7 +315,12 @@ export async function disposeInstrument({ instanceId }: { instanceId: string }):
         stream.destroy(new Error("the instrument was unloaded"));
     }
     instruments.delete(instanceId);
+    forgetInstance(instanceId);
+}
+
+function forgetInstance(instanceId: string): void {
     flushBatches();
+    liveInstances.delete(instanceId);
     budgets.delete(instanceId);
 }
 
@@ -965,11 +980,15 @@ interface Budget {
     droppedEntries: Map<string, { widget: unknown, child: unknown, count: number }>;
 }
 
+const liveInstances = new Set<string>();
 const batches = new Map<string, Batch>();
 const budgets = new Map<string, Budget>();
 let flushScheduled = false;
 
 function queue(instanceId: string, message: Message, data: Payload): void {
+    if (!liveInstances.has(instanceId)) {
+        return;
+    }
     if (!admitted(instanceId, message)) {
         scheduleFlush();
         return;
