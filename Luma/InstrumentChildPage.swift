@@ -104,7 +104,7 @@ struct ChildBadgeView: View {
         .padding(.horizontal, 6)
         .padding(.vertical, 2)
         .background(isOnSelection ? tone.selectedFill : tone.color.opacity(0.18), in: Capsule())
-        .foregroundStyle(isOnSelection ? Color.white : tone.color)
+        .foregroundStyle(isOnSelection ? tone.selectedText : tone.color)
         .help(text)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(text)
@@ -137,6 +137,13 @@ extension ChildBadge.Tone {
         case .neutral: return .white.opacity(0.25)
         case .ended: return .white.opacity(0.15)
         case .active, .waiting, .failed: return color
+        }
+    }
+
+    var selectedText: Color {
+        switch self {
+        case .neutral, .ended: return .white
+        case .active, .waiting, .failed: return .black.opacity(0.85)
         }
     }
 }
