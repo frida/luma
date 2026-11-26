@@ -15,6 +15,10 @@ extension Engine {
             widgetStates[key.instanceID, default: [:]][key.widget] = state
             consoleEntriesDropped[key] = 0
             _widgetUpdates.yield(WidgetUpdate(instanceID: key.instanceID, widget: key.widget, kind: .snapshot(state), revision: state.revision))
+            if widget(forInstanceID: key.instanceID, widgetID: key.widget)?.persistence == .session {
+                store.stageWidgetState(state, instanceID: key.instanceID, widgetID: key.widget)
+                scheduleWidgetStateWrite()
+            }
         }
     }
 

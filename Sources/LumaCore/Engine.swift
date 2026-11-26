@@ -5436,7 +5436,7 @@ public final class Engine {
         return widgetStates[key.instanceID]![key.widget]!
     }
 
-    private func scheduleWidgetStateWrite() {
+    func scheduleWidgetStateWrite() {
         guard widgetStateWrite == .idle else { return }
         widgetStateWrite = .scheduled
         Task { @MainActor [weak self] in
