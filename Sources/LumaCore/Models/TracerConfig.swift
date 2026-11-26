@@ -102,7 +102,24 @@ public struct TracerConfig: Codable, Equatable, Sendable {
             state = try c.decode(State.self, forKey: .state)
             code = try c.decode(String.self, forKey: .code)
             itraceArming = try c.decodeIfPresent(ITraceArming.self, forKey: .itraceArming)
-            lastEditedAt = try c.decodeIfPresent(Date.self, forKey: .lastEditedAt)
+            lastEditedAt = try c.decodeIfPresent(String.self, forKey: .lastEditedAt).map { text in
+                guard let date = ISO8601DateFormatter().date(from: text) else {
+                    throw DecodingError.dataCorruptedError(forKey: .lastEditedAt, in: c, debugDescription: "last_edited_at is not an ISO 8601 date")
+                }
+                return date
+            }
+        }
+
+        public func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(id, forKey: .id)
+            try c.encode(displayName, forKey: .displayName)
+            try c.encode(addressAnchor, forKey: .addressAnchor)
+            try c.encode(kind, forKey: .kind)
+            try c.encode(state, forKey: .state)
+            try c.encode(code, forKey: .code)
+            try c.encodeIfPresent(itraceArming, forKey: .itraceArming)
+            try c.encodeIfPresent(lastEditedAt.map(ISO8601DateFormatter().string(from:)), forKey: .lastEditedAt)
         }
     }
 
