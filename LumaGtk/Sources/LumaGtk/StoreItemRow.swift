@@ -8,6 +8,7 @@ final class StoreItemRow {
     private(set) var item: StoreItem
 
     private let alreadyAdded: Bool
+    private let storefront: Storefront
     private let nameLabel: Label
     private let bylineLabel: Label
     private let accessLabel: Label
@@ -16,6 +17,7 @@ final class StoreItemRow {
     init(item: StoreItem, storefront: Storefront, incompatibilityReason: String?, alreadyAdded: Bool) {
         self.item = item
         self.alreadyAdded = alreadyAdded
+        self.storefront = storefront
         row = ListBoxRow()
         let rowBox = Box(orientation: .horizontal, spacing: 8)
         rowBox.marginStart = 12
@@ -75,7 +77,7 @@ final class StoreItemRow {
     func show(_ item: StoreItem, installState: Storefront.InstallState) {
         self.item = item
         nameLabel.label = item.name
-        bylineLabel.label = alreadyAdded ? "Already added" : item.publisher.name
+        bylineLabel.label = alreadyAdded ? "Already added" : storefront.updateNotice(for: item.id) ?? item.publisher.name
         accessLabel.label = accessText(item.access)
         showInstallState(installState)
     }

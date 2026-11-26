@@ -49,6 +49,7 @@ final class AddInstrumentDialog {
     private var shownStoreSection: StoreSection = .closed
     private var storeResultRows: [StoreItemRow] = []
     private var installedItemRows: [StoreItemRow] = []
+    private let awaitingStoreNotes = Box(orientation: .vertical, spacing: 2)
     private var storeItemPane: StoreItemPane?
     private var storeActivity: StoreItemPane.Activity = .idle {
         didSet {
@@ -170,6 +171,9 @@ final class AddInstrumentDialog {
 
         let listPane = Box(orientation: .vertical, spacing: 0)
         listPane.append(child: searchEntry)
+        awaitingStoreNotes.marginStart = 12
+        awaitingStoreNotes.marginEnd = 12
+        listPane.append(child: awaitingStoreNotes)
         listPane.append(child: listScroll)
 
         let detailScroll = ScrolledWindow()
@@ -320,6 +324,7 @@ final class AddInstrumentDialog {
         let reselectedItemID = selectedStoreItemID
         refreshStoreSection()
         installedItemRows = reconciledRows(installedItemRows, with: storefront.installedItems, from: installedItemRowsStart)
+        showInstallationsAwaitingStore()
         refreshSearchMatches()
         reselectStoreItem(withID: reselectedItemID)
         refreshStoreItemDetail()
@@ -389,6 +394,20 @@ final class AddInstrumentDialog {
         let moreResults = storefront.moreResults
         moreStoreResultsRow.row.visible = section == .listed && moreResults != .allLoaded
         moreStoreResultsRow.show(moreResults, remaining: storefront.remainingResults)
+    }
+
+    private func showInstallationsAwaitingStore() {
+        while let child = awaitingStoreNotes.firstChild {
+            awaitingStoreNotes.remove(child: child)
+        }
+        for outdated in storefront.installationsAwaitingStore {
+            let note = Label(str: "\(outdated.name): \(outdated.explanation)")
+            note.halign = .start
+            note.wrap = true
+            note.add(cssClass: "caption")
+            note.add(cssClass: "dim-label")
+            awaitingStoreNotes.append(child: note)
+        }
     }
 
     private func reconciledRows(_ rows: [StoreItemRow], with items: [StoreItem], from start: Int) -> [StoreItemRow] {
