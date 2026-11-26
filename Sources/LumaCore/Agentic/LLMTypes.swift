@@ -1,5 +1,9 @@
 import Foundation
 
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
 /// Body of a content block in our internal (provider-agnostic) representation.
 /// The shape mirrors Anthropic's content blocks because it's the most
 /// expressive of the three providers we support; OpenAI and OpenAI-compatible
