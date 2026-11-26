@@ -314,8 +314,8 @@ private struct SidebarChatsRow: View {
             Text("Chats")
             Spacer()
             SidebarUnreadBadge(count: chats.unreadTotal)
-            if !chats.listed.isEmpty {
-                Text("\(chats.sidebarChatIDs.count)").font(.caption).foregroundStyle(.secondary)
+            if chats.otherChatCount > 0 {
+                Text("\(chats.otherChatCount)").font(.caption).foregroundStyle(.secondary)
             }
             SidebarSectionDisclosure(isExpanded: isExpanded, title: "chats", onToggle: onToggle)
         }
@@ -476,6 +476,10 @@ extension ObjectChats {
 
     var unreadTotal: Int {
         sidebarChatIDs.reduce(0) { $0 + unreadCount(in: $1) }
+    }
+
+    fileprivate var otherChatCount: Int {
+        sidebarChatIDs.count - 1
     }
 }
 
