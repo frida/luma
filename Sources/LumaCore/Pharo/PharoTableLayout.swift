@@ -49,13 +49,16 @@ public struct PharoTableLayout {
     public func widths(in available: Double) -> [Double?] {
         let plans = columns.indices.map(plan(of:))
         let order = givingWayOrder
+        let kept = order.last.map(priority(of:))
         var shown = Set(columns.indices)
         var squeezed: Set<Int> = []
         for column in order {
             if required(plans, shown, squeezed) <= available { break }
             squeezed.insert(column)
-            if required(plans, shown, squeezed) <= available || column == order.last { break }
-            shown.remove(column)
+            if required(plans, shown, squeezed) <= available { break }
+            if priority(of: column) != kept {
+                shown.remove(column)
+            }
         }
         let widths = distribute(available - required(plans, shown, squeezed), plans, shown, squeezed)
         return columns.indices.map { shown.contains($0) ? widths[$0] : nil }
@@ -115,10 +118,12 @@ public struct PharoTableLayout {
 
     private var givingWayOrder: [Int] {
         columns.indices.dropFirst().sorted { a, b in
-            let first = columns[a].priority ?? .infinity
-            let second = columns[b].priority ?? .infinity
-            return first != second ? first > second : a > b
+            priority(of: a) != priority(of: b) ? priority(of: a) > priority(of: b) : a > b
         }
+    }
+
+    private func priority(of column: Int) -> Double {
+        columns[column].priority ?? .infinity
     }
 
     private func required(_ plans: [Plan], _ shown: Set<Int>, _ squeezed: Set<Int>) -> Double {
