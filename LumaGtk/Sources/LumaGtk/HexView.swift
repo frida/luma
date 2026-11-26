@@ -39,6 +39,7 @@ public final class HexView {
     private var bytes: [UInt8]
     private var baseAddress: UInt64
     private var layout: HexLayout
+    private var fitting: HexFitting?
     private var selection: Selection?
     private var pendingNibble: UInt8?
     private var themeToken: gulong = 0
@@ -47,7 +48,7 @@ public final class HexView {
         ThemeWatcher.unsubscribe(handlerID: themeToken)
     }
 
-    public init(bytes: Data, baseAddress: UInt64 = 0) {
+    public init(bytes: Data, baseAddress: UInt64 = 0, fitsWidth: Bool = false) {
         self.bytes = Array(bytes)
         self.baseAddress = baseAddress
         layout = HexLayout(byteCount: self.bytes.count, baseAddress: baseAddress)
@@ -90,7 +91,8 @@ public final class HexView {
         widget.vexpand = false
         widget.setPolicy(hscrollbarPolicy: .never, vscrollbarPolicy: .never)
         widget.propagateNaturalHeight = true
-        widget.set(child: surface)
+        widget.propagateNaturalWidth = fitsWidth
+        widget.set(child: fitsWidth ? fittingFrame() : surface)
 
         bytesArea.setDrawFunc { [weak self] _, ctx, _, _ in
             MainActor.assumeIsolated {
@@ -114,10 +116,26 @@ public final class HexView {
         themeToken = ThemeWatcher.subscribe(owner: self) { $0.bytesArea.queueDraw() }
     }
 
+    private func fittingFrame() -> Box {
+        let fitting = HexFitting(byteCount: bytes.count, baseAddress: baseAddress) { [weak self] bytesPerRow in
+            self?.show(bytesPerRow: bytesPerRow)
+        }
+        self.fitting = fitting
+        return fitting.frame(around: surface)
+    }
+
+    private func show(bytesPerRow: Int) {
+        layout = HexLayout(byteCount: bytes.count, baseAddress: baseAddress, bytesPerRow: bytesPerRow)
+        bytesArea.queueDraw()
+        annotationsArea.queueDraw()
+        emphasisArea.queueDraw()
+        Task { @MainActor [weak self] in self?.showSelection() }
+    }
+
     public func setBytes(_ bytes: Data, baseAddress: UInt64 = 0) {
         self.bytes = Array(bytes)
         self.baseAddress = baseAddress
-        layout = HexLayout(byteCount: self.bytes.count, baseAddress: baseAddress)
+        layout = HexLayout(byteCount: self.bytes.count, baseAddress: baseAddress, bytesPerRow: layout.bytesPerRow)
         if let selection, selection.caret >= self.bytes.count {
             let last = self.bytes.count - 1
             self.selection = self.bytes.isEmpty ? nil : Selection(anchor: last, caret: last, section: selection.section)
@@ -134,7 +152,7 @@ public final class HexView {
     }
 
     func rowSpan(containing index: Int) -> (top: Double, height: Double) {
-        layout.rowSpan(ofRow: index / HexLayout.bytesPerRow)
+        layout.rowSpan(ofRow: index / layout.bytesPerRow)
     }
 
     func presentMenu(_ sections: [[ContextMenu.Item]]) {
@@ -189,8 +207,8 @@ public final class HexView {
 
     private func collectGlyphs(ofRow row: Int, into runs: inout GlyphRuns) {
         let baseline = layout.baseline(ofRow: row)
-        let start = row * HexLayout.bytesPerRow
-        let rowBytes = bytes[start..<min(start + HexLayout.bytesPerRow, bytes.count)]
+        let start = row * layout.bytesPerRow
+        let rowBytes = bytes[start..<min(start + layout.bytesPerRow, bytes.count)]
 
         let address = layout.formatAddress(baseAddress &+ UInt64(start))
         for (column, digit) in zip(0..., address.utf8) {
@@ -313,9 +331,9 @@ public final class HexView {
     }
 
     private func moveCaret(rows: Int, columns: Int, extending: Bool) {
-        let row = min(max(caret / HexLayout.bytesPerRow + rows, 0), layout.rowCount - 1)
-        let column = caret % HexLayout.bytesPerRow
-        let newCaret = min(max(row * HexLayout.bytesPerRow + column + columns, 0), bytes.count - 1)
+        let row = min(max(caret / layout.bytesPerRow + rows, 0), layout.rowCount - 1)
+        let column = caret % layout.bytesPerRow
+        let newCaret = min(max(row * layout.bytesPerRow + column + columns, 0), bytes.count - 1)
         select(anchor: extending ? selection?.anchor ?? 0 : newCaret, caret: newCaret, section: section)
     }
 
@@ -344,9 +362,14 @@ public final class HexView {
     }
 
     private func applyContentSize() {
-        let width = Int(layout.contentWidth.rounded(.up))
-        selectionLayer.setSizeRequest(width: width, height: max(40, Int(layout.contentHeight.rounded(.up))))
-        widget.setSizeRequest(width: width, height: -1)
+        if let fitting {
+            fitting.follow(byteCount: bytes.count, baseAddress: baseAddress)
+            surface.queueResize()
+        } else {
+            let width = Int(layout.contentWidth.rounded(.up))
+            selectionLayer.setSizeRequest(width: width, height: max(40, Int(layout.contentHeight.rounded(.up))))
+            widget.setSizeRequest(width: width, height: -1)
+        }
     }
 
     private func cell(atX x: Double, y: Double) -> (index: Int, section: HexSection)? {
@@ -411,6 +434,85 @@ public final class HexView {
     }
 }
 
+@MainActor
+private final class HexFitting {
+    private var byteCount: Int
+    private var baseAddress: UInt64
+    private var bytesPerRow = HexLayout.widestBytesPerRow
+    private let onBytesPerRow: (Int) -> Void
+
+    private static let key = "luma-hex-fitting"
+
+    init(byteCount: Int, baseAddress: UInt64, onBytesPerRow: @escaping (Int) -> Void) {
+        self.byteCount = byteCount
+        self.baseAddress = baseAddress
+        self.onBytesPerRow = onBytesPerRow
+    }
+
+    func frame(around surface: Widget) -> Box {
+        let frame = Box(orientation: .vertical, spacing: 0)
+        frame.append(child: surface)
+        g_object_set_data_full(
+            UnsafeMutableRawPointer(frame.widget_ptr).assumingMemoryBound(to: GObject.self), Self.key, Unmanaged.passRetained(self).toOpaque()
+        ) { Unmanaged<HexFitting>.fromOpaque($0!).release() }
+        gtk_widget_set_layout_manager(frame.widget_ptr, gtk_custom_layout_new(Self.requestMode, Self.measure, Self.allocate))
+        return frame
+    }
+
+    func follow(byteCount: Int, baseAddress: UInt64) {
+        self.byteCount = byteCount
+        self.baseAddress = baseAddress
+    }
+
+    private static let requestMode: GtkCustomRequestModeFunc = { _ in GTK_SIZE_REQUEST_HEIGHT_FOR_WIDTH }
+
+    private static let measure: GtkCustomMeasureFunc = { frame, orientation, forSize, minimum, natural, _, _ in
+        nonisolated(unsafe) let frame = frame
+        nonisolated(unsafe) let minimum = minimum
+        nonisolated(unsafe) let natural = natural
+        MainActor.assumeIsolated {
+            let fitting = HexFitting.of(frame)
+            let size = orientation == GTK_ORIENTATION_HORIZONTAL ? fitting.widths() : fitting.heights(forWidth: forSize)
+            minimum?.pointee = size.minimum
+            natural?.pointee = size.natural
+        }
+    }
+
+    private static let allocate: GtkCustomAllocateFunc = { frame, width, height, _ in
+        nonisolated(unsafe) let frame = frame
+        MainActor.assumeIsolated {
+            HexFitting.of(frame).fit(width: width)
+            gtk_widget_allocate(gtk_widget_get_first_child(frame), width, height, -1, nil)
+        }
+    }
+
+    private static func of(_ frame: UnsafeMutablePointer<GtkWidget>?) -> HexFitting {
+        let data = g_object_get_data(UnsafeMutableRawPointer(frame)?.assumingMemoryBound(to: GObject.self), key)!
+        return Unmanaged<HexFitting>.fromOpaque(data).takeUnretainedValue()
+    }
+
+    private func widths() -> (minimum: Int32, natural: Int32) {
+        let narrowest = HexLayout(byteCount: byteCount, baseAddress: baseAddress, bytesPerRow: HexLayout.fittingBytesPerRow.last!)
+        let widest = HexLayout(byteCount: byteCount, baseAddress: baseAddress)
+        return (Int32(narrowest.contentWidth.rounded(.up)), Int32(widest.contentWidth.rounded(.up)))
+    }
+
+    private func heights(forWidth width: Int32) -> (minimum: Int32, natural: Int32) {
+        let layout = width < 0
+            ? HexLayout(byteCount: byteCount, baseAddress: baseAddress)
+            : HexLayout.fitting(width: Double(width), byteCount: byteCount, baseAddress: baseAddress)
+        let height = max(40, Int32(layout.contentHeight.rounded(.up)))
+        return (height, height)
+    }
+
+    private func fit(width: Int32) {
+        let chosen = HexLayout.fitting(width: Double(width), byteCount: byteCount, baseAddress: baseAddress).bytesPerRow
+        guard chosen != bytesPerRow else { return }
+        bytesPerRow = chosen
+        onBytesPerRow(chosen)
+    }
+}
+
 struct HexAnnotation {
     let id: UUID
     let range: Swift.Range<Int>
@@ -424,10 +526,12 @@ private enum HexSection {
 
 @MainActor
 private struct HexLayout {
+    let bytesPerRow: Int
     let rowCount: Int
     let addressDigits: Int
 
-    static let bytesPerRow = 16
+    static let widestBytesPerRow = 16
+    static let fittingBytesPerRow = [widestBytesPerRow, 8, 4]
     static let maxSelectionBands = 6
     static let hexCellColumns = 3
     static let sectionGapColumns = 3
@@ -437,19 +541,25 @@ private struct HexLayout {
 
     private let metrics = HexMetrics.shared
 
-    init(byteCount: Int, baseAddress: UInt64) {
-        rowCount = (byteCount + Self.bytesPerRow - 1) / Self.bytesPerRow
-        let lastRowAddress = baseAddress &+ UInt64(max(rowCount - 1, 0) * Self.bytesPerRow)
+    init(byteCount: Int, baseAddress: UInt64, bytesPerRow: Int = widestBytesPerRow) {
+        self.bytesPerRow = bytesPerRow
+        rowCount = (byteCount + bytesPerRow - 1) / bytesPerRow
+        let lastRowAddress = baseAddress &+ UInt64(max(rowCount - 1, 0) * bytesPerRow)
         addressDigits = max(8, String(lastRowAddress, radix: 16).count)
+    }
+
+    static func fitting(width: Double, byteCount: Int, baseAddress: UInt64) -> HexLayout {
+        let candidates = fittingBytesPerRow.map { HexLayout(byteCount: byteCount, baseAddress: baseAddress, bytesPerRow: $0) }
+        return candidates.first { $0.contentWidth <= width } ?? candidates.last!
     }
 
     var hexStartColumn: Int { addressDigits + Self.sectionGapColumns }
 
     var asciiStartColumn: Int { hexStartColumn + hexColumnCount + Self.sectionGapColumns }
 
-    private var hexColumnCount: Int { Self.bytesPerRow * Self.hexCellColumns - 1 }
+    private var hexColumnCount: Int { bytesPerRow * Self.hexCellColumns - 1 }
 
-    var contentWidth: Double { Self.marginX * 2 + Double(asciiStartColumn + Self.bytesPerRow) * metrics.advance }
+    var contentWidth: Double { Self.marginX * 2 + Double(asciiStartColumn + bytesPerRow) * metrics.advance }
 
     var contentHeight: Double { Self.marginY * 2 + Double(rowCount) * metrics.rowHeight }
 
@@ -467,14 +577,14 @@ private struct HexLayout {
     }
 
     func selectionBands(covering range: ClosedRange<Int>) -> [CGRect] {
-        let first = (row: range.lowerBound / Self.bytesPerRow, column: range.lowerBound % Self.bytesPerRow)
-        let last = (row: range.upperBound / Self.bytesPerRow, column: range.upperBound % Self.bytesPerRow)
+        let first = (row: range.lowerBound / bytesPerRow, column: range.lowerBound % bytesPerRow)
+        let last = (row: range.upperBound / bytesPerRow, column: range.upperBound % bytesPerRow)
         if first.row == last.row {
             return bands(rows: first.row...first.row, columns: first.column...last.column)
         }
-        var bands = bands(rows: first.row...first.row, columns: first.column...(Self.bytesPerRow - 1))
+        var bands = bands(rows: first.row...first.row, columns: first.column...(bytesPerRow - 1))
         if last.row - first.row > 1 {
-            bands += self.bands(rows: (first.row + 1)...(last.row - 1), columns: 0...(Self.bytesPerRow - 1))
+            bands += self.bands(rows: (first.row + 1)...(last.row - 1), columns: 0...(bytesPerRow - 1))
         }
         bands += self.bands(rows: last.row...last.row, columns: 0...last.column)
         return bands
@@ -495,7 +605,7 @@ private struct HexLayout {
         guard y >= Self.marginY else { return nil }
         let row = Int((y - Self.marginY) / metrics.rowHeight)
         guard row < rowCount, let cell = cell(atX: x) else { return nil }
-        return (row * Self.bytesPerRow + cell.column, cell.section)
+        return (row * bytesPerRow + cell.column, cell.section)
     }
 
     static func nibble(typedAs code: guint32) -> UInt8? {
@@ -515,7 +625,7 @@ private struct HexLayout {
             return
         }
         let left = cellRect(0, in: section).minX
-        let right = cellRect(Self.bytesPerRow - 1, in: section).maxX
+        let right = cellRect(bytesPerRow - 1, in: section).maxX
         cairo_move_to(cr, first.minX, first.minY)
         cairo_line_to(cr, right, first.minY)
         cairo_line_to(cr, right, last.minY)
@@ -528,8 +638,8 @@ private struct HexLayout {
     }
 
     func cellRect(_ index: Int, in section: HexSection) -> CGRect {
-        let row = index / Self.bytesPerRow
-        let column = index % Self.bytesPerRow
+        let row = index / bytesPerRow
+        let column = index % bytesPerRow
         let top = top(ofRow: row)
         switch section {
         case .hex:
@@ -559,7 +669,7 @@ private struct HexLayout {
         let hexStart = Double(hexStartColumn)
         let hexEnd = hexStart + Double(hexColumnCount)
         let asciiStart = Double(asciiStartColumn)
-        let asciiEnd = asciiStart + Double(Self.bytesPerRow)
+        let asciiEnd = asciiStart + Double(bytesPerRow)
 
         if (hexStart..<hexEnd).contains(column) {
             let cellCenteredColumn = column - hexStart + 0.5

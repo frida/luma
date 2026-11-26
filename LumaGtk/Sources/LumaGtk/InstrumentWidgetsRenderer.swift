@@ -1590,7 +1590,7 @@ private final class HexWidgetView {
         self.widgetID = widgetID
         decodeView = PatternDecodeView(
             engine: engine, sessionID: instance.sessionID, data: initial?.bytes ?? Data(), baseAddress: initial?.baseAddress,
-            placements: engine.placements(forWidget: widgetID, of: instance.id), sizing: .fill
+            placements: engine.placements(forWidget: widgetID, of: instance.id), sizing: .card
         ) { [weak engine] placements in
             engine?.setPlacements(placements, forWidget: widgetID, of: instance.id)
         }

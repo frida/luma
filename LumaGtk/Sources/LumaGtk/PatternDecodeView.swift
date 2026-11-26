@@ -11,6 +11,7 @@ import Observation
 enum PatternDecodeSizing {
     case capped
     case fill
+    case card
 }
 
 @MainActor
@@ -94,12 +95,13 @@ final class PatternDecodeView {
         self.onPlacementsChanged = onPlacementsChanged
         expanded = Set(placements.map(\.id))
 
-        hexView = HexView(bytes: data, baseAddress: baseAddress ?? 0)
+        hexView = HexView(bytes: data, baseAddress: baseAddress ?? 0, fitsWidth: sizing == .card)
         hexView.widget.vexpand = false
         hexView.widget.valign = .start
 
         hexScroller = ScrolledWindow()
-        hexScroller.setPolicy(hscrollbarPolicy: .never, vscrollbarPolicy: .automatic)
+        hexScroller.setPolicy(hscrollbarPolicy: sizing == .card ? .automatic : .never, vscrollbarPolicy: .automatic)
+        hexScroller.propagateNaturalWidth = sizing == .card
         hexScroller.set(child: hexView.widget)
         hexScroller.hexpand = false
 
@@ -146,7 +148,7 @@ final class PatternDecodeView {
                 scroller.propagateNaturalHeight = true
                 scroller.maxContentHeight = Self.cappedHeight
                 scroller.valign = .start
-            case .fill:
+            case .fill, .card:
                 scroller.vexpand = true
             }
         }
@@ -165,7 +167,7 @@ final class PatternDecodeView {
         switch sizing {
         case .capped:
             return stackingWhenNarrow(panes, leadingWith: hex)
-        case .fill:
+        case .fill, .card:
             return panes
         }
     }
