@@ -49,10 +49,10 @@ public final class Engine {
     private let _events = AsyncEventSource<RuntimeEvent>()
     public var events: AsyncStream<RuntimeEvent> { _events.makeStream() }
 
-    private let _widgetUpdates = AsyncEventSource<WidgetUpdate>()
+    let _widgetUpdates = AsyncEventSource<WidgetUpdate>()
     public var widgetUpdates: AsyncStream<WidgetUpdate> { _widgetUpdates.makeStream() }
-    @ObservationIgnored private var widgetStates: [UUID: [String: WidgetState]] = [:]
-    @ObservationIgnored private var consoleEntriesDropped: [InstrumentViews.Key: Int] = [:]
+    @ObservationIgnored var widgetStates: [UUID: [String: WidgetState]] = [:]
+    @ObservationIgnored var consoleEntriesDropped: [InstrumentViews.Key: Int] = [:]
     @ObservationIgnored private var fractionalCounters: Set<FractionalCounter> = []
 
     private struct FractionalCounter: Hashable {
@@ -938,9 +938,9 @@ public final class Engine {
 
         collaboration.onChildrenSnapshot = { [weak self] snapshot, sessions in
             guard let self else { return }
-            let remote = sessions.filter { !self.localUserHosts($0.id) }
+            let remote = sessions.filter { !self.isHostingNode($0.id) }
             adoptRemoteChildren(snapshot, instanceIDs: Set(remote.flatMap { $0.instruments.map(\.id) + (self.instrumentsBySession[$0.id] ?? []).map(\.id) }))
-            republishChildren(over: snapshot, sessionIDs: Set(sessions.map(\.id).filter { self.localUserHosts($0) }))
+            republishChildren(over: snapshot, sessionIDs: Set(sessions.map(\.id).filter { self.isHostingNode($0) }))
         }
 
         collaboration.onOfferedStream = { [weak self] instanceID, stream in
@@ -964,6 +964,14 @@ public final class Engine {
                 item: item,
                 actionID: actionID
             )
+        }
+
+        collaboration.onWidgetStale = { [weak self] sessionID, instanceID, widget, revision in
+            self?.resendStaleWidgetState(sessionID: sessionID, instanceID: instanceID, slot: widget, labRevision: revision)
+        }
+
+        collaboration.onInstanceHeld = { [weak self] sessionID, instanceID in
+            self?.republishWidgetStates(ofInstance: instanceID, in: sessionID)
         }
 
         collaboration.onWidgetStatesSnapshot = { [weak self] snapshots in
@@ -4576,13 +4584,11 @@ public final class Engine {
                 (def.children.first { $0.id == child.ref.template }?.widgets ?? []).filter { $0.persistence == .session }
                     .map { (slot: child.widgetKey($0.id), widget: $0) }
             }
+        let states = persistent.isEmpty ? [:] : persistedWidgetStates(instanceID: instanceID)
+        restartWidgetStates(
+            of: instanceID, declared: def.widgets.map(\.id),
+            restored: Dictionary(uniqueKeysWithValues: persistent.map { ($0.slot, states[$0.slot] ?? WidgetState()) }))
         guard !persistent.isEmpty else { return [:] }
-        let states = persistedWidgetStates(instanceID: instanceID)
-        let slots = Set(persistent.map(\.slot))
-        widgetStates[instanceID] = states.filter { slots.contains($0.key) }
-        for (slot, _) in persistent {
-            _widgetUpdates.yield(WidgetUpdate(instanceID: instanceID, widget: slot, kind: .snapshot(states[slot] ?? WidgetState())))
-        }
 
         var restored: [String: Any] = [:]
         for widget in def.widgets where widget.persistence == .session {
@@ -5291,8 +5297,16 @@ public final class Engine {
     }
 
     private func reconcileWidgetStates(with lab: [WidgetStateSnapshot]) {
-        publishWidgetStates(newerThan: lab)
-        for snapshot in lab {
+        let held = Dictionary(grouping: lab, by: \.sessionID)
+        for session in sessions where !localUserHosts(session) {
+            adoptWidgetStates(of: session.id, from: held[session.id] ?? [])
+        }
+        for session in sessions where localUserHosts(session) && isHostingNode(session.id) {
+            republishWidgetStates(of: session.id, over: held[session.id] ?? [])
+        }
+        let viewing = lab.filter { localUserHosts($0.sessionID) && !isHostingNode($0.sessionID) }
+        publishWidgetStates(newerThan: viewing)
+        for snapshot in viewing {
             let update = WidgetUpdate(
                 instanceID: snapshot.instanceID,
                 widget: snapshot.widget,
@@ -5307,7 +5321,7 @@ public final class Engine {
         let labRevisions = Dictionary(
             lab.map { (InstrumentViews.Key(instanceID: $0.instanceID, widget: $0.widget), $0.state.revision) },
             uniquingKeysWith: max)
-        for session in sessions where session.host != nil && localUserHosts(session) {
+        for session in sessions where session.host != nil && localUserHosts(session) && !isHostingNode(session.id) {
             for instance in instrumentsBySession[session.id] ?? [] {
                 for (widget, state) in widgetStates[instance.id] ?? [:]
                 where state.revision > labRevisions[InstrumentViews.Key(instanceID: instance.id, widget: widget)] ?? 0 {
@@ -5317,7 +5331,7 @@ public final class Engine {
         }
     }
 
-    private func publish(_ state: WidgetState, of instanceID: UUID, widget: String, sessionID: UUID) {
+    func publish(_ state: WidgetState, of instanceID: UUID, widget: String, sessionID: UUID) {
         if let view = state.view {
             collaboration.sendViewState(view, sessionID: sessionID, instanceID: instanceID, widget: widget)
         } else {

@@ -1,0 +1,79 @@
+import Foundation
+
+extension Engine {
+    func adoptWidgetStates(of sessionID: UUID, from lab: [WidgetStateSnapshot]) {
+        var adopted: [InstrumentViews.Key: WidgetState] = [:]
+        for instance in instrumentsBySession[sessionID] ?? [] {
+            for slot in widgetSlots(of: instance.id) {
+                adopted[InstrumentViews.Key(instanceID: instance.id, widget: slot)] = WidgetState()
+            }
+        }
+        for snapshot in lab {
+            adopted[InstrumentViews.Key(instanceID: snapshot.instanceID, widget: snapshot.widget)] = snapshot.state
+        }
+        for (key, state) in adopted {
+            widgetStates[key.instanceID, default: [:]][key.widget] = state
+            consoleEntriesDropped[key] = 0
+            _widgetUpdates.yield(WidgetUpdate(instanceID: key.instanceID, widget: key.widget, kind: .snapshot(state), revision: state.revision))
+        }
+    }
+
+    func republishWidgetStates(of sessionID: UUID, over lab: [WidgetStateSnapshot]) {
+        let labRevisions = Dictionary(
+            lab.map { (InstrumentViews.Key(instanceID: $0.instanceID, widget: $0.widget), $0.state.revision) }, uniquingKeysWith: max)
+        for instance in instrumentsBySession[sessionID] ?? [] {
+            let held = labRevisions.keys.filter { $0.instanceID == instance.id }.map(\.widget)
+            for slot in Set(widgetSlots(of: instance.id)).union(held) where hasChild(of: slot, in: instance.id) {
+                let key = InstrumentViews.Key(instanceID: instance.id, widget: slot)
+                restartWidgetState(slot, of: instance.id, as: widgetState(instanceID: instance.id, widget: slot), above: labRevisions[key] ?? 0)
+            }
+        }
+    }
+
+    func republishWidgetStates(ofInstance instanceID: UUID, in sessionID: UUID) {
+        guard isHostingNode(sessionID) else { return }
+        for child in children(of: instanceID) {
+            publishChild(child, of: instanceID)
+        }
+        for slot in widgetSlots(of: instanceID) where hasChild(of: slot, in: instanceID) {
+            restartWidgetState(slot, of: instanceID, as: widgetState(instanceID: instanceID, widget: slot), above: 0)
+        }
+    }
+
+    func restartWidgetStates(of instanceID: UUID, declared: [String], restored: [String: WidgetState]) {
+        for slot in Set(widgetSlots(of: instanceID)).union(declared).union(restored.keys) {
+            restartWidgetState(slot, of: instanceID, as: restored[slot] ?? WidgetState(), above: 0)
+        }
+    }
+
+    func resendStaleWidgetState(sessionID: UUID, instanceID: UUID, slot: String, labRevision: Int) {
+        guard isHostingNode(sessionID), let instance = instrumentsBySession[sessionID]?.first(where: { $0.id == instanceID }) else { return }
+        emitEngineWarning(
+            subsystem: "collaboration",
+            text: "The lab held a newer state of “\(descriptor(for: instance).displayName)” (\(WidgetSlot.split(slot).widget)) than this Luma sent; "
+                + "sending this Luma's state again.")
+        restartWidgetState(slot, of: instanceID, as: widgetState(instanceID: instanceID, widget: slot), above: labRevision)
+    }
+
+    private func restartWidgetState(_ slot: String, of instanceID: UUID, as restored: WidgetState, above labRevision: Int) {
+        let key = InstrumentViews.Key(instanceID: instanceID, widget: slot)
+        guard let sessionID = sessionID(ofInstance: instanceID), isHostingNode(sessionID) else {
+            widgetStates[instanceID, default: [:]][slot] = restored
+            _widgetUpdates.yield(WidgetUpdate(instanceID: instanceID, widget: slot, kind: .snapshot(restored), revision: restored.revision))
+            return
+        }
+        var state = restored
+        state.revision = max(widgetState(instanceID: instanceID, widget: slot).revision, restored.revision, labRevision) + 1
+        state.view?.revision = state.revision
+        widgetStates[instanceID, default: [:]][slot] = state
+        consoleEntriesDropped[key] = 0
+        _widgetUpdates.yield(WidgetUpdate(instanceID: instanceID, widget: slot, kind: .snapshot(state), revision: state.revision))
+        guard localUserHosts(sessionID), let collabSID = collabSessionID(forSessionID: sessionID) else { return }
+        publish(state, of: instanceID, widget: slot, sessionID: collabSID)
+    }
+
+    private func hasChild(of slot: String, in instanceID: UUID) -> Bool {
+        guard let ref = WidgetSlot.split(slot).child else { return true }
+        return children(of: instanceID).contains { $0.ref == ref }
+    }
+}

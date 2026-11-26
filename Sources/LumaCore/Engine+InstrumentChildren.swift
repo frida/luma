@@ -88,7 +88,7 @@ extension Engine {
         }
     }
 
-    private func publishChild(_ child: InstrumentChild, of instanceID: UUID) {
+    func publishChild(_ child: InstrumentChild, of instanceID: UUID) {
         guard let sessionID = sessionID(ofInstance: instanceID), localUserHosts(sessionID),
             let collabSID = collabSessionID(forSessionID: sessionID)
         else { return }
@@ -162,7 +162,7 @@ extension Engine {
         return customInstruments.def(withId: defID)
     }
 
-    private func sessionID(ofInstance instanceID: UUID) -> UUID? {
+    func sessionID(ofInstance instanceID: UUID) -> UUID? {
         instrumentsBySession.first { $0.value.contains { $0.id == instanceID } }?.key
     }
 }

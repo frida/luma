@@ -328,6 +328,8 @@ public final class CollaborationSession {
     public var onSessionEventUpdated: ((UUID, RuntimeEvent) -> Void)?
     public var onSessionWidgetUpdateReceived: ((UUID, WidgetUpdate) -> Void)?
     var onSessionWidgetActionRequested: ((UUID, UUID, String, String, String?, UUID) -> Void)?
+    var onWidgetStale: ((UUID, UUID, String, Int) -> Void)?
+    var onInstanceHeld: ((UUID, UUID) -> Void)?
     var onOfferedStream: ((UUID, IncomingRemoteStream) -> Void)?
     var onRelayedStreamReply: ((UUID, [String: Any]) -> Void)?
     var onRelayedStreamEnded: ((UUID, String) -> Void)?
@@ -1440,12 +1442,16 @@ public final class CollaborationSession {
     }
 
     private func sendSessionOpOverWire(_ op: SessionOp, labID: String) {
+        let newlyHeld = { if case .addInstrument(let a) = op { !instancesHeldByLab.contains(a.instance.id) } else { false } }()
         noteHeldInstances(after: op)
         sendNotification(
             to: "/labs/\(labID)/sessions/\(op.sessionID.uuidString)",
             type: "+op",
             payload: op.toJSON()
         )
+        if newlyHeld, case .addInstrument(let a) = op {
+            onInstanceHeld?(op.sessionID, a.instance.id)
+        }
     }
 
     private func applySessionOp(sessionID: UUID, payload: JSONObject) {
@@ -2126,6 +2132,15 @@ public final class CollaborationSession {
                 let actionID = UUID(uuidString: actionIDStr)
             else { return }
             onSessionWidgetActionRequested?(sessionID, instanceID, widget, action, payload["item"] as? String, actionID)
+
+        case ("+widget-stale", let s)
+            where s.count == 5 && s[0] == "labs" && s[2] == "sessions" && s[4] == "widget-updates":
+            guard let sessionID = UUID(uuidString: s[3]),
+                let instanceID = (payload["instance_id"] as? String).flatMap(UUID.init(uuidString:)),
+                let widget = WidgetSlot.target(in: payload),
+                let revision = payload["revision"] as? Int
+            else { return }
+            onWidgetStale?(sessionID, instanceID, widget, revision)
 
         case ("+child", let s) where s.count == 7 && s[0] == "labs" && s[2] == "sessions" && s[4] == "instruments" && s[6] == "children":
             guard let instanceID = UUID(uuidString: s[5]), let child = InstrumentChild.fromWireJSON(payload) else { return }
