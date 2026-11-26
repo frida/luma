@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-release="vm-20261124.1"
+release="vm-20261126.1"
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 staged="$root/Sources/LumaCore/Resources/pharo-image"

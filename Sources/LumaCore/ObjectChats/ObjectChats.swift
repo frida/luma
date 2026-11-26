@@ -999,7 +999,7 @@ public final class ObjectChats {
         }
         if view.columns != nil {
             let page = try await image.runtime.items(of: object, view: view.methodSelector, from: from + 1, count: count)
-            return ["columns": view.columns ?? [], "total": page.total, "from": from, "rows": page.items.map { $0.map { $0.text ?? "" } }]
+            return ["columns": (view.columns ?? []).map(\.title), "total": page.total, "from": from, "rows": page.items.map { $0.map { $0.text ?? "" } }]
         }
         if let text = view.text { return ["text": DisplayTruncation.truncated(text, limit: Self.summaryByteLimit * 32)] }
         if let graph = view.graph { return ["graph": ["nodes": graph.nodes.prefix(200).map(\.label), "edges": graph.edges.count]] }

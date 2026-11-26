@@ -87,7 +87,7 @@ extension MissionTools {
                         "title": view.title,
                         "selector": view.methodSelector,
                     ]
-                    entry["columns"] = view.columns
+                    entry["columns"] = view.columns?.map(\.title)
                     entry["text"] = view.text
                     entry["has_graph"] = view.graph != nil
                     entry["has_chart"] = view.chart != nil

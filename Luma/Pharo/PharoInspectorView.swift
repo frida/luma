@@ -635,7 +635,7 @@ struct PharoDeclaredView: View {
             PharoItemsList(
                 source: source,
                 view: declaration.methodSelector,
-                columns: declaration.columns ?? [],
+                columns: (declaration.columns ?? []).map(\.title),
                 reloadToken: reloadToken,
                 onSelect: onSelect)
         case "text":

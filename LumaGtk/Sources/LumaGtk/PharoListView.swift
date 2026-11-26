@@ -36,7 +36,7 @@ final class PharoListView {
     init(source: any PharoViewSource, view: PharoViewDeclaration, onDrill: @escaping (PharoObject) -> Void) {
         self.source = source
         self.selector = view.methodSelector
-        self.titles = view.columns ?? []
+        self.titles = (view.columns ?? []).map(\.title)
         self.onDrill = onDrill
 
         search = SearchEntry()
