@@ -1243,7 +1243,29 @@ private final class TableRowPresenter: WidgetRowPresenter {
             gate.adoptRowAction(button)
             buttons.append(child: button)
         }
+        buttons.append(child: makeMoreButton(gate: gate, onAction: onAction))
         widget.append(child: buttons)
+    }
+
+    private func makeMoreButton(gate: WidgetActionGate, onAction: @escaping (_ action: String, _ item: String) -> Void) -> Button {
+        let more = Button()
+        more.set(iconName: "view-more-symbolic")
+        more.add(cssClass: "luma-widget-action")
+        more.valign = .center
+        more.tooltipText = "More Actions"
+        let actions = layout.actions
+        more.onClicked { [weak self] button in
+            MainActor.assumeIsolated {
+                guard let self, let box = button.parent else { return }
+                let hidden = actions.dropFirst(TableLayout.shownActionCount(in: box.widget_ptr))
+                let items = hidden.map { action in
+                    ContextMenu.Item(action.name, enabled: button.sensitive) { onAction(action.id, self.rowID) }
+                }
+                ContextMenu.present([items], at: button, x: 0, y: Double(button.height))
+            }
+        }
+        gate.adoptRowAction(more)
+        return more
     }
 
     static func isTwoLine(_ row: WidgetTableRow) -> Bool {
@@ -1316,12 +1338,19 @@ private final class TableLayout {
     }
 
     func makeActionsBox() -> Box {
-        let box = Box(orientation: .horizontal, spacing: 2)
+        let box = Box(orientation: .horizontal, spacing: 0)
+        gtk_widget_set_layout_manager(box.widget_ptr, gtk_custom_layout_new(nil, Self.measureActions, Self.allocateActions))
         actionsWidth.add(widget: box)
         return box
     }
 
+    static func shownActionCount(in box: UnsafeMutablePointer<GtkWidget>?) -> Int {
+        Int(bitPattern: g_object_get_data(UnsafeMutableRawPointer(box)?.assumingMemoryBound(to: GObject.self), shownKey))
+    }
+
     private static let key = "luma-table-layout"
+    private static let shownKey = "luma-table-shown-actions"
+    private static let actionSpacing = 2
 
     private static func layout(of row: UnsafeMutablePointer<GtkWidget>?) -> TableLayout {
         let data = g_object_get_data(UnsafeMutableRawPointer(row)?.assumingMemoryBound(to: GObject.self), key)!
@@ -1359,9 +1388,14 @@ private final class TableLayout {
             }
             let layout = TableLayout.layout(of: row)
             let gaps = Int32(TableLayout.spacing * (children.count - 1))
-            let actions = layout.actions.isEmpty ? 0 : TableLayout.natural(of: children.last!, orientation, for: -1).1
-            minimum?.pointee = gaps + actions
-            natural?.pointee = gaps + actions + Int32(layout.naturalWidths(measuringWith: children[0]).reduce(0, +))
+            guard !layout.actions.isEmpty else {
+                minimum?.pointee = gaps
+                natural?.pointee = gaps + Int32(layout.naturalWidths(measuringWith: children[0]).reduce(0, +))
+                return
+            }
+            let actions = TableLayout.natural(of: children.last!, orientation, for: -1)
+            minimum?.pointee = Int32(layout.firstColumnFloor(measuringWith: children[0]).rounded(.up)) + Int32(TableLayout.spacing) + actions.0
+            natural?.pointee = gaps + actions.1 + Int32(layout.naturalWidths(measuringWith: children[0]).reduce(0, +))
         }
     }
 
@@ -1370,17 +1404,91 @@ private final class TableLayout {
         MainActor.assumeIsolated {
             let children = TableLayout.children(of: row)
             let layout = TableLayout.layout(of: row)
-            let actions = layout.actions.isEmpty ? 0 : Double(TableLayout.natural(of: children.last!, GTK_ORIENTATION_HORIZONTAL, for: -1).1)
+            let actions = layout.actions.isEmpty ? 0 : layout.actionsWidth(in: Double(width), of: children.last!, firstCell: children[0])
             let available = Double(width) - actions - Double(TableLayout.spacing * (children.count - 1))
-            var widths = layout.fitted(to: available, measuringWith: children[0])
-            if !layout.actions.isEmpty { widths.append(actions) }
+            let cellsEnd = layout.actions.isEmpty ? Double(width) : Double(width) - actions - Double(TableLayout.spacing)
             var x = 0.0
-            for (child, childWidth) in zip(children, widths) {
-                var origin = graphene_point_t(x: Float(x.rounded()), y: 0)
-                gtk_widget_allocate(child, Int32(childWidth.rounded(.down)), height, -1, gsk_transform_translate(nil, &origin))
+            for (child, childWidth) in zip(children, layout.fitted(to: available, measuringWith: children[0])) {
+                let shown = min(childWidth, cellsEnd - x)
+                let fits = shown >= Double(TableLayout.natural(of: child, GTK_ORIENTATION_HORIZONTAL, for: -1).0)
+                gtk_widget_set_child_visible(child, fits ? 1 : 0)
+                if fits {
+                    TableLayout.place(child, x: x, width: shown, height: height)
+                }
                 x += childWidth + Double(TableLayout.spacing)
             }
+            if !layout.actions.isEmpty {
+                TableLayout.place(children.last!, x: Double(width) - actions, width: actions, height: height)
+            }
         }
+    }
+
+    private func actionsWidth(in width: Double, of actions: UnsafeMutablePointer<GtkWidget>, firstCell: UnsafeMutablePointer<GtkWidget>) -> Double {
+        let (minimum, natural) = Self.natural(of: actions, GTK_ORIENTATION_HORIZONTAL, for: -1)
+        let room = width - firstColumnFloor(measuringWith: firstCell) - Double(Self.spacing)
+        return min(Double(natural), max(Double(minimum), room))
+    }
+
+    private func firstColumnFloor(measuringWith cell: UnsafeMutablePointer<GtkWidget>) -> Double {
+        min(naturalWidths(measuringWith: cell)[0], advance! * Self.minimumCharacters)
+    }
+
+    private static let measureActions: GtkCustomMeasureFunc = { box, orientation, _, minimum, natural, _, _ in
+        nonisolated(unsafe) let box = box
+        nonisolated(unsafe) let minimum = minimum
+        nonisolated(unsafe) let natural = natural
+        MainActor.assumeIsolated {
+            let children = TableLayout.children(of: box)
+            guard let more = children.last else { return }
+            let sizes = children.map { TableLayout.natural(of: $0, orientation, for: -1) }
+            if orientation == GTK_ORIENTATION_VERTICAL {
+                minimum?.pointee = sizes.map(\.0).max() ?? 0
+                natural?.pointee = sizes.map(\.1).max() ?? 0
+                return
+            }
+            let buttons = sizes.dropLast().map(\.1)
+            minimum?.pointee = TableLayout.natural(of: more, orientation, for: -1).1
+            natural?.pointee = buttons.reduce(0, +) + Int32(TableLayout.actionSpacing * (buttons.count - 1))
+        }
+    }
+
+    private static let allocateActions: GtkCustomAllocateFunc = { box, width, height, _ in
+        nonisolated(unsafe) let box = box
+        MainActor.assumeIsolated {
+            let children = TableLayout.children(of: box)
+            guard let more = children.last else { return }
+            let buttons = Array(children.dropLast())
+            let widths = buttons.map { Double(TableLayout.natural(of: $0, GTK_ORIENTATION_HORIZONTAL, for: -1).1) }
+            let shown = TableLayout.fittingActionCount(widths, moreWidth: Double(TableLayout.natural(of: more, GTK_ORIENTATION_HORIZONTAL, for: -1).1), in: Double(width))
+            g_object_set_data(UnsafeMutableRawPointer(box)?.assumingMemoryBound(to: GObject.self), shownKey, UnsafeMutableRawPointer(bitPattern: shown))
+            var x = 0.0
+            for (index, (button, buttonWidth)) in zip(buttons, widths).enumerated() {
+                gtk_widget_set_child_visible(button, index < shown ? 1 : 0)
+                guard index < shown else { continue }
+                TableLayout.place(button, x: x, width: buttonWidth, height: height)
+                x += buttonWidth + Double(TableLayout.actionSpacing)
+            }
+            gtk_widget_set_child_visible(more, shown < buttons.count ? 1 : 0)
+            if shown < buttons.count {
+                TableLayout.place(more, x: x, width: Double(TableLayout.natural(of: more, GTK_ORIENTATION_HORIZONTAL, for: -1).1), height: height)
+            }
+        }
+    }
+
+    private static func fittingActionCount(_ widths: [Double], moreWidth: Double, in width: Double) -> Int {
+        let all = widths.reduce(0, +) + Double(actionSpacing * (widths.count - 1))
+        guard all > width else { return widths.count }
+        var used = moreWidth
+        for (index, buttonWidth) in widths.enumerated() {
+            used += buttonWidth + Double(actionSpacing)
+            if used > width { return index }
+        }
+        return widths.count
+    }
+
+    private static func place(_ child: UnsafeMutablePointer<GtkWidget>, x: Double, width: Double, height: Int32) {
+        var origin = graphene_point_t(x: Float(x.rounded()), y: 0)
+        gtk_widget_allocate(child, Int32(width.rounded(.down)), height, -1, gsk_transform_translate(nil, &origin))
     }
 
     private func naturalWidths(measuringWith cell: UnsafeMutablePointer<GtkWidget>) -> [Double] {
