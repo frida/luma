@@ -297,6 +297,13 @@ struct EventStreamView: View, Equatable {
     private var scrollContent: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
+                if let notShown = engine.eventLog.notShown {
+                    Text(notShown)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                }
                 ForEach(Array(filteredEvents.enumerated()), id: \.1.id) { index, evt in
                     let previousTimestamp: Date? = index > 0 ? filteredEvents[index - 1].timestamp : nil
 

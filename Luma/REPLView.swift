@@ -468,6 +468,14 @@ private struct REPLCellView: View {
         }
     }
 
+    private var resultText: String? {
+        switch cell.result {
+        case .text(let s): s
+        case .styled(let s): s.plainText
+        case .js, .binary: nil
+        }
+    }
+
     private var resultAlignment: VerticalAlignment {
         switch cell.result {
         case .text, .styled: return .top
@@ -560,6 +568,13 @@ private struct REPLCellView: View {
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("repl.cell")
             .contextMenu {
+                if let resultText {
+                    Button {
+                        Platform.copyToClipboard(resultText)
+                    } label: {
+                        Label("Copy Result", systemImage: "doc.on.doc")
+                    }
+                }
                 Button {
                     engine.pinToNotebook(cell)
                 } label: {

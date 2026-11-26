@@ -174,6 +174,7 @@ private struct WidgetCanvas: View {
     let onRows: (WidgetRows) -> Void
 
     @State private var state = WidgetState()
+    @State private var consoleNotKept: String?
 
     var body: some View {
         Group {
@@ -214,6 +215,7 @@ private struct WidgetCanvas: View {
     private func consoleView(_ cfg: InstrumentWidget.ConsoleConfig) -> some View {
         ConsoleWidgetView(
             entries: state.consoleEntries,
+            notKept: consoleNotKept,
             config: cfg,
             widgetName: widget.label,
             sessionID: instance?.sessionID ?? UUID(),
@@ -464,6 +466,7 @@ private struct WidgetCanvas: View {
         let instanceID = instance.id
         let engine = engine
         state = engine.widgetState(instanceID: instanceID, widget: widgetID)
+        consoleNotKept = engine.consoleEntriesNotKept(instanceID: instanceID, widget: widgetID)
         let pending = PendingWidgetUpdates { batch in apply(batch) }
         defer { pending.stop() }
         for await update in engine.widgetUpdates
@@ -479,6 +482,9 @@ private struct WidgetCanvas: View {
         }
         next.cap(to: widget.kind)
         state = next
+        if let instance {
+            consoleNotKept = engine.consoleEntriesNotKept(instanceID: instance.id, widget: slot)
+        }
     }
 }
 
@@ -521,6 +527,7 @@ private final class PendingWidgetUpdates: NSObject {
 
 private struct ConsoleWidgetView: View {
     let entries: [WidgetConsoleEntry]
+    let notKept: String?
     let config: InstrumentWidget.ConsoleConfig
     let widgetName: String
     let sessionID: UUID
@@ -542,6 +549,11 @@ private struct ConsoleWidgetView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 2) {
+                        if let notKept {
+                            Text(notKept)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                         ForEach(entries) { entry in
                             entryRow(entry)
                                 .id(entry.id)
@@ -589,6 +601,11 @@ private struct ConsoleWidgetView: View {
         }
         .font(.system(.caption, design: .monospaced))
         .contextMenu {
+            Button {
+                Platform.copyToClipboard(entry.text)
+            } label: {
+                Label("Copy Entry", systemImage: "doc.on.doc")
+            }
             Button {
                 addToNotebook(entry)
             } label: {
