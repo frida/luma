@@ -62,14 +62,9 @@ final class InstalledStoreItems {
         let folderURL = folderURL(for: item.id)
         var instrument = try Engine.validatedCustomInstrumentBundle(bundle)
         instrument.def.normalize()
-        let previous = try? InstrumentFolder(folderURL: folderURL)
-        let manifestURL = folderURL.appendingPathComponent(InstrumentFolder.manifestFileName)
-        if previous == nil, FileManager.default.fileExists(atPath: manifestURL.path) {
-            try FileManager.default.removeItem(at: manifestURL)
-        }
-        let previousPaths = try previous?.sourcePaths() ?? []
+        try removeContents(of: folderURL)
+        try InstrumentFolder.write(instrument, to: folderURL)
         try InstrumentFolder.stampPackage(name: item.slug, version: item.version, in: folderURL)
-        try InstrumentFolder.write(instrument, to: folderURL, replacing: previousPaths)
         let installation = StoreInstallation(
             itemID: item.id,
             version: item.version,
@@ -127,6 +122,14 @@ final class InstalledStoreItems {
             digests[path] = InstrumentFolderLink.Snapshot.digest(content)
         }
         return digests
+    }
+
+    private func removeContents(of folderURL: URL) throws {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: folderURL.path) else { return }
+        for entry in try fm.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: nil) {
+            try fm.removeItem(at: entry)
+        }
     }
 
     private func snapshot(of folderURL: URL) throws -> InstrumentFolderLink.Snapshot {
