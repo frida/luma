@@ -210,7 +210,7 @@ const fileStreams = new StreamController();
 const openFileStreams = new Map<string, Set<OfferedFileStream>>();
 
 fileStreams.events.on("send", ({ stanza, data }) => {
-    send({ type: "luma:stream", stanza }, data === null ? null : new Uint8Array(data).buffer);
+    sendNow({ type: "luma:stream", stanza }, data === null ? null : new Uint8Array(data).buffer);
 });
 
 function receiveFileStreamReplies(): void {
@@ -275,6 +275,7 @@ export async function loadInstrument({ instanceId, moduleName, source, config, r
     };
 
     instruments.set(instanceId, controller);
+    flushBatches();
 }
 
 export async function updateInstrumentConfig({ instanceId, config }: {
@@ -289,6 +290,7 @@ export async function updateInstrumentConfig({ instanceId, config }: {
     controller.config = config;
 
     await controller.handle.updateConfig?.(config);
+    flushBatches();
 }
 
 export async function disposeInstrument({ instanceId }: { instanceId: string }): Promise<void> {
@@ -303,6 +305,8 @@ export async function disposeInstrument({ instanceId }: { instanceId: string }):
         stream.destroy(new Error("the instrument was unloaded"));
     }
     instruments.delete(instanceId);
+    flushBatches();
+    budgets.delete(instanceId);
 }
 
 export async function invokeWidgetAction({ instanceId, widget, child, action, item, actionId, savesFile }: {
@@ -334,6 +338,7 @@ export async function invokeWidgetAction({ instanceId, widget, child, action, it
         error = (e instanceof Error) ? e.message : String(e);
     }
     offer.close();
+    flushBatches();
     return { file: offer.offered(), error, show: offer.shown() };
 }
 
@@ -363,13 +368,14 @@ export async function submitConsoleInput({ instanceId, widget, child, entryId, t
         respond.error((e instanceof Error) ? e.message : String(e));
     }
     offer.close();
-    send({
+    queue(instanceId, {
         type: "widget-console-reply-done",
         instance_id: instanceId,
         widget,
         child,
         reply_to: entryId,
     }, null);
+    flushBatches();
     return { file: offer.offered(), error: null, show: offer.shown() };
 }
 
@@ -484,7 +490,7 @@ class OfferedFileStream extends Writable {
 
     _destroy(error: Error | null, callback: (error?: Error | null) => void): void {
         if (!this.writableFinished && !this.#refused && this.#sink !== null) {
-            send({ type: "luma:stream-abort", action_id: this.#actionId, reason: error?.message ?? "the instrument stopped writing" }, null);
+            sendNow({ type: "luma:stream-abort", action_id: this.#actionId, reason: error?.message ?? "the instrument stopped writing" }, null);
         }
         this.#sink?.destroy();
         callback(error);
@@ -560,7 +566,7 @@ function makeConsoleResponder(
         },
         data: ArrayBuffer | null
     ) => {
-        send({
+        queue(instanceId, {
             type: "widget-console-append",
             instance_id: instanceId,
             widget,
@@ -632,7 +638,7 @@ function makeInstrumentContext(
     restoredChildren: { [template: string]: { [id: string]: ChildRow } }
 ): InstrumentContext {
     const post = (type: string, payload: object, data?: ArrayBuffer | ArrayBufferView | number[] | null) => {
-        send({
+        queue(instanceId, {
             type,
             instance_id: instanceId,
             ...payload,
@@ -642,7 +648,7 @@ function makeInstrumentContext(
         instanceId,
         emit(payload: unknown) {
             const [tree, blob] = encodeValue(payload);
-            send({
+            queue(instanceId, {
                 type: "instrument-event",
                 instance_id: instanceId,
                 payload: tree,
@@ -930,4 +936,206 @@ function consoleImageBuffer(bytes: ArrayBuffer | Uint8Array | number[]): ArrayBu
 
 function makeId(): string {
     return Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10);
+}
+
+type Message = { [key: string]: unknown };
+type Payload = ArrayBuffer | ArrayBufferView | number[] | null;
+
+const sourceBudget = {
+    eventsPerSecond: 2000,
+    widgetUpdatesPerSecond: 2000,
+};
+
+interface Batch {
+    items: Message[];
+    blobs: Uint8Array[];
+    size: number;
+    latest: Map<string, number>;
+    barriers: Map<string, number>;
+}
+
+interface Budget {
+    windowStart: number;
+    events: number;
+    widgetUpdates: number;
+    droppedEvents: number;
+    droppedEntries: Map<string, { widget: unknown, child: unknown, count: number }>;
+}
+
+const batches = new Map<string, Batch>();
+const budgets = new Map<string, Budget>();
+let flushScheduled = false;
+
+function queue(instanceId: string, message: Message, data: Payload): void {
+    if (!admitted(instanceId, message)) {
+        scheduleFlush();
+        return;
+    }
+    const batch = batchOf(instanceId);
+    if (data !== null) {
+        const bytes = bytesOf(data);
+        message.data_offset = batch.size;
+        message.data_size = bytes.byteLength;
+        batch.blobs.push(bytes);
+        batch.size += bytes.byteLength;
+    }
+    const key = coalescingKey(message);
+    const earlier = (key !== null) ? batch.latest.get(key) : undefined;
+    const target = widgetKey(message);
+    if (earlier !== undefined && earlier > (batch.barriers.get(target) ?? -1)) {
+        batch.items[earlier] = message;
+    } else {
+        if (key !== null) {
+            batch.latest.set(key, batch.items.length);
+        }
+        if (isBarrier(message)) {
+            batch.barriers.set(target, batch.items.length);
+        }
+        batch.items.push(message);
+    }
+    scheduleFlush();
+}
+
+function sendNow(message: Message, data: Payload): void {
+    flushBatches();
+    send(message, data);
+}
+
+function flushBatches(): void {
+    flushScheduled = false;
+    const instanceIds = new Set([...batches.keys(), ...budgets.keys()]);
+    for (const instanceId of instanceIds) {
+        const batch = batches.get(instanceId);
+        const items = [...(batch?.items ?? []), ...droppedReports(instanceId)];
+        if (items.length === 0) {
+            continue;
+        }
+        send({ type: "instrument-batch", instance_id: instanceId, items }, (batch !== undefined && batch.size > 0) ? joined(batch) : null);
+    }
+    batches.clear();
+}
+
+function scheduleFlush(): void {
+    if (flushScheduled) {
+        return;
+    }
+    flushScheduled = true;
+    Script.nextTick(flushBatches);
+}
+
+function admitted(instanceId: string, message: Message): boolean {
+    const budget = budgetOf(instanceId);
+    const now = Date.now();
+    if (now - budget.windowStart >= 1000) {
+        budget.windowStart = now;
+        budget.events = 0;
+        budget.widgetUpdates = 0;
+    }
+    if (message.type === "instrument-event") {
+        if (budget.events >= sourceBudget.eventsPerSecond) {
+            budget.droppedEvents++;
+            return false;
+        }
+        budget.events++;
+        return true;
+    }
+    if (typeof message.type !== "string" || !message.type.startsWith("widget-")) {
+        return true;
+    }
+    if (budget.widgetUpdates >= sourceBudget.widgetUpdatesPerSecond && isDroppable(message)) {
+        if (message.type === "widget-console-append") {
+            const key = widgetKey(message);
+            const dropped = budget.droppedEntries.get(key) ?? { widget: message.widget, child: message.child, count: 0 };
+            dropped.count++;
+            budget.droppedEntries.set(key, dropped);
+        }
+        return false;
+    }
+    budget.widgetUpdates++;
+    return true;
+}
+
+function isDroppable(message: Message): boolean {
+    if (message.type === "widget-graph-point") {
+        return true;
+    }
+    return message.type === "widget-console-append" && (message.entry as { reply_to?: string } | undefined)?.reply_to === undefined;
+}
+
+function coalescingKey(message: Message): string | null {
+    switch (message.type) {
+        case "widget-counter-set":
+        case "widget-hex-set":
+            return `${message.type} ${widgetKey(message)}`;
+        case "widget-table-upsert":
+            return `${message.type} ${widgetKey(message)} ${(message.row as { id: string }).id}`;
+        case "widget-list-upsert":
+            return `${message.type} ${widgetKey(message)} ${(message.item as { id: string }).id}`;
+        default:
+            return null;
+    }
+}
+
+function isBarrier(message: Message): boolean {
+    return message.type === "widget-clear" || message.type === "widget-table-remove" || message.type === "widget-list-remove";
+}
+
+function widgetKey(message: Message): string {
+    const child = message.child as ChildRef | undefined;
+    return (child !== undefined) ? `${child.template}/${child.id}/${message.widget}` : String(message.widget);
+}
+
+function droppedReports(instanceId: string): Message[] {
+    const budget = budgets.get(instanceId);
+    if (budget === undefined) {
+        return [];
+    }
+    const reports: Message[] = [];
+    if (budget.droppedEvents > 0) {
+        reports.push({ type: "instrument-events-dropped", instance_id: instanceId, count: budget.droppedEvents });
+        budget.droppedEvents = 0;
+    }
+    for (const dropped of budget.droppedEntries.values()) {
+        reports.push({ type: "widget-console-dropped", instance_id: instanceId, widget: dropped.widget, child: dropped.child, count: dropped.count });
+    }
+    budget.droppedEntries.clear();
+    return reports;
+}
+
+function batchOf(instanceId: string): Batch {
+    let batch = batches.get(instanceId);
+    if (batch === undefined) {
+        batch = { items: [], blobs: [], size: 0, latest: new Map(), barriers: new Map() };
+        batches.set(instanceId, batch);
+    }
+    return batch;
+}
+
+function budgetOf(instanceId: string): Budget {
+    let budget = budgets.get(instanceId);
+    if (budget === undefined) {
+        budget = { windowStart: Date.now(), events: 0, widgetUpdates: 0, droppedEvents: 0, droppedEntries: new Map() };
+        budgets.set(instanceId, budget);
+    }
+    return budget;
+}
+
+function bytesOf(data: ArrayBuffer | ArrayBufferView | number[]): Uint8Array {
+    if (data instanceof ArrayBuffer) {
+        return new Uint8Array(data);
+    }
+    if (ArrayBuffer.isView(data)) {
+        return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+    }
+    return Uint8Array.from(data);
+}
+
+function joined(batch: Batch): ArrayBuffer {
+    const all = new Uint8Array(batch.size);
+    let offset = 0;
+    for (const blob of batch.blobs) {
+        all.set(blob, offset);
+        offset += blob.byteLength;
+    }
+    return all.buffer;
 }

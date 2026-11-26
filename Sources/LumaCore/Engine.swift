@@ -5998,6 +5998,15 @@ public func deleteCustomInstrument(_ defID: UUID) async {
             }
         }
 
+        node.onDroppedAtSource = { [weak self] dropped in
+            switch dropped {
+            case .events(_, let count):
+                self?.eventLog.countDroppedAtSource(count)
+            case .consoleEntries(let instanceID, let widget, let count):
+                self?.consoleEntriesDropped[InstrumentViews.Key(instanceID: instanceID, widget: widget), default: 0] += count
+            }
+        }
+
         node.evaluateRadare2 = { [weak self] command in
             guard let self else { return .text("Session unavailable.") }
             return await self.radare2REPLValue(forCommand: command, sessionID: sessionID)

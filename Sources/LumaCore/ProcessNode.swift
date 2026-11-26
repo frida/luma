@@ -402,6 +402,31 @@ public final class ProcessNode: Identifiable {
                 handleITraceChunk(sessionId: sessionId, data: Array(chunkData), lost: lost)
                 return true
 
+            case "instrument-batch":
+                guard let items = dict["items"] as? [[String: Any]] else { return false }
+                for item in items {
+                    let slice = (item["data_offset"] as? Int).flatMap { offset in
+                        (item["data_size"] as? Int).map { size in Array((data ?? [])[offset..<offset + size]) }
+                    }
+                    let envelope: [String: Any] = ["type": "send", "payload": item]
+                    if !tryHandleMessage(envelope, data: slice) {
+                        _events.yield(RuntimeEvent(source: .repl, payload: .raw(message: envelope, data: slice)))
+                    }
+                }
+                return true
+
+            case "instrument-events-dropped":
+                guard let instanceId = dict["instance_id"] as? String, let instanceID = UUID(uuidString: instanceId),
+                    let count = dict["count"] as? Int
+                else { return false }
+                onDroppedAtSource?(.events(instanceID: instanceID, count: count))
+                return true
+
+            case "widget-console-dropped":
+                guard let context = decodeWidgetContext(dict), let count = dict["count"] as? Int else { return false }
+                onDroppedAtSource?(.consoleEntries(instanceID: context.instanceID, widget: context.widget, count: count))
+                return true
+
             case "instrument-event":
                 guard let instanceId = dict["instance_id"] as? String,
                     let instrumentID = UUID(uuidString: instanceId),
@@ -875,6 +900,12 @@ public final class ProcessNode: Identifiable {
     }
 
     public var evaluateRadare2: ((String) async -> REPLResult.Value)!
+    public var onDroppedAtSource: ((DroppedAtSource) -> Void)?
+
+    public enum DroppedAtSource: Sendable {
+        case events(instanceID: UUID, count: Int)
+        case consoleEntries(instanceID: UUID, widget: String, count: Int)
+    }
 
     @discardableResult
     public func evalInREPL(_ code: String, language: REPLLanguage = .javascript, cellID: UUID = UUID()) async -> REPLResult? {

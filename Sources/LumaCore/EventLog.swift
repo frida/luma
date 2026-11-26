@@ -20,6 +20,7 @@ public final class EventLog {
     @ObservationIgnored private var arrived: [RuntimeEvent] = []
     @ObservationIgnored private var pendingPersist: [RuntimeEvent] = []
     @ObservationIgnored private var isFlushScheduled = false
+    @ObservationIgnored private var droppedAtSource = 0
 
     private static let flushInterval = Duration.milliseconds(100)
 
@@ -35,6 +36,11 @@ public final class EventLog {
 
     public func append(_ event: RuntimeEvent) {
         arrived.append(event)
+        scheduleFlush()
+    }
+
+    public func countDroppedAtSource(_ count: Int) {
+        droppedAtSource += count
         scheduleFlush()
     }
 
@@ -111,6 +117,10 @@ public final class EventLog {
             totalReceived += batch.count
             flushVersion &+= 1
             onEventsAppended?(visible.suffix(batch.count))
+        }
+        if droppedAtSource > 0 {
+            totalReceived += droppedAtSource
+            droppedAtSource = 0
         }
         persistPending()
     }
