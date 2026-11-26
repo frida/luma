@@ -1876,8 +1876,7 @@ final class MainWindow: InstrumentUIHost {
                     self.presentRenameEntrypointFileDialog(def: def)
                 },
             ],
-            customInstrumentFolderMenuItems(def: def)
-                + MainWindow.addToLabMenuItems(.definition, def.id.uuidString, engine: engine!) { [weak self] in self?.showToast($0, durationSeconds: 8) },
+            customInstrumentFolderMenuItems(def: def) + MainWindow.addToLabMenuItems(.definition, def.id.uuidString, engine: engine!),
             [.init("Delete Custom Instrument", destructive: true) { [weak self] in
                 self?.confirmDeleteCustomInstrument(def: def)
             }],
@@ -1895,11 +1894,9 @@ final class MainWindow: InstrumentUIHost {
         return folderItems + [publish]
     }
 
-    static func addToLabMenuItems(
-        _ family: LabSubject.Family, _ id: String, engine: Engine, onRefusal: @escaping (String) -> Void = { _ in }
-    ) -> [ContextMenu.Item] {
+    static func addToLabMenuItems(_ family: LabSubject.Family, _ id: String, engine: Engine) -> [ContextMenu.Item] {
         guard let subject = keptFromLab(family, id, in: engine) else { return [] }
-        return [.init("Add to Lab") { engine.addToLab(subject).map(onRefusal) }]
+        return [.init("Add to Lab") { engine.addToLab(subject) }]
     }
 
     private func reloadCustomInstrumentFromFolder(def: LumaCore.CustomInstrumentDef) {

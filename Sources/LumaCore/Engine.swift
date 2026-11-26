@@ -76,6 +76,7 @@ public final class Engine {
     var offeredFileStreams: [UUID: IncomingRemoteStream] = [:]
     public internal(set) var offeredFiles: [OfferedFile] = []
     public internal(set) var lostOfferedFiles: [LostOfferedFile] = []
+    public private(set) var refusedLabAdditions: [RefusedLabAddition] = []
     public internal(set) var instrumentChildren: [UUID: [InstrumentChild]] = [:]
     public internal(set) var childSelectionRequest: ChildSelectionRequest?
     private var remoteInstrumentAgents: [UUID: InstrumentAgentState] = [:]
@@ -7112,10 +7113,10 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         }
     }
 
-    @discardableResult
-    public func addToLab(_ subject: LabSubject) -> String? {
+    public func addToLab(_ subject: LabSubject) {
         if subject.family == .definition, let refusal = labRefusal(ofDefinition: subject.id) {
-            return "\(refusal)."
+            refusedLabAdditions.append(RefusedLabAddition(name: name(of: subject), sentence: refusal.endedAsSentence))
+            return
         }
         try? store.releaseToLab(subject)
         subjectsKeptFromLab.remove(subject)
@@ -7128,15 +7129,18 @@ public func deleteCustomInstrument(_ defID: UUID) async {
             broadcastCustomInstrumentUpsert(defID: subject.id)
             announceInstances(ofDefinition: subject.id)
         case .pattern:
-            guard let record = try? store.fetchPatternSource(id: subject.id) else { return nil }
+            guard let record = try? store.fetchPatternSource(id: subject.id) else { return }
             collaboration.enqueuePatternSourceUpsert(record)
         case .entry:
-            guard let entry = notebookEntries.first(where: { $0.id == subject.id }) else { return nil }
+            guard let entry = notebookEntries.first(where: { $0.id == subject.id }) else { return }
             collaboration.enqueueAdd(entry)
         default:
             break
         }
-        return nil
+    }
+
+    public func acknowledgeRefusedLabAddition(_ id: UUID) {
+        refusedLabAdditions.removeAll { $0.id == id }
     }
 
     private func announceInstances(ofDefinition defID: UUID) {

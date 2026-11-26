@@ -26,7 +26,6 @@ struct CustomInstrumentMenuItems: View {
     let def: CustomInstrumentDef
     let engine: Engine
     @Binding var presentation: CustomInstrumentMenuPresentation
-    @Environment(\.errorPresenter) private var errorPresenter
 
     private var isLinked: Bool { engine.instrumentFolderLinks[def.id] != nil }
     private var labSubject: LabSubject { LabSubject(.definition, def.id) }
@@ -106,9 +105,7 @@ struct CustomInstrumentMenuItems: View {
         }
         if engine.isKeptFromLab(labSubject) {
             Button {
-                if let refusal = engine.addToLab(labSubject) {
-                    errorPresenter.present("Can’t add “\(def.name)” to the lab", refusal)
-                }
+                engine.addToLab(labSubject)
             } label: {
                 Label("Add to Lab", systemImage: "person.2.wave.2")
             }

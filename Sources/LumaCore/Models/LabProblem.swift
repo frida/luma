@@ -35,3 +35,13 @@ public struct LabProblem: Identifiable, Sendable, Equatable {
         self.date = problem.date
     }
 }
+
+public struct RefusedLabAddition: Identifiable, Sendable, Equatable {
+    public let id = UUID()
+    public let name: String
+    public let sentence: String
+
+    public var title: String {
+        "Can’t add “\(name)” to the lab"
+    }
+}

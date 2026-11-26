@@ -32,6 +32,11 @@ private struct OfferedFileSaving: ViewModifier {
                 engine.acknowledgeLostOfferedFile(lost.id)
                 failure = UIError(title: lost.file.saveFailureTitle, message: lost.sentence)
             }
+            .onChange(of: failure == nil ? engine.refusedLabAdditions.first?.id : nil, initial: true) {
+                guard failure == nil, let refused = engine.refusedLabAdditions.first else { return }
+                engine.acknowledgeRefusedLabAddition(refused.id)
+                failure = UIError(title: refused.title, message: refused.sentence)
+            }
             .alert(failure?.title ?? "", isPresented: failureBinding, presenting: failure) { _ in
                 Button("OK") { failure = nil }
             } message: { failure in

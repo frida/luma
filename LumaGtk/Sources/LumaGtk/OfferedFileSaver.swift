@@ -28,6 +28,7 @@ final class OfferedFileSaver {
         withObservationTracking {
             follow(engine.offeredFiles)
             report(engine.lostOfferedFiles)
+            report(engine.refusedLabAdditions)
         } onChange: { [weak self] in
             _Concurrency.Task { @MainActor in self?.observe() }
         }
@@ -52,6 +53,13 @@ final class OfferedFileSaver {
         for file in lost {
             engine.acknowledgeLostOfferedFile(file.id)
             toasts.show(file.sentence, durationSeconds: 8)
+        }
+    }
+
+    private func report(_ refused: [RefusedLabAddition]) {
+        for refusal in refused {
+            engine.acknowledgeRefusedLabAddition(refusal.id)
+            toasts.show("\(refusal.title): \(refusal.sentence)", durationSeconds: 8)
         }
     }
 
