@@ -60,6 +60,6 @@ public struct LostOfferedFile: Identifiable, Sendable, Equatable {
     public var id: UUID { file.id }
 
     public var sentence: String {
-        "“\(file.name)” was not saved: \(reason)."
+        "“\(file.name)” was not saved: \(reason)".endedAsSentence
     }
 }

@@ -32,3 +32,10 @@ enum LabRefusal {
         "invalid child template": "one of its kinds of children is not one the lab takes",
     ]
 }
+
+extension String {
+    var endedAsSentence: String {
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.last.map { ".!?…".contains($0) } == true ? trimmed : trimmed + "."
+    }
+}

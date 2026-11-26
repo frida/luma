@@ -112,7 +112,7 @@ extension Engine {
         let actionName = actions?.first { $0.id == sent.action }?.name ?? sent.action
         let host = sessions.first { $0.id == sent.sessionID }?.host?.name ?? "the host"
         let row = sent.item.map { " on row \($0)" } ?? ""
-        emitEngineError(subsystem: "instruments", text: "“\(name)”: \(actionName)\(row) did not run at \(host)'s Luma: \(failure.reason).")
+        emitEngineError(subsystem: "instruments", text: "“\(name)”: \(actionName)\(row) did not run at \(host)'s Luma: \(failure.reason)".endedAsSentence)
     }
 
     private func restartWidgetState(_ slot: String, of instanceID: UUID, as restored: WidgetState, above labRevision: Int) {

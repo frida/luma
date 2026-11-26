@@ -628,7 +628,7 @@ public final class Engine {
 
         collaboration.onOpRejected = { [weak self] subject, reason in
             guard let self else { return }
-            emitEngineWarning(subsystem: "collaboration", text: "The lab turned away your change to “\(name(of: subject))”: \(reason).")
+            emitEngineWarning(subsystem: "collaboration", text: "The lab turned away your change to “\(name(of: subject))”: \(reason)".endedAsSentence)
         }
 
         collaboration.onChangeKeptAsCopy = { [weak self] subject, reason in
@@ -7051,7 +7051,7 @@ public func deleteCustomInstrument(_ defID: UUID) async {
             ? .copyKeptFromLab(subject, name: name) : .keptFromLab(subject, name: name)
         let labHoldsEarlier = (try? store.subjectsKnownToLab(subject.family))?.contains(subject.id) == true
         let held = labHoldsEarlier ? "the lab still has the earlier version" : "the lab does not have it"
-        report(concern, in: "collaboration", reason: "“\(name)” is kept here, and \(held): \(reason).")
+        report(concern, in: "collaboration", reason: "“\(name)” is kept here, and \(held): \(reason)".endedAsSentence)
     }
 
     private static let familiesCopiedWhenKept: Set<LabSubject.Family> = [.definition, .pattern, .entry, .mission]
