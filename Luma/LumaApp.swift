@@ -122,6 +122,7 @@ func sharedGitHubAuth() -> GitHubAuth { sharedWelcomeModel.gitHubAuth }
 
         func applicationShouldTerminate(_ application: NSApplication) -> NSApplication.TerminateReply {
             Task { @MainActor in
+                await DocumentEdits.writeRecordsOfAll()
                 await EngineRegistry.shared.shutdownAll()
                 application.reply(toApplicationShouldTerminate: true)
             }

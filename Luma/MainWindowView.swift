@@ -44,6 +44,7 @@ struct MainWindowView: View {
                 projectURL: projectURL,
                 restorationPath: restorationPath,
                 markDocumentEdited: markDocumentEdited,
+                noteDocumentRecorded: noteDocumentRecorded,
                 isShowingHostingBlockedAlert: $isShowingHostingBlockedAlert
             )
             #if canImport(AppKit)
@@ -72,6 +73,12 @@ struct MainWindowView: View {
             documentEdits.markEdited()
         #endif
     }
+
+    private func noteDocumentRecorded() {
+        #if canImport(AppKit)
+            documentEdits.noteRecorded()
+        #endif
+    }
 }
 
 private struct ProjectContentView: View {
@@ -80,6 +87,7 @@ private struct ProjectContentView: View {
     let projectURL: URL
     let restorationPath: String
     let markDocumentEdited: () -> Void
+    let noteDocumentRecorded: () -> Void
 
     @Binding var isShowingHostingBlockedAlert: Bool
 
@@ -163,11 +171,13 @@ private struct ProjectContentView: View {
                     await EngineRegistry.shared.release(workingProjectURL: url)
                 }
             }
-            .onReceive(NotificationCenter.default.publisher(for: ProjectStore.didChangeNotification)) { note in
-                guard let id = note.userInfo?["instanceID"] as? UUID,
-                    id == engine.store.instanceID
-                else { return }
+            .onReceive(NotificationCenter.default.publisher(for: ProjectStore.didEditNotification)) { note in
+                guard isAboutThisProject(note) else { return }
                 markDocumentEdited()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: ProjectStore.didRecordNotification)) { note in
+                guard isAboutThisProject(note) else { return }
+                noteDocumentRecorded()
             }
             eventStreamBottomBar
         }
@@ -188,6 +198,10 @@ private struct ProjectContentView: View {
                     }
             }
         }
+    }
+
+    private func isAboutThisProject(_ note: Notification) -> Bool {
+        note.userInfo?["instanceID"] as? UUID == engine.store.instanceID
     }
 
     private var selection: Binding<SidebarItemID?> {
