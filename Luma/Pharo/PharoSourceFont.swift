@@ -31,12 +31,33 @@ extension PlatformColor {
         #if canImport(AppKit)
             return NSColor(name: nil) { appearance in
                 let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-                return NSColor(pharoHex: isDark ? darkHex : lightHex)
+                return isDark ? NSColor(pharoHex: darkHex).legibleOnDark : NSColor(pharoHex: lightHex)
             }
         #else
             return UIColor { trait in
-                UIColor(pharoHex: trait.userInterfaceStyle == .dark ? darkHex : lightHex)
+                trait.userInterfaceStyle == .dark ? UIColor(pharoHex: darkHex).legibleOnDark : UIColor(pharoHex: lightHex)
             }
         #endif
     }
+
+    private var legibleOnDark: PlatformColor {
+        let shortfall = Self.leastLuminanceOnDark - luminance
+        guard shortfall > 0 else { return self }
+        return blendedTowardWhite(by: shortfall / (1 - luminance))
+    }
+
+    private var luminance: CGFloat {
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+        getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+    }
+
+    private func blendedTowardWhite(by fraction: CGFloat) -> PlatformColor {
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+        getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        return PlatformColor(
+            red: red + (1 - red) * fraction, green: green + (1 - green) * fraction, blue: blue + (1 - blue) * fraction, alpha: alpha)
+    }
+
+    private static let leastLuminanceOnDark: CGFloat = 0.55
 }
