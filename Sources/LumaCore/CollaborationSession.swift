@@ -2199,7 +2199,7 @@ public final class CollaborationSession {
     func handleOpRejected(_ payload: JSONObject) {
         guard let opID = (payload["op_id"] as? String).flatMap(UUID.init(uuidString:)) else { return }
         let refusal = (payload["reason"] as? String) ?? "rejected"
-        let reason = refusal
+        let reason = LabRefusal.sentence(refusal)
         opsOverridingJoinSnapshot.removeValue(forKey: opID)
         replayedForSubjectsTheLabLacks.remove(opID)
         guard let rejected = try? store.fetchOutboxOp(opID: opID) else { return }
