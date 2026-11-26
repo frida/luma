@@ -376,6 +376,9 @@ public final class Engine {
         let existing = labID ?? collaboration.projectLabID
         Task { @MainActor in
             guard let token = await gitHubAuth.requestToken() else { return }
+            if case .error = collaboration.status {
+                await collaboration.stop()
+            }
             await collaboration.start(token: token, existingLabID: existing)
         }
     }
