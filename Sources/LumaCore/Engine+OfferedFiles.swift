@@ -3,8 +3,12 @@ import Foundation
 extension Engine {
     public func saveOfferedFile(_ id: UUID, to url: URL) async throws {
         guard let stream = takeOfferedFile(id) else { return }
-        guard FileManager.default.createFile(atPath: url.path, contents: nil), let handle = try? FileHandle(forWritingTo: url) else {
-            let failure = "Luma could not create \(url.path)"
+        let handle: FileHandle
+        do {
+            try Data().write(to: url)
+            handle = try FileHandle(forWritingTo: url)
+        } catch {
+            let failure = "Luma could not create \(url.path): \(error.localizedDescription)"
             stream.refuse(failure)
             throw RemoteStreamError(message: failure)
         }
