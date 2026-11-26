@@ -241,7 +241,9 @@ public final class ObjectChats {
     }
 
     public func location(of object: PharoObject) async throws -> (chatID: UUID, objectID: String)? {
-        try await image(of: UUID()).location(of: object)
+        guard let location = try await image(of: UUID()).location(of: object), chat(withID: location.chatID) != nil
+        else { return nil }
+        return location
     }
 
     public func start(
