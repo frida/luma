@@ -15,7 +15,7 @@ else
     if [ ! -f "$image" ]; then
         echo "Fetching Pharo image $release"
         mkdir -p "$cache"
-        curl -sSL \
+        curl -fsSL --retry 3 --retry-all-errors \
             "https://github.com/frida/SwiftyPharo/releases/download/$release/SwiftyPharo.image.zip" \
             -o "$cache/image.zip"
         unzip -qo "$cache/image.zip" -d "$cache"
