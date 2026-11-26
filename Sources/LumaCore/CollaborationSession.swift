@@ -328,6 +328,7 @@ public final class CollaborationSession {
     public var onSessionEventUpdated: ((UUID, RuntimeEvent) -> Void)?
     public var onSessionWidgetUpdateReceived: ((UUID, WidgetUpdate) -> Void)?
     var onSessionWidgetActionRequested: ((UUID, UUID, String, String, String?, UUID) -> Void)?
+    var onWidgetActionFailed: ((WidgetActionFailure) -> Void)?
     var onWidgetStale: ((UUID, UUID, String, Int) -> Void)?
     var onInstanceHeld: ((UUID, UUID) -> Void)?
     var onOfferedStream: ((UUID, IncomingRemoteStream) -> Void)?
@@ -337,7 +338,8 @@ public final class CollaborationSession {
     var onChildRemoved: ((ChildRef, UUID) -> Void)?
     var onChildShown: ((ChildRef?, UUID, UUID) -> Void)?
     var onChildrenSnapshot: (([UUID: [InstrumentChild]], [Session]) -> Void)?
-    private var sentWidgetActions: [(id: UUID, action: SentWidgetAction)] = []
+    var sentWidgetActions: [(id: UUID, action: SentWidgetAction)] = []
+    var outcomeDeadlines: [UUID: Task<Void, Never>] = [:]
     private var receivingStreams: [UUID: RemoteStreamReceiver] = [:]
     private var relayedStreams: Set<UUID> = []
     private var instancesHeldByLab: Set<UUID> = []
@@ -1238,10 +1240,12 @@ public final class CollaborationSession {
         ]
         WidgetSlot.addTarget(widget, to: &payload)
         if let item { payload["item"] = item }
-        sentWidgetActions.append((actionID, SentWidgetAction(sessionID: sessionID, instanceID: instanceID, savesFile: savesFile)))
+        sentWidgetActions.append((actionID, SentWidgetAction(
+            sessionID: sessionID, instanceID: instanceID, widget: widget, action: action, item: item, savesFile: savesFile)))
         if sentWidgetActions.count > Self.maxSentWidgetActions {
             sentWidgetActions.removeFirst()
         }
+        awaitOutcome(of: actionID)
         sendNotification(
             to: "/labs/\(labID)/sessions/\(sessionID.uuidString)/widget-actions",
             type: "+widget-action",
@@ -1301,7 +1305,7 @@ public final class CollaborationSession {
         relayedStreams.remove(actionID)
     }
 
-    private static let connectionLost = "the lab connection was lost"
+    static let connectionLost = "the lab connection was lost"
 
     private static func streamPath(labID: String, sessionID: UUID, actionID: UUID) -> String {
         "/labs/\(labID)/sessions/\(sessionID.uuidString)/widget-actions/\(actionID.uuidString)/stream"
@@ -1333,6 +1337,7 @@ public final class CollaborationSession {
         guard creating, let sent = sentWidgetActions.first(where: { $0.id == actionID })?.action, sent.sessionID == sessionID,
             case .joined(let labID) = status
         else { return nil }
+        outcomeDeadlines.removeValue(forKey: actionID)?.cancel()
         let path = Self.streamPath(labID: labID, sessionID: sessionID, actionID: actionID)
         let receiver = RemoteStreamReceiver { [weak self] stanza in
             self?.sendNotification(to: path, type: "+stream", payload: stanza)
@@ -2133,6 +2138,10 @@ public final class CollaborationSession {
             else { return }
             onSessionWidgetActionRequested?(sessionID, instanceID, widget, action, payload["item"] as? String, actionID)
 
+        case ("+outcome", let s) where s.count == 7 && s[0] == "labs" && s[2] == "sessions" && s[4] == "widget-actions" && s[6] == "outcome":
+            guard let actionID = UUID(uuidString: s[5]) else { return }
+            receiveOutcome(of: actionID, error: payload["error"] as? String)
+
         case ("+widget-stale", let s)
             where s.count == 5 && s[0] == "labs" && s[2] == "sessions" && s[4] == "widget-updates":
             guard let sessionID = UUID(uuidString: s[3]),
@@ -2261,6 +2270,7 @@ public final class CollaborationSession {
         case .joined:
             break
         case .disconnected, .connecting, .error:
+            failAwaitedOutcomes(Self.connectionLost)
             sentWidgetActions = []
             instancesHeldByLab = []
             childrenHeldByLab = []
@@ -2278,10 +2288,14 @@ public final class CollaborationSession {
     }
 }
 
-private struct SentWidgetAction {
+struct SentWidgetAction {
     let sessionID: UUID
     let instanceID: UUID
+    let widget: String
+    let action: String
+    let item: String?
     let savesFile: Bool
+    var failed = false
 }
 
 private struct HeldChild: Hashable {

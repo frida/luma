@@ -55,6 +55,38 @@ extension Engine {
         restartWidgetState(slot, of: instanceID, as: widgetState(instanceID: instanceID, widget: slot), above: labRevision)
     }
 
+    func refusal(
+        ofRemoteAction action: String, on slot: String, item: String?, instanceID: UUID, sessionID: UUID
+    ) -> String? {
+        guard let instance = instrumentsBySession[sessionID]?.first(where: { $0.id == instanceID }) else {
+            return "the host does not have this instrument"
+        }
+        let name = descriptor(for: instance).displayName
+        if instrumentViews.approvalWanted(byInstance: instanceID) != nil {
+            return "“\(name)” is waiting for its host to allow its code to run"
+        }
+        guard canReachAgent(of: instance) else { return "“\(name)” is not running at the host" }
+        guard item != nil || agentState(of: instance).isEnabled(action, of: slot) else { return "this action is turned off at the host" }
+        return nil
+    }
+
+    func reportOutcome(of actionID: UUID, to recipient: FileRecipient?, offersFile: Bool, error: String?) {
+        guard case .member(let sessionID) = recipient else { return }
+        collaboration.sendOutcome(sessionID: sessionID, actionID: actionID, offersFile: offersFile, error: error)
+    }
+
+    func reportFailedAction(_ failure: WidgetActionFailure) {
+        let sent = failure.action
+        let instance = instrumentsBySession[sent.sessionID]?.first { $0.id == sent.instanceID }
+        let name = instance.map { descriptor(for: $0).displayName } ?? "An instrument"
+        let widget = widget(forInstanceID: sent.instanceID, widgetID: sent.widget)
+        let actions = sent.item == nil ? widget?.actions : widget?.kind.rowActions
+        let actionName = actions?.first { $0.id == sent.action }?.name ?? sent.action
+        let host = sessions.first { $0.id == sent.sessionID }?.host?.name ?? "the host"
+        let row = sent.item.map { " on row \($0)" } ?? ""
+        emitEngineError(subsystem: "instruments", text: "“\(name)”: \(actionName)\(row) did not run at \(host)'s Luma: \(failure.reason).")
+    }
+
     private func restartWidgetState(_ slot: String, of instanceID: UUID, as restored: WidgetState, above labRevision: Int) {
         let key = InstrumentViews.Key(instanceID: instanceID, widget: slot)
         guard let sessionID = sessionID(ofInstance: instanceID), isHostingNode(sessionID) else {

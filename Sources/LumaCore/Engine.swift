@@ -966,6 +966,10 @@ public final class Engine {
             )
         }
 
+        collaboration.onWidgetActionFailed = { [weak self] failure in
+            self?.reportFailedAction(failure)
+        }
+
         collaboration.onWidgetStale = { [weak self] sessionID, instanceID, widget, revision in
             self?.resendStaleWidgetState(sessionID: sessionID, instanceID: instanceID, slot: widget, labRevision: revision)
         }
@@ -1168,7 +1172,7 @@ public final class Engine {
         return !isHostedRemotelyLive(session.id)
     }
 
-    private func emitEngineError(subsystem: String, text: String) {
+    func emitEngineError(subsystem: String, text: String) {
         emitEngineEvent(subsystem: subsystem, level: .error, text: text)
     }
 
@@ -5288,9 +5292,11 @@ public final class Engine {
         item: String?,
         actionID: UUID
     ) {
-        guard let instance = instrumentsBySession[sessionID]?.first(where: { $0.id == instanceID }),
-            canReachAgent(of: instance), item != nil || agentState(of: instance).isEnabled(action, of: widget)
-        else { return }
+        guard isHostingNode(sessionID) else { return }
+        if let refusal = refusal(ofRemoteAction: action, on: widget, item: item, instanceID: instanceID, sessionID: sessionID) {
+            return collaboration.sendOutcome(sessionID: sessionID, actionID: actionID, offersFile: false, error: refusal)
+        }
+        let instance = instrumentsBySession[sessionID]!.first { $0.id == instanceID }!
         Task { @MainActor [weak self] in
             await self?.runAction(instance: instance, widget: widget, action: action, item: item, actionID: actionID, recipient: .member(sessionID))
         }
@@ -5682,12 +5688,14 @@ public final class Engine {
                 instanceID: instance.id, widget: widget, action: action, item: item, actionID: actionID, savesFile: recipient != nil)
             handlerEnded(actionID: actionID, offeredFile: outcome.file != nil)
             show(outcome.show, toChooserOf: actionID, recipient: recipient, instance: instance)
+            reportOutcome(of: actionID, to: recipient, offersFile: outcome.file != nil, error: outcome.error)
             if let failure = outcome.error {
                 emitEngineError(subsystem: "instruments", text: "Failed to invoke widget action \(widget).\(action): \(failure)")
             }
             return outcome.file
         } catch {
             handlerEnded(actionID: actionID, offeredFile: false)
+            reportOutcome(of: actionID, to: recipient, offersFile: false, error: userFacingMessage(error))
             emitEngineError(subsystem: "instruments", text: "Failed to invoke widget action \(widget).\(action): \(userFacingMessage(error))")
             return nil
         }
@@ -6183,7 +6191,7 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         }
     }
 
-    private func widget(forInstanceID instanceID: UUID, widgetID: String) -> InstrumentWidget? {
+    func widget(forInstanceID instanceID: UUID, widgetID: String) -> InstrumentWidget? {
         guard let instance = instrumentsBySession.values.flatMap({ $0 }).first(where: { $0.id == instanceID }) else {
             return nil
         }
