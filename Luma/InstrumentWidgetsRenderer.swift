@@ -177,6 +177,7 @@ private struct WidgetCanvas: View {
     let onRows: (WidgetRows) -> Void
 
     @State private var state = WidgetState()
+    @State private var tableWidth: CGFloat = 0
     @State private var consoleNotKept: String?
 
     var body: some View {
@@ -326,23 +327,25 @@ private struct WidgetCanvas: View {
             Text("No rows.").font(.caption).foregroundStyle(.secondary)
         } else {
             let widths = TableColumnWidths(columns: cfg.columns, rows: state.tableRows)
+            let shownActions = RowActionFit.shownCount(of: cfg.rowActions, in: tableWidth, beside: widths.minimumWidth)
             VStack(alignment: .leading, spacing: 0) {
-                tableHeader(cfg, widths: widths)
+                tableHeader(cfg, widths: widths, shownActions: shownActions)
                     .frame(height: InstrumentLayout.Metrics.page.rowHeight)
                     .overlay(alignment: .bottom) { Divider() }
                 ScrollingRows(spacing: 0) {
                     ForEach(state.tableRows) { row in
-                        tableRow(row: row, columns: cfg.columns, actions: cfg.rowActions, widths: widths)
+                        tableRow(row: row, columns: cfg.columns, actions: cfg.rowActions, shownActions: shownActions, widths: widths)
                             .frame(height: InstrumentLayout.Metrics.page.rowHeight)
                             .overlay(alignment: .bottom) { Divider().opacity(0.3) }
                     }
                 }
             }
             .font(.system(.caption, design: .monospaced))
+            .onGeometryChange(for: CGFloat.self, of: \.size.width) { tableWidth = $0 }
         }
     }
 
-    private func tableHeader(_ cfg: InstrumentWidget.TableConfig, widths: TableColumnWidths) -> some View {
+    private func tableHeader(_ cfg: InstrumentWidget.TableConfig, widths: TableColumnWidths, shownActions: Int) -> some View {
         TableRowLayout(widths: widths, hasActions: !cfg.rowActions.isEmpty) {
             ForEach(cfg.columns) { col in
                 Text(col.name)
@@ -351,7 +354,7 @@ private struct WidgetCanvas: View {
                     .foregroundStyle(.secondary)
             }
             if !cfg.rowActions.isEmpty {
-                ActionButtons(actions: cfg.rowActions, isEnabled: { _ in true }, onPress: { _ in })
+                TableRowActions(actions: cfg.rowActions, shown: shownActions, isEnabled: { _ in true }, onPress: { _ in })
                     .hidden()
                     .accessibilityHidden(true)
             }
@@ -359,7 +362,8 @@ private struct WidgetCanvas: View {
     }
 
     private func tableRow(
-        row: WidgetTableRow, columns: [InstrumentWidget.Column], actions: [InstrumentWidget.Action], widths: TableColumnWidths
+        row: WidgetTableRow, columns: [InstrumentWidget.Column], actions: [InstrumentWidget.Action], shownActions: Int,
+        widths: TableColumnWidths
     ) -> some View {
         TableRowLayout(widths: widths, hasActions: !actions.isEmpty) {
             ForEach(columns) { col in
@@ -368,7 +372,9 @@ private struct WidgetCanvas: View {
                     .frame(maxWidth: .infinity, alignment: alignment(for: col.alignment))
             }
             if !actions.isEmpty {
-                actionButtons(actions, item: row.id)
+                TableRowActions(
+                    actions: actions, shown: shownActions, isEnabled: { _ in canChooseActions },
+                    onPress: { invoke(action: $0, item: row.id) })
             }
         }
     }
@@ -742,6 +748,64 @@ private struct ActionButtons: View {
     }
 }
 
+private struct TableRowActions: View {
+    let actions: [InstrumentWidget.Action]
+    let shown: Int
+    let isEnabled: (String) -> Bool
+    let onPress: (String) -> Void
+
+    var body: some View {
+        HStack(spacing: RowActionFit.spacing) {
+            ActionButtons(actions: Array(actions.prefix(shown)), isEnabled: isEnabled, onPress: onPress)
+            if shown < actions.count {
+                Menu {
+                    ForEach(actions.dropFirst(shown)) { action in
+                        Button(action.name) { onPress(action.id) }
+                            .disabled(!isEnabled(action.id))
+                    }
+                } label: {
+                    Text("\u{22EF}")
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("More actions")
+                .accessibilityLabel("More actions")
+            }
+        }
+        .fixedSize()
+    }
+}
+
+private enum RowActionFit {
+    static let spacing: CGFloat = 2
+
+    private static let labelPadding: CGFloat = 12
+    private static let overflowWidth: CGFloat = 24
+    private static let gapBeforeActions: CGFloat = 8
+
+    static func shownCount(of actions: [InstrumentWidget.Action], in width: CGFloat, beside reserved: CGFloat) -> Int {
+        let room = width - reserved - gapBeforeActions
+        let widths = actions.map(buttonWidth)
+        if widths.reduce(0, +) + spacing * CGFloat(max(widths.count - 1, 0)) <= room {
+            return actions.count
+        }
+        var used = overflowWidth
+        var count = 0
+        for width in widths {
+            used += width + spacing
+            guard used <= room else { break }
+            count += 1
+        }
+        return count
+    }
+
+    private static func buttonWidth(_ action: InstrumentWidget.Action) -> CGFloat {
+        let font = PlatformFont.preferredFont(forTextStyle: .subheadline)
+        return (action.name as NSString).size(withAttributes: [.font: font]).width.rounded(.up) + labelPadding
+    }
+}
+
 private struct RowActionButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         RowActionLabel(configuration: configuration)
@@ -806,6 +870,10 @@ private struct TableColumnWidths: Equatable {
         return natural.map { min($0, max(cap, floor)) }
     }
 
+    var minimumWidth: CGFloat {
+        Self.advance * Self.minimumCharacters
+    }
+
     nonisolated private static let minimumCharacters: CGFloat = 6
 
     nonisolated private static var advance: CGFloat {
@@ -831,9 +899,10 @@ private struct TableRowLayout: Layout {
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         let columns = columnWidths(proposal: ProposedViewSize(width: bounds.width, height: proposal.height), subviews: subviews)
+        let cellsEnd = hasActions ? bounds.maxX - columns.actions - Self.spacing : bounds.maxX
         var x = bounds.minX
         for (subview, width) in zip(subviews, columns.cells) {
-            let cell = ProposedViewSize(width: width, height: bounds.height)
+            let cell = ProposedViewSize(width: max(0, min(width, cellsEnd - x)), height: bounds.height)
             subview.place(at: CGPoint(x: x, y: bounds.midY), anchor: .leading, proposal: cell)
             x += width + Self.spacing
         }
