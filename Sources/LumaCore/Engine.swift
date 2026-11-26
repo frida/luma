@@ -5118,9 +5118,6 @@ public final class Engine {
         let bundle = try Self.validatedCustomInstrumentBundle(
             InstrumentFolder(folderURL: folderURL).customInstrument(id: UUID(), createdAt: now, updatedAt: now)
         )
-        if collaboration.isCollaborative, let refusal = bundle.labRefusal {
-            throw LumaCoreError.invalidArgument(refusal)
-        }
         try saveCustomInstrumentBundle(bundle)
         recordCodeOrigin(.folder(path: folderURL.path), ofCustomInstrument: bundle.def.id)
         try InstrumentFolder.writeTypings(for: bundle.def, to: folderURL)
