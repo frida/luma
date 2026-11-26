@@ -10,6 +10,7 @@ struct InstrumentLayoutDesigner: View {
     @State private var pageHeight: Int = PreviewPage.laptop.height
     @State private var selection: [LayoutNodeID] = []
     @State private var chosenUnplaced: String?
+    @FocusState private var isPreviewFocused: Bool
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -32,20 +33,28 @@ struct InstrumentLayoutDesigner: View {
                     menu: { path in commandItems(on: [nodeID(at: path)]) }
                 )
                 .focusable()
+                .focused($isPreviewFocused)
                 .onKeyPress(keys: [.upArrow, .downArrow]) { press in
                     step(press.key == .downArrow ? 1 : -1)
                     return .handled
                 }
                 .onKeyPress(keys: [.delete, .deleteForward]) { _ in
-                    guard let outcome = outcome(of: .removeFromLayout, on: selection) else { return .ignored }
-                    apply(outcome)
-                    return .handled
+                    removeSelectionFromLayout() ? .handled : .ignored
                 }
+                #if os(macOS)
+                    .onDeleteCommand { _ = removeSelectionFromLayout() }
+                #endif
             }
             inspector
                 .frame(width: 270)
         }
         .background { shortcutButtons }
+    }
+
+    private func removeSelectionFromLayout() -> Bool {
+        guard let outcome = outcome(of: .removeFromLayout, on: selection) else { return false }
+        apply(outcome)
+        return true
     }
 
     private var current: InstrumentLayout {
@@ -258,6 +267,7 @@ struct InstrumentLayoutDesigner: View {
 
     private func select(_ path: InstrumentLayout.Path, extending: Bool) {
         let node = nodeID(at: path)
+        isPreviewFocused = true
         guard extending else {
             selection = [node]
             return
