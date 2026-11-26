@@ -7196,7 +7196,7 @@ final class SessionDisassemblyEnvironment: ModuleIntrospector, MemoryReader, Mem
 
     func read(at address: UInt64, count: Int) async throws -> [UInt8] {
         guard let node = engine.node(forSessionID: sessionID) else {
-            throw DisassemblyError.detached
+            throw engine.isHostedRemotelyLive(sessionID) ? DisassemblyError.notShared(address: address) : DisassemblyError.detached
         }
         return try await node.readRemoteMemory(at: address, count: count)
     }

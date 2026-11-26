@@ -584,9 +584,11 @@ public final class CachingMemoryReader: MemoryReader {
         let raw: [UInt8]
         do {
             raw = try await live.read(at: key.pageBase, count: Int(MemoryPage.size))
+        } catch let error as DisassemblyError {
+            throw error
         } catch {
             unreadablePages.insert(key.pageBase)
-            throw error
+            throw DisassemblyError.unreadable(pageAddress: key.pageBase)
         }
         let bytes = Data(raw)
         persist(key, bytes: bytes, publishToRoom: true)
@@ -692,6 +694,7 @@ public final class CachingMemoryReader: MemoryReader {
 public enum DisassemblyError: Error, LocalizedError {
     case notCached(pageAddress: UInt64)
     case unreadable(pageAddress: UInt64)
+    case notShared(address: UInt64)
     case detached
 
     public var errorDescription: String? {
@@ -699,7 +702,9 @@ public enum DisassemblyError: Error, LocalizedError {
         case .notCached(let page):
             return "No cached memory at 0x\(String(page, radix: 16)). Reattach to fetch it."
         case .unreadable(let page):
-            return "Nothing mapped at 0x\(String(page, radix: 16))."
+            return "Nothing readable is mapped at 0x\(String(page, radix: 16))."
+        case .notShared(let address):
+            return "The host’s session has not shared memory at 0x\(String(address, radix: 16)), so it cannot be read here."
         case .detached:
             return "Operation requires a live session."
         }
