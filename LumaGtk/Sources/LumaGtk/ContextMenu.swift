@@ -86,8 +86,12 @@ enum ContextMenu {
 
         popover.set(child: scroller)
         popover.set(parent: root)
+        let previousFocus = anchor.root?.getFocus().map { Widget(retaining: $0.widget_ptr) }
         popover.onClosed { closed in
-            MainActor.assumeIsolated { closed.unparent() }
+            MainActor.assumeIsolated {
+                closed.unparent()
+                _ = previousFocus?.grabFocus()
+            }
         }
         popover.presentPointing(at: px, y: py)
     }
