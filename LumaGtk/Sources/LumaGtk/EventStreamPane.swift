@@ -193,7 +193,10 @@ final class EventStreamPane {
         collapseCaretButton.tooltipText = "Hide the event stream"
         filterBar.append(child: collapseCaretButton)
 
-        eventList = ListView(model: NoSelection(model: eventModel), factory: eventRows)
+        let eventSelection = NoSelection(model: eventModel)
+        eventList = ListView(model: eventSelection, factory: eventRows)
+        _ = g_object_ref(eventModel.ptr)
+        _ = g_object_ref(eventSelection.ptr)
         eventList.hexpand = true
 
         scroll = ScrolledWindow()
