@@ -357,14 +357,14 @@ public final class Engine {
     }
 
     public var associatedLabID: String? {
-        requestedLabID ?? (try? store.fetchCollaborationState())?.labID
+        requestedLabID ?? collaboration.projectLabID
     }
 
     public func startCollaboration(joiningLab labID: String? = nil) {
         if let labID {
             requestedLabID = labID
         }
-        let existing = labID ?? (try? store.fetchCollaborationState())?.labID
+        let existing = labID ?? collaboration.projectLabID
         Task { @MainActor in
             guard let token = await gitHubAuth.requestToken() else { return }
             await collaboration.start(token: token, existingLabID: existing)

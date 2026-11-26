@@ -1325,7 +1325,7 @@ public final class ObjectChats {
     }
 
     private var labID: String? {
-        (try? engine!.store.fetchCollaborationState())?.labID
+        engine!.collaboration.projectLabID
     }
 
     private func sessionID(of call: ObjectChatToolCall) -> UUID? {

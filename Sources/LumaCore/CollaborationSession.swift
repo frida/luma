@@ -354,7 +354,8 @@ public final class CollaborationSession {
     public init(connection: PortalConnection, store: ProjectStore) {
         self.connection = connection
         self.store = store
-        membership = (try? store.fetchCollaborationState().labID).flatMap { try? store.fetchLabMembership(labID: $0) }
+        projectLabID = (try? store.fetchCollaborationState())?.labID
+        membership = projectLabID.flatMap { try? store.fetchLabMembership(labID: $0) }
         localUser = membership?.user
     }
 
@@ -445,8 +446,17 @@ public final class CollaborationSession {
     /// projects skip the outbox entirely so they never touch that table.
     private static let patternNameTaken = "upsert: name taken"
 
+    public private(set) var projectLabID: String?
+
     public var isCollaborative: Bool {
-        (try? store.fetchCollaborationState())?.labID != nil
+        projectLabID != nil
+    }
+
+    func keepProjectLab(_ labID: String?) {
+        var collabState = try! store.fetchCollaborationState()
+        collabState.labID = labID
+        try! store.save(collabState)
+        projectLabID = labID
     }
 
     public func enqueueAdd(_ entry: NotebookEntry) {
@@ -855,9 +865,7 @@ public final class CollaborationSession {
             }
         }
         guard succeeded else { return }
-        var collabState = try! store.fetchCollaborationState()
-        collabState.labID = nil
-        try! store.save(collabState)
+        keepProjectLab(nil)
         try! store.deleteLabMemberships()
         membership = nil
         await stop()
@@ -1578,9 +1586,7 @@ public final class CollaborationSession {
                 self.labPictureContentType = pictureContentType
                 // Persist labID first so isCollaborative flips true before
                 // we fan existing entries into the outbox.
-                var collabState = try! self.store.fetchCollaborationState()
-                collabState.labID = labID
-                try! self.store.save(collabState)
+                self.keepProjectLab(labID)
                 self.remember(LabMembership(labID: labID, user: localUser, role: .owner))
                 self.setStatus(.joined(labID: labID))
                 let now = ISO8601DateFormatter().string(from: Date())
@@ -1719,12 +1725,10 @@ public final class CollaborationSession {
         remember(LabMembership(labID: labID, user: localUser, role: members.first { $0.user.id == localUser.id }!.role))
         setStatus(.joined(labID: labID))
 
-        var collabState = try! store.fetchCollaborationState()
-        if collabState.labID != labID {
+        if projectLabID != labID {
             try? store.forgetLabKnowledge()
         }
-        collabState.labID = labID
-        try! store.save(collabState)
+        keepProjectLab(labID)
 
         var snapshot: [NotebookEntry] = []
         for (i, obj) in notebookEntries.enumerated() {
