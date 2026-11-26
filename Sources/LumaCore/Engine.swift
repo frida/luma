@@ -883,8 +883,8 @@ public final class Engine {
             self?.applyRemoteSessionInsightRemoved(sessionID: sessionID, insightID: insightID)
         }
 
-        collaboration.onSessionProcessInfoUpdated = { [weak self] sessionID, info in
-            self?.applyRemoteSessionProcessInfo(sessionID: sessionID, info: info)
+        collaboration.onSessionProcessInfoUpdated = { [weak self] sessionID, info, pid, processName in
+            self?.applyRemoteSessionProcessInfo(sessionID: sessionID, info: info, pid: pid, processName: processName)
         }
 
         collaboration.onSessionModuleAnalysisUpdated = { [weak self] sessionID, analysis in
@@ -1121,9 +1121,13 @@ public final class Engine {
         onSessionListChanged?(.insightRemoved(id: insightID, sessionID: sessionID))
     }
 
-    private func applyRemoteSessionProcessInfo(sessionID: UUID, info: ProcessSession.ProcessInfo) {
+    private func applyRemoteSessionProcessInfo(sessionID: UUID, info: ProcessSession.ProcessInfo, pid: UInt, processName: String) {
         try? store.deleteMemoryPagesAnon(sessionID: sessionID, exceptIdentity: info.identity)
-        updateSession(id: sessionID) { $0.processInfo = info }
+        updateSession(id: sessionID) {
+            $0.processInfo = info
+            $0.lastKnownPID = pid
+            $0.processName = processName
+        }
     }
 
     private func applyRemoteSessionModuleAnalysis(sessionID: UUID, analysis: ModuleAnalysis) {
@@ -1380,7 +1384,7 @@ public final class Engine {
                 createdAt: ISO8601DateFormatter().string(from: session.createdAt)
             )
             if let info = session.processInfo {
-                collaboration.enqueueUpdateProcessInfo(sessionID: session.id, info: info)
+                collaboration.enqueueUpdateProcessInfo(sessionID: session.id, info: info, pid: session.lastKnownPID, processName: session.processName)
             }
             collaboration.enqueueUpdateSessionModules(sessionID: session.id, delta: ModuleDelta(added: session.lastKnownModules ?? []))
             collaboration.enqueueUpdateSessionThreads(sessionID: session.id, delta: ThreadDelta(added: session.lastKnownThreads ?? []))
@@ -2210,7 +2214,7 @@ public final class Engine {
                     $0.lastKnownMainModule = mainModule
                 }
                 seedReplSeekToMainModule(sessionID: s.id)
-                collaboration.enqueueUpdateProcessInfo(sessionID: s.id, info: storedInfo)
+                collaboration.enqueueUpdateProcessInfo(sessionID: s.id, info: storedInfo, pid: process.pid, processName: process.name)
             }
 
             await loadAllPackages(on: node)

@@ -319,7 +319,7 @@ public final class CollaborationSession {
     public var onSessionInsightUpdated: ((UUID, AddressInsight) -> Void)?
     public var onSessionPlacementsSet: ((UUID, SessionOp.SetPlacements.Subject, [PatternPlacement]) -> Void)?
     public var onSessionInsightRemoved: ((UUID, UUID) -> Void)?
-    public var onSessionProcessInfoUpdated: ((UUID, ProcessSession.ProcessInfo) -> Void)?
+    public var onSessionProcessInfoUpdated: ((UUID, ProcessSession.ProcessInfo, UInt, String) -> Void)?
     public var onSessionModuleAnalysisUpdated: ((UUID, ModuleAnalysis) -> Void)?
     public var onSessionModuleSymbolsUpdated: ((UUID, [SessionOp.UpdateModuleSymbols.Entry]) -> Void)?
     public var onSessionTraceUpserted: ((UUID, ITrace) -> Void)?
@@ -1083,8 +1083,8 @@ public final class CollaborationSession {
         enqueueSessionOp(.setPlacements(.init(sessionID: sessionID, subject: subject, placements: placements)))
     }
 
-    public func enqueueUpdateProcessInfo(sessionID: UUID, info: ProcessSession.ProcessInfo) {
-        enqueueSessionOp(.updateProcessInfo(.init(sessionID: sessionID, info: info)))
+    public func enqueueUpdateProcessInfo(sessionID: UUID, info: ProcessSession.ProcessInfo, pid: UInt, processName: String) {
+        enqueueSessionOp(.updateProcessInfo(.init(sessionID: sessionID, info: info, pid: pid, processName: processName)))
     }
 
     public func enqueueUpdateModuleSymbols(sessionID: UUID, entries: [SessionOp.UpdateModuleSymbols.Entry]) {
@@ -1518,7 +1518,7 @@ public final class CollaborationSession {
             onSessionPhaseChanged?(u.sessionID, u.phase, u.reason)
 
         case .updateProcessInfo(let u):
-            onSessionProcessInfoUpdated?(u.sessionID, u.info)
+            onSessionProcessInfoUpdated?(u.sessionID, u.info, u.pid, u.processName)
 
         case .updateArming(let u):
             onSessionArmingChanged?(u.sessionID, u.armingState)

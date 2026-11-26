@@ -167,11 +167,15 @@ public enum SessionOp: Sendable {
         public let opID: UUID
         public let sessionID: UUID
         public let info: ProcessSession.ProcessInfo
+        public let pid: UInt
+        public let processName: String
 
-        public init(opID: UUID = UUID(), sessionID: UUID, info: ProcessSession.ProcessInfo) {
+        public init(opID: UUID = UUID(), sessionID: UUID, info: ProcessSession.ProcessInfo, pid: UInt, processName: String) {
             self.opID = opID
             self.sessionID = sessionID
             self.info = info
+            self.pid = pid
+            self.processName = processName
         }
     }
 
@@ -511,6 +515,7 @@ public enum SessionOp: Sendable {
                 "pointer_size": u.info.pointerSize,
                 "identity": u.info.identity,
             ]
+            obj["process"] = ["pid": u.pid, "name": u.processName]
         case .updateArming(let u):
             obj["arming_state"] = encodeArmingState(u.armingState)
         case .updateModules(let u):
@@ -649,14 +654,19 @@ public enum SessionOp: Sendable {
                 let platform = infoObj["platform"] as? String,
                 let arch = infoObj["arch"] as? String,
                 let pointerSize = infoObj["pointer_size"] as? Int,
-                let identity = infoObj["identity"] as? String
+                let identity = infoObj["identity"] as? String,
+                let processObj = obj["process"] as? [String: Any],
+                let pid = (processObj["pid"] as? NSNumber)?.uintValue,
+                let processName = processObj["name"] as? String
             else { return nil }
             return .updateProcessInfo(UpdateProcessInfo(
                 opID: opID,
                 sessionID: sessionID,
                 info: ProcessSession.ProcessInfo(
                     platform: platform, arch: arch, pointerSize: pointerSize, identity: identity
-                )
+                ),
+                pid: pid,
+                processName: processName
             ))
 
         case "update-arming":
