@@ -131,11 +131,15 @@ struct InstrumentLayoutDesigner: View {
         commandButton(.resetToStack, on: targets)
     }
 
-    private func commandButton(_ command: LayoutCommand, on targets: [LayoutNodeID]) -> some View {
-        let outcome = self.outcome(of: command, on: targets)
-        return Button(command.title) { apply(outcome!) }
+    private func commandButton(_ command: LayoutCommand, on targets: @autoclosure @escaping () -> [LayoutNodeID]) -> some View {
+        Button(command.title) { perform(command, on: targets()) }
             .keyboardShortcut(command.shortcut)
-            .disabled(outcome == nil)
+            .disabled(outcome(of: command, on: targets()) == nil)
+    }
+
+    private func perform(_ command: LayoutCommand, on targets: [LayoutNodeID]) {
+        guard let outcome = outcome(of: command, on: targets) else { return }
+        apply(outcome)
     }
 
     private var inspector: some View {
