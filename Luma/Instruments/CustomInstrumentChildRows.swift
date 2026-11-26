@@ -79,8 +79,8 @@ private struct ChildRow: View {
         .font(.callout)
         .contentShape(Rectangle())
         .padding(.leading, sidebarGrandchildIndent)
-        .help([child.title, child.subtitle].compactMap { $0 }.joined(separator: " \u{00B7} "))
         .accessibilityElement(children: .combine)
+        .help([child.title, child.subtitle].compactMap { $0 }.joined(separator: " \u{00B7} "))
     }
 }
 
