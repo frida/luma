@@ -41,7 +41,7 @@ private struct PharoChatOriginAtDepth: ViewModifier {
     private func find() async {
         guard let chats = engine?.objectChats else { return }
         let objects = Array(path.objects.prefix(depth + 1))
-        for opener in stride(from: depth, through: 0, by: -1) {
+        for opener in objects.indices.reversed() {
             if let location = try? await chats.location(of: objects[opener]) {
                 let origin = origin(of: location.objectID, in: location.chatID, chats: chats)
                 found = opener == depth ? origin : origin.reached()
