@@ -7044,7 +7044,9 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         let name = name(of: subject)
         let concern: LabProblem.Concern = Self.familiesCopiedWhenKept.contains(subject.family)
             ? .copyKeptFromLab(subject, name: name) : .keptFromLab(subject, name: name)
-        report(concern, in: "collaboration", reason: "“\(name)” is kept here, and the lab does not have it: \(reason).")
+        let labHoldsEarlier = (try? store.subjectsKnownToLab(subject.family))?.contains(subject.id) == true
+        let held = labHoldsEarlier ? "the lab still has the earlier version" : "the lab does not have it"
+        report(concern, in: "collaboration", reason: "“\(name)” is kept here, and \(held): \(reason).")
     }
 
     private static let familiesCopiedWhenKept: Set<LabSubject.Family> = [.definition, .pattern, .entry, .mission]
