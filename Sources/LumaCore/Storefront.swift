@@ -75,6 +75,7 @@ public final class Storefront {
     @ObservationIgnored private var accountConnection: Task<StoreAccount, Swift.Error>?
     @ObservationIgnored private var answersUnderway = 0
     @ObservationIgnored private var signInWatch: SignInWatch = .stopped
+    @ObservationIgnored private var outdated: [OutdatedInstallation]?
 
     private static let laterPageSize = 24
     private static let fallbackIcon = InstrumentIcon.symbolic(InstrumentIconCatalog.default.id)
@@ -115,6 +116,18 @@ public final class Storefront {
     }
 
     public var installationsNeedingUpdate: [OutdatedInstallation] {
+        _ = (engine.instrumentFolders.unreadableFolders, installed.installations, installed.items)
+        guard let outdated else {
+            let computed = withObservationTracking(computeInstallationsNeedingUpdate) { [weak self] in
+                MainActor.assumeIsolated { self?.outdated = nil }
+            }
+            outdated = computed
+            return computed
+        }
+        return outdated
+    }
+
+    private func computeInstallationsNeedingUpdate() -> [OutdatedInstallation] {
         let unreadable = engine.instrumentFolders.unreadableFolders
         return installed.installations.values
             .compactMap { installation in unreadable[installed.folderURL(for: installation.itemID).standardizedFileURL].map { (installation, $0) } }
