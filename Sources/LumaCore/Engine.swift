@@ -5836,17 +5836,22 @@ public func deleteCustomInstrument(_ defID: UUID) async {
                 because: "\(refusal). Luma offers it to the lab again on the first save that brings it within these limits")
         }
         if definitionsKeptForLabLimits.remove(defID) != nil {
-            return addToLab(LabSubject(.definition, defID))
+            addToLab(LabSubject(.definition, defID))
+            return
         }
         collaboration.enqueueCustomInstrumentOp(.upsert(.init(bundle: bundle)))
         instrumentsEditedSinceSnapshots.insert(defID)
     }
 
     private func overLabLimits(_ defID: UUID) -> Bool {
+        labRefusal(ofDefinition: defID) != nil
+    }
+
+    private func labRefusal(ofDefinition defID: UUID) -> String? {
         guard let def = try? store.fetchCustomInstrumentDef(id: defID),
             let files = try? store.fetchCustomInstrumentFiles(defID: defID)
-        else { return false }
-        return CustomInstrumentBundle(def: def, files: files).labRefusal != nil
+        else { return nil }
+        return CustomInstrumentBundle(def: def, files: files).labRefusal
     }
 
     private func broadcastCustomInstrumentRemove(defID: UUID) {
@@ -7107,7 +7112,11 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         }
     }
 
-    public func addToLab(_ subject: LabSubject) {
+    @discardableResult
+    public func addToLab(_ subject: LabSubject) -> String? {
+        if subject.family == .definition, let refusal = labRefusal(ofDefinition: subject.id) {
+            return "\(refusal)."
+        }
         try? store.releaseToLab(subject)
         subjectsKeptFromLab.remove(subject)
         problemsOfThisEngine.removeAll {
@@ -7119,14 +7128,15 @@ public func deleteCustomInstrument(_ defID: UUID) async {
             broadcastCustomInstrumentUpsert(defID: subject.id)
             announceInstances(ofDefinition: subject.id)
         case .pattern:
-            guard let record = try? store.fetchPatternSource(id: subject.id) else { return }
+            guard let record = try? store.fetchPatternSource(id: subject.id) else { return nil }
             collaboration.enqueuePatternSourceUpsert(record)
         case .entry:
-            guard let entry = notebookEntries.first(where: { $0.id == subject.id }) else { return }
+            guard let entry = notebookEntries.first(where: { $0.id == subject.id }) else { return nil }
             collaboration.enqueueAdd(entry)
         default:
             break
         }
+        return nil
     }
 
     private func announceInstances(ofDefinition defID: UUID) {
