@@ -58,7 +58,7 @@ private struct PharoPatternBytes: View {
             }
             .onAppear {
                 if let start = locations[target.node.id]?.range.lowerBound {
-                    proxy.scrollTo(start / HexLayout.bytesPerRow, anchor: .top)
+                    proxy.scrollTo(start / HexLayout.widestBytesPerRow, anchor: .top)
                 }
             }
         }

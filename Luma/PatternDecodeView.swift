@@ -29,7 +29,9 @@ struct PatternDecodeView: View {
     @State private var openVisualizer: UUID?
     @State private var callOutcome: CallOutcome?
     @State private var browsingSource: PatternSource?
+    @State private var availableWidth: CGFloat?
     @FocusState private var isTreeFocused: Bool
+    @Environment(\.hexUsesCompactLayout) private var isCompactWidth
 
     private var canDecode: Bool {
         baseAddress != nil && !engine.patterns.placeableSources.isEmpty
@@ -71,6 +73,7 @@ struct PatternDecodeView: View {
                     .textSelection(.enabled)
             }
         }
+        .modifier(AvailableWidthReader(sizing: sizing, width: $availableWidth))
         .alignmentGuide(.firstTextBaseline) { _ in TreeMetrics.inset + HexMetrics.regular.baseline }
         .onAppear {
             expanded.formUnion(placements.map(\.id))
@@ -91,23 +94,33 @@ struct PatternDecodeView: View {
     }
 
     private var hexPane: some View {
-        ScrollViewReader { proxy in
-            DecodePane(sizing: sizing) {
-                hexView
+        let layout = hexLayout
+        return ScrollViewReader { proxy in
+            DecodePane(sizing: sizing, scrollsHorizontally: layout.width > availableWidth ?? .infinity) {
+                hexView(bytesPerRow: layout.bytesPerRow)
                     .padding(.top, TreeMetrics.inset)
             }
             .onChange(of: caret) { _, caret in
-                proxy.scrollTo(caret / HexLayout.bytesPerRow)
+                proxy.scrollTo(caret / layout.bytesPerRow)
             }
             .onChange(of: emphasis?.range.lowerBound) { _, start in
                 if let start {
-                    proxy.scrollTo(start / HexLayout.bytesPerRow)
+                    proxy.scrollTo(start / layout.bytesPerRow)
                 }
             }
         }
     }
 
-    private var hexView: some View {
+    private var hexLayout: HexLayout {
+        let baseAddress = baseAddress ?? 0
+        guard sizing == .fill, let availableWidth else {
+            return HexLayout(
+                byteCount: data.count, baseAddress: baseAddress, isCompactWidth: isCompactWidth, bytesPerRow: HexLayout.widestBytesPerRow)
+        }
+        return HexLayout.fitting(width: availableWidth, byteCount: data.count, baseAddress: baseAddress, isCompactWidth: isCompactWidth)
+    }
+
+    private func hexView(bytesPerRow: Int) -> some View {
         HexView(
             data: data,
             baseAddress: baseAddress ?? 0,
@@ -117,7 +130,8 @@ struct PatternDecodeView: View {
                 caret = index
                 selectNode(at: index)
             },
-            onWrite: hexWriter
+            onWrite: hexWriter,
+            bytesPerRow: bytesPerRow
         ) {
             if canDecode {
                 Menu("Decode at \(caretLabel) as…") {
@@ -612,8 +626,25 @@ enum PatternDecodeSizing {
     case fill
 }
 
+private struct AvailableWidthReader: ViewModifier {
+    let sizing: PatternDecodeSizing
+    @Binding var width: CGFloat?
+
+    func body(content: Content) -> some View {
+        switch sizing {
+        case .capped:
+            content
+        case .fill:
+            content
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                .onGeometryChange(for: CGFloat.self, of: \.size.width) { width = $0 }
+        }
+    }
+}
+
 private struct DecodePane<Content: View>: View {
     let sizing: PatternDecodeSizing
+    var scrollsHorizontally = false
     @ViewBuilder let content: Content
 
     @State private var contentHeight: CGFloat = 0
@@ -630,7 +661,7 @@ private struct DecodePane<Content: View>: View {
     }
 
     private var scrollView: some View {
-        ScrollView(.vertical) {
+        ScrollView(scrollsHorizontally ? [.horizontal, .vertical] : .vertical) {
             content
                 .onGeometryChange(for: CGFloat.self, of: \.size.height) { contentHeight = $0 }
         }

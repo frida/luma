@@ -7,18 +7,13 @@ struct HexView<MenuItems: View>: View {
     private let emphasis: HexAnnotation?
     private let onCaretMove: ((Int) -> Void)?
     private let onWrite: ((Int, [UInt8]) -> Void)?
+    private let bytesPerRow: Int
     private let menuItems: () -> MenuItems
 
     @FocusState private var isFocused: Bool
     @State private var selection: Selection?
     @State private var pendingNibble: UInt8?
-
-    #if canImport(UIKit)
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    private var isCompactWidth: Bool { horizontalSizeClass == .compact }
-    #else
-    private var isCompactWidth: Bool { false }
-    #endif
+    @Environment(\.hexUsesCompactLayout) private var isCompactWidth
 
     init(
         data: Data,
@@ -27,6 +22,7 @@ struct HexView<MenuItems: View>: View {
         emphasis: HexAnnotation? = nil,
         onCaretMove: ((Int) -> Void)? = nil,
         onWrite: ((Int, [UInt8]) -> Void)? = nil,
+        bytesPerRow: Int = HexLayout.widestBytesPerRow,
         @ViewBuilder menuItems: @escaping () -> MenuItems
     ) {
         bytes = Array(data)
@@ -35,13 +31,14 @@ struct HexView<MenuItems: View>: View {
         self.emphasis = emphasis
         self.onCaretMove = onCaretMove
         self.onWrite = onWrite
+        self.bytesPerRow = bytesPerRow
         self.menuItems = menuItems
     }
 
     var body: some View {
         let layout = self.layout
         LazyVStack(alignment: .leading, spacing: 0) {
-            ForEach(0..<rowCount, id: \.self) { row in
+            ForEach(0..<layout.rowCount(byteCount: bytes.count), id: \.self) { row in
                 self.row(row, layout: layout)
                     .equatable()
             }
@@ -90,24 +87,12 @@ struct HexView<MenuItems: View>: View {
     }
 
     private var layout: HexLayout {
-        isCompactWidth
-            ? HexLayout(metrics: .compact, addressDigits: nil)
-            : HexLayout(metrics: .regular, addressDigits: addressDigits)
-    }
-
-    private var addressDigits: Int {
-        let lastRow = max(rowCount - 1, 0)
-        let lastRowAddress = baseAddress &+ UInt64(lastRow * HexLayout.bytesPerRow)
-        return max(8, String(lastRowAddress, radix: 16).count)
-    }
-
-    private var rowCount: Int {
-        (bytes.count + HexLayout.bytesPerRow - 1) / HexLayout.bytesPerRow
+        HexLayout(byteCount: bytes.count, baseAddress: baseAddress, isCompactWidth: isCompactWidth, bytesPerRow: bytesPerRow)
     }
 
     private func row(_ row: Int, layout: HexLayout) -> HexRow {
-        let start = row * HexLayout.bytesPerRow
-        let end = min(start + HexLayout.bytesPerRow, bytes.count)
+        let start = row * layout.bytesPerRow
+        let end = min(start + layout.bytesPerRow, bytes.count)
         return HexRow(
             address: layout.addressDigits.map { formatAddress(baseAddress &+ UInt64(start), digits: $0) },
             bytes: bytes[start..<end],
@@ -124,12 +109,12 @@ struct HexView<MenuItems: View>: View {
     private func selectedColumns(inRowStartingAt start: Int) -> ClosedRange<Int>? {
         guard let range = selection?.range else { return nil }
         let first = max(range.lowerBound, start)
-        let last = min(range.upperBound, start + HexLayout.bytesPerRow - 1)
+        let last = min(range.upperBound, start + bytesPerRow - 1)
         return first <= last ? (first - start)...(last - start) : nil
     }
 
     private func caret(inRowStartingAt start: Int) -> HexCaret? {
-        guard onWrite != nil, let selection, (start..<start + HexLayout.bytesPerRow).contains(selection.caret) else { return nil }
+        guard onWrite != nil, let selection, (start..<start + bytesPerRow).contains(selection.caret) else { return nil }
         return HexCaret(column: selection.caret - start, section: selection.section, pendingNibble: pendingNibble)
     }
 
@@ -145,7 +130,7 @@ struct HexView<MenuItems: View>: View {
 
     private func cell(at point: CGPoint, layout: HexLayout) -> (index: Int, section: HexSection)? {
         guard point.y >= 0 else { return nil }
-        let rowStart = Int(point.y / layout.metrics.rowHeight) * HexLayout.bytesPerRow
+        let rowStart = Int(point.y / layout.metrics.rowHeight) * layout.bytesPerRow
         guard rowStart < bytes.count, let cell = layout.cell(atX: point.x) else { return nil }
         return (min(rowStart + cell.column, bytes.count - 1), cell.section)
     }
@@ -205,10 +190,10 @@ struct HexView<MenuItems: View>: View {
     }
 
     private func moveCaret(rows: Int, columns: Int, extending: Bool) {
-        let lastRow = rowCount - 1
-        let row = min(max(caret / HexLayout.bytesPerRow + rows, 0), lastRow)
-        let column = caret % HexLayout.bytesPerRow
-        let newCaret = min(max(row * HexLayout.bytesPerRow + column + columns, 0), bytes.count - 1)
+        let lastRow = layout.rowCount(byteCount: bytes.count) - 1
+        let row = min(max(caret / bytesPerRow + rows, 0), lastRow)
+        let column = caret % bytesPerRow
+        let newCaret = min(max(row * bytesPerRow + column + columns, 0), bytes.count - 1)
         selection = Selection(anchor: extending ? selection?.anchor ?? 0 : newCaret, caret: newCaret, section: section)
     }
 
@@ -359,7 +344,7 @@ private struct HexRow: View, Equatable {
                 column += run(Self.hexDigits[Int(byte)], color: color(for: byte), selected: isSelected(index), caret: hasCaret)
             }
         }
-        let missingBytes = HexLayout.bytesPerRow - bytes.count
+        let missingBytes = layout.bytesPerRow - bytes.count
         column += run(String(repeating: " ", count: missingBytes * HexLayout.hexCellWidth))
         return column
     }
@@ -411,20 +396,61 @@ private struct HexRow: View, Equatable {
     }
 }
 
+extension EnvironmentValues {
+    var hexUsesCompactLayout: Bool {
+        #if canImport(UIKit)
+        horizontalSizeClass == .compact
+        #else
+        false
+        #endif
+    }
+}
+
 struct HexLayout: Equatable {
     let metrics: HexMetrics
     let addressDigits: Int?
+    let bytesPerRow: Int
 
-    static let bytesPerRow = 16
+    static let widestBytesPerRow = 16
     static let hexCellWidth = 3
     static let sectionGap = "   "
+
+    private static let fittingBytesPerRow = [widestBytesPerRow, 8, 4]
+
+    init(byteCount: Int, baseAddress: UInt64, isCompactWidth: Bool, bytesPerRow: Int) {
+        self.bytesPerRow = bytesPerRow
+        if isCompactWidth {
+            metrics = .compact
+            addressDigits = nil
+        } else {
+            metrics = .regular
+            let lastRow = max((byteCount + bytesPerRow - 1) / bytesPerRow - 1, 0)
+            let lastRowAddress = baseAddress &+ UInt64(lastRow * bytesPerRow)
+            addressDigits = max(8, String(lastRowAddress, radix: 16).count)
+        }
+    }
+
+    static func fitting(width: CGFloat, byteCount: Int, baseAddress: UInt64, isCompactWidth: Bool) -> HexLayout {
+        let candidates = fittingBytesPerRow.map {
+            HexLayout(byteCount: byteCount, baseAddress: baseAddress, isCompactWidth: isCompactWidth, bytesPerRow: $0)
+        }
+        return candidates.first { $0.width <= width } ?? candidates.last!
+    }
+
+    var width: CGFloat {
+        CGFloat(asciiStartColumn + bytesPerRow) * metrics.advance
+    }
+
+    func rowCount(byteCount: Int) -> Int {
+        (byteCount + bytesPerRow - 1) / bytesPerRow
+    }
 
     func cell(atX x: CGFloat) -> (column: Int, section: HexSection)? {
         let column = x / metrics.advance
         let hexStart = CGFloat(hexStartColumn)
-        let hexEnd = hexStart + CGFloat(Self.bytesPerRow * Self.hexCellWidth - 1)
+        let hexEnd = hexStart + CGFloat(bytesPerRow * Self.hexCellWidth - 1)
         let asciiStart = hexEnd + CGFloat(Self.sectionGap.count)
-        let asciiEnd = asciiStart + CGFloat(Self.bytesPerRow)
+        let asciiEnd = asciiStart + CGFloat(bytesPerRow)
 
         if (hexStart..<hexEnd).contains(column) {
             let cellCenteredColumn = column - hexStart + 0.5
@@ -461,7 +487,7 @@ struct HexLayout: Equatable {
             return Path(CGRect(x: first.minX, y: first.minY, width: last.maxX - first.minX, height: first.height))
         }
         let left = cellRect(0, in: section).minX
-        let right = cellRect(Self.bytesPerRow - 1, in: section).maxX
+        let right = cellRect(bytesPerRow - 1, in: section).maxX
         var path = Path()
         path.move(to: CGPoint(x: first.minX, y: first.minY))
         path.addLine(to: CGPoint(x: right, y: first.minY))
@@ -476,8 +502,8 @@ struct HexLayout: Equatable {
     }
 
     private func cellRect(_ index: Int, in section: HexSection) -> CGRect {
-        let row = index / Self.bytesPerRow
-        let column = index % Self.bytesPerRow
+        let row = index / bytesPerRow
+        let column = index % bytesPerRow
         let y = CGFloat(row) * metrics.rowHeight
         switch section {
         case .hex:
@@ -495,7 +521,7 @@ struct HexLayout: Equatable {
     }
 
     private var asciiStartColumn: Int {
-        hexStartColumn + Self.bytesPerRow * Self.hexCellWidth - 1 + Self.sectionGap.count
+        hexStartColumn + bytesPerRow * Self.hexCellWidth - 1 + Self.sectionGap.count
     }
 }
 

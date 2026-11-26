@@ -111,6 +111,8 @@ private struct WidgetCard: View {
     let isLive: Bool
     let onRows: (WidgetRows) -> Void
 
+    private static let focusRingOutset: CGFloat = 4
+
     var body: some View {
         VStack(alignment: .leading, spacing: InstrumentLayout.Metrics.page.headerSpacing) {
             if widget.title != nil || !widget.actions.isEmpty {
@@ -128,6 +130,7 @@ private struct WidgetCard: View {
                     onRows: onRows
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .clipShape(Rectangle().inset(by: -Self.focusRingOutset))
                 .disabled(!isLive && !widget.kind.isView)
             }
             .accessibilityElement(children: .contain)
