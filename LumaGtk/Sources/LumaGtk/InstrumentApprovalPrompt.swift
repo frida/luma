@@ -57,7 +57,7 @@ final class InstrumentApprovalPrompt {
         widget.append(child: card)
 
         widget.onMap { [weak self] _ in
-            MainActor.assumeIsolated { self?.focusAllow() }
+            Task { @MainActor in self?.focusAllow() }
         }
         observe()
     }
