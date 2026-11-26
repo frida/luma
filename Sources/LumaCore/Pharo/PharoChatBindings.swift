@@ -60,7 +60,9 @@ enum PharoChatBindings {
                 as: anObjectID
                 named: nil'.
         chat compile: 'printOn: aStream
-            aStream nextPutAll: (title ifNil: [ ''Chat'' ])'.
+            | shown |
+            shown := title ifNil: [ ''Chat'' ].
+            aStream nextPutAll: ((shown beginsWith: ''Chat about '') ifTrue: [ shown allButFirst: 5 ] ifFalse: [ shown ])'.
         chat compile: 'gtChatFor: aView
             <gtView>
             ^ (LumaView new kindName: ''lumaChat'')

@@ -150,7 +150,7 @@ public final class ObjectChats {
         case .object(_, _, _, "LumaChat", let printString, _):
             return Self.chatAboutChat(titled: printString)
         case .object(_, _, _, _, let printString, _):
-            return "Chat about \(Self.short(printString))"
+            return "Chat about \(Self.short(Self.withoutAddress(printString)))"
         }
     }
 
@@ -158,10 +158,14 @@ public final class ObjectChats {
         chat(withID: chatID).map(displayTitle(of:))
     }
 
-    private static func chatAboutChat(titled title: String) -> String {
+    private static func chatAboutChat(titled printString: String) -> String {
         let within = shortSubjectLength - "the chat on ".count
-        guard title.hasPrefix("Chat about ") else { return "Chat about the chat “\(short(title, within: within))”" }
-        return "Chat about the chat on \(short(String(title.dropFirst("Chat about ".count)), within: within))"
+        guard printString.hasPrefix("about ") else { return "Chat about the chat “\(short(printString, within: within))”" }
+        return "Chat about the chat on \(short(String(printString.dropFirst("about ".count)), within: within))"
+    }
+
+    private static func withoutAddress(_ printString: String) -> String {
+        printString.replacingOccurrences(of: #" @ 0x[0-9A-Fa-f]+$"#, with: "", options: .regularExpression)
     }
 
     private static func short(_ printString: String, within length: Int = shortSubjectLength) -> String {
