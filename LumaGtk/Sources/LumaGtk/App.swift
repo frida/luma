@@ -300,6 +300,17 @@ final class LumaApplication {
         }
     }
 
+    func snapshotRecords(window: MainWindow) {
+        guard let entry = openDocuments[ObjectIdentifier(window)] else { return }
+        do {
+            try Self.writeSnapshot(workingURL: entry.workingURL, to: entry.document.url)
+        } catch {
+            FileHandle.standardError.write(
+                "Recording runtime state failed: \(error)\n".data(using: .utf8)!
+            )
+        }
+    }
+
     func saveAs(window: MainWindow, destination: URL) {
         let key = ObjectIdentifier(window)
         guard var entry = openDocuments[key] else { return }

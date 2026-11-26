@@ -18,7 +18,9 @@ final class MainWindow: InstrumentUIHost {
     private var engine: Engine?
     private var isClosing = false
     private var isDirty = false
-    private var commitObserver: NSObjectProtocol?
+    private var hasUnsnapshottedRecords = false
+    private var storeObservers: [NSObjectProtocol] = []
+    private var recordsSnapshot: Task<Void, Never>?
 
     private let sessionsList: ListBox
     private let packagesList: ListBox
@@ -401,7 +403,7 @@ final class MainWindow: InstrumentUIHost {
                 if self.isDirty {
                     self.confirmCloseWithUnsavedChanges()
                 } else {
-                    self.proceedWithClose(persist: false)
+                    self.proceedWithClose(persist: self.hasUnsnapshottedRecords && !self.document.isUntitled)
                 }
                 return true
             }
@@ -497,15 +499,17 @@ final class MainWindow: InstrumentUIHost {
     func proceedWithClose(persist: Bool) {
         guard !isClosing else { return }
         isClosing = true
-        if let commitObserver {
-            NotificationCenter.default.removeObserver(commitObserver)
+        for observer in storeObservers {
+            NotificationCenter.default.removeObserver(observer)
         }
+        recordsSnapshot?.cancel()
         persistWindowState()
         application?.beginWindowClose(self, persist: persist)
     }
 
     func documentDidSave() {
         isDirty = false
+        hasUnsnapshottedRecords = false
         refreshTitle()
         showToast("Saved")
     }
@@ -515,6 +519,7 @@ final class MainWindow: InstrumentUIHost {
             self.document = updated
         }
         isDirty = false
+        hasUnsnapshottedRecords = false
         refreshTitle()
         showToast("Saved as \(document.displayName).luma")
     }
@@ -772,14 +777,35 @@ final class MainWindow: InstrumentUIHost {
     }
 
     private func observeProjectCommits(storeInstanceID: UUID) {
-        commitObserver = NotificationCenter.default.addObserver(
-            forName: ProjectStore.didChangeNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] note in
+        storeObservers = [
+            observe(ProjectStore.didEditNotification, from: storeInstanceID) { $0.markDirty() },
+            observe(ProjectStore.didRecordNotification, from: storeInstanceID) { $0.noteRecords() },
+        ]
+    }
+
+    private func observe(_ name: Notification.Name, from storeInstanceID: UUID, _ handle: @escaping @MainActor (MainWindow) -> Void) -> NSObjectProtocol {
+        NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
             guard note.userInfo?["instanceID"] as? UUID == storeInstanceID else { return }
-            MainActor.assumeIsolated { self?.markDirty() }
+            MainActor.assumeIsolated {
+                if let self { handle(self) }
+            }
         }
+    }
+
+    private func noteRecords() {
+        hasUnsnapshottedRecords = true
+        guard recordsSnapshot == nil, !document.isUntitled else { return }
+        recordsSnapshot = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(30))
+            self?.snapshotRecords()
+        }
+    }
+
+    private func snapshotRecords() {
+        recordsSnapshot = nil
+        guard !Task.isCancelled, !isDirty, !isClosing else { return }
+        application?.snapshotRecords(window: self)
+        hasUnsnapshottedRecords = false
     }
 
     func newSession() {
