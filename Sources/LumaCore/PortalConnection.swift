@@ -235,9 +235,13 @@ public final class PortalConnection {
         silenced: @escaping @MainActor () -> Void = {}
     ) async throws -> T {
         let silence = Silence()
-        let work = Task { @MainActor in try await step() }
+        let work = Task { @MainActor in
+            defer { silence.ended = true }
+            return try await step()
+        }
         let watch = Task { @MainActor in
             try await Task.sleep(for: Self.silenceLimit)
+            guard !silence.ended else { return }
             silence.fell = true
             work.cancel()
             silenced()
@@ -255,6 +259,7 @@ public final class PortalConnection {
 
     @MainActor
     private final class Silence {
+        var ended = false
         var fell = false
     }
 
