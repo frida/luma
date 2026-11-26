@@ -52,6 +52,7 @@ public final class Engine {
     private let _widgetUpdates = AsyncEventSource<WidgetUpdate>()
     public var widgetUpdates: AsyncStream<WidgetUpdate> { _widgetUpdates.makeStream() }
     @ObservationIgnored private var widgetStates: [UUID: [String: WidgetState]] = [:]
+    @ObservationIgnored private var consoleEntriesDropped: [InstrumentViews.Key: Int] = [:]
     private var widgetStateWrite = WidgetStateWrite.idle
     private static let widgetStateWriteDelay = Duration.seconds(1)
 
@@ -4624,6 +4625,11 @@ public final class Engine {
         }
     }
 
+    public func consoleEntriesNotKept(instanceID: UUID, widget: String) -> String? {
+        let dropped = consoleEntriesDropped[InstrumentViews.Key(instanceID: instanceID, widget: widget)] ?? 0
+        return dropped > 0 ? "\(dropped.formatted()) earlier entries not kept" : nil
+    }
+
     public func widgetState(instanceID: UUID, widget: String) -> WidgetState {
         widgetStates[instanceID]?[widget] ?? WidgetState()
     }
@@ -5287,12 +5293,19 @@ public final class Engine {
         guard let update = admitted(proposed, sessionID: sessionID, origin: origin) else { return }
         let key = InstrumentViews.Key(instanceID: update.instanceID, widget: update.widget)
         let widgetDef = widget(forInstanceID: update.instanceID, widgetID: update.widget)
+        var dropped = 0
         let state = modifyWidgetState(of: key) { state in
             state.apply(update.kind)
             if !update.kind.isTransient {
                 state.revision = max(state.revision, update.revision)
             }
-            if let widgetDef { state.cap(to: widgetDef.kind) }
+            if let widgetDef { dropped = state.cap(to: widgetDef.kind) }
+        }
+        switch update.kind {
+        case .clear, .snapshot:
+            consoleEntriesDropped[key] = dropped
+        default:
+            consoleEntriesDropped[key, default: 0] += dropped
         }
         _widgetUpdates.yield(update)
 

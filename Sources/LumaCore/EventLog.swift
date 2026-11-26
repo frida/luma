@@ -28,6 +28,11 @@ public final class EventLog {
         self.maxInMemory = maxInMemory
     }
 
+    public var notShown: String? {
+        let earlier = totalReceived - events.count
+        return earlier > 0 ? "\(earlier.formatted()) earlier events not shown" : nil
+    }
+
     public func append(_ event: RuntimeEvent) {
         arrived.append(event)
         scheduleFlush()

@@ -634,7 +634,8 @@ public struct WidgetState: Codable, Sendable, Equatable {
         }
     }
 
-    public mutating func cap(to kind: InstrumentWidget.Kind) {
+    @discardableResult
+    public mutating func cap(to kind: InstrumentWidget.Kind) -> Int {
         switch kind {
         case .counter:
             break
@@ -663,12 +664,13 @@ public struct WidgetState: Codable, Sendable, Equatable {
                 )
             }
         case .console(let cfg):
-            if consoleEntries.count > cfg.maxEntries {
-                consoleEntries.removeFirst(consoleEntries.count - cfg.maxEntries)
-            }
+            let dropped = max(0, consoleEntries.count - cfg.maxEntries)
+            consoleEntries.removeFirst(dropped)
+            return dropped
         case .view:
             break
         }
+        return 0
     }
 
     var wireJSON: [String: Any] {
