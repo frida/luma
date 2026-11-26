@@ -17,6 +17,8 @@ final class InstrumentWidgetsRenderer {
     private var canvases: [WidgetCanvas] = []
     private var area: ArrangedWidgetArea?
     private var subscriber: Task<Void, Never>?
+    private var queued: [WidgetUpdate] = []
+    private static let burstInterval = Duration.milliseconds(100)
     private let actionGate: WidgetActionGate
 
     init(
@@ -110,8 +112,25 @@ final class InstrumentWidgetsRenderer {
         guard let updates, let instanceID = instance?.id else { return }
         subscriber = Task { @MainActor [weak self] in
             for await update in updates where update.instanceID == instanceID {
-                self?.dispatch(update)
+                self?.enqueue(update)
             }
+        }
+    }
+
+    private func enqueue(_ update: WidgetUpdate) {
+        queued.append(update)
+        guard queued.count == 1 else { return }
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: Self.burstInterval)
+            self?.dispatchQueued()
+        }
+    }
+
+    private func dispatchQueued() {
+        let batch = queued
+        queued.removeAll()
+        for canvas in canvases {
+            canvas.apply(batch.filter { $0.widget == canvas.slot })
         }
     }
 
@@ -120,12 +139,6 @@ final class InstrumentWidgetsRenderer {
             refreshAgentState()
         } onChange: { [weak self] in
             Task { @MainActor in self?.followAgentState() }
-        }
-    }
-
-    private func dispatch(_ update: WidgetUpdate) {
-        for canvas in canvases where canvas.slot == update.widget {
-            canvas.apply(update)
         }
     }
 
@@ -306,7 +319,21 @@ private final class WidgetCanvas {
         consoleWidget?.setInput(enabled: enabled, reason: reason)
     }
 
-    func apply(_ update: WidgetUpdate) {
+    func apply(_ updates: [WidgetUpdate]) {
+        var appended: [WidgetConsoleEntry] = []
+        for update in updates {
+            if case .consoleAppend(let entry) = update.kind {
+                appended.append(entry)
+                continue
+            }
+            consoleWidget?.append(entries: appended)
+            appended.removeAll()
+            apply(update)
+        }
+        consoleWidget?.append(entries: appended)
+    }
+
+    private func apply(_ update: WidgetUpdate) {
         switch update.kind {
         case .counterSet(let value):
             counterView?.set(value: value)
@@ -323,7 +350,7 @@ private final class WidgetCanvas {
         case .hexSet(let state):
             hexView?.set(state: state)
         case .consoleAppend(let entry):
-            consoleWidget?.append(entry: entry)
+            consoleWidget?.append(entries: [entry])
         case .consoleReplyDone, .viewState, .viewEvent, .viewRefused:
             break
         case .clear:
@@ -489,6 +516,8 @@ private final class ConsoleWidget {
     private let inputPlaceholder: String
     private let promptGlyph: String
     private var valueWidgetKeepers: [JSInspectValueWidget] = []
+    private let maxEntries: Int
+    private var rows: [Widget] = []
 
     init(
         config: InstrumentWidget.ConsoleConfig,
@@ -501,6 +530,7 @@ private final class ConsoleWidget {
         self.engine = engine
         self.sessionID = sessionID
         self.widgetName = widgetName
+        maxEntries = config.maxEntries
         let placeholder = config.placeholder ?? ""
         inputPlaceholder = placeholder
         promptGlyph = config.prompt ?? "\u{203A}"
@@ -518,37 +548,44 @@ private final class ConsoleWidget {
         widget.hexpand = true
         widget.append(child: console.widget)
 
-        var seededHistory: [String] = []
-        for entry in initialEntries {
-            console.appendEntry(makeRow(for: entry))
-            if entry.kind == .input { seededHistory.append(entry.text) }
-        }
-        console.setHistory(seededHistory)
+        append(entries: initialEntries)
+        console.setHistory(initialEntries.filter { $0.kind == .input }.map(\.text))
     }
 
     func setInput(enabled: Bool, reason: String?) {
         console.setInputEnabled(enabled, placeholder: reason ?? inputPlaceholder)
     }
 
-    func append(entry: WidgetConsoleEntry) {
-        console.appendEntry(makeRow(for: entry))
+    func append(entries: [WidgetConsoleEntry]) {
+        for entry in entries.suffix(maxEntries) {
+            let row = makeRow(for: entry)
+            rows.append(row)
+            console.appendEntry(row)
+        }
+        let excess = rows.count - maxEntries
+        guard excess > 0 else { return }
+        for row in rows.prefix(excess) {
+            console.removeEntry(row)
+        }
+        rows.removeFirst(excess)
+        if valueWidgetKeepers.count > maxEntries {
+            valueWidgetKeepers.removeFirst(valueWidgetKeepers.count - maxEntries)
+        }
     }
 
     func clear() {
         console.clearEntries()
         console.setHistory([])
+        rows.removeAll()
         valueWidgetKeepers.removeAll()
     }
 
     func replace(entries: [WidgetConsoleEntry]) {
         console.clearEntries()
+        rows.removeAll()
         valueWidgetKeepers.removeAll()
-        var history: [String] = []
-        for entry in entries {
-            console.appendEntry(makeRow(for: entry))
-            if entry.kind == .input { history.append(entry.text) }
-        }
-        console.setHistory(history)
+        append(entries: entries)
+        console.setHistory(entries.filter { $0.kind == .input }.map(\.text))
     }
 
     private func makeRow(for entry: WidgetConsoleEntry) -> Widget {
