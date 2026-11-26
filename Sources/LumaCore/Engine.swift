@@ -1428,10 +1428,12 @@ public final class Engine {
             record.host = session.host
             record.phase = session.phase.toProcessSessionPhase
             record.armingState = session.armingState
-            record.processName = session.processName
+            if node(forSessionID: session.id) == nil {
+                record.processName = session.processName
+                record.lastKnownPID = session.pid
+            }
             record.deviceID = session.deviceID
             record.deviceName = session.deviceName
-            record.lastKnownPID = session.pid
             if !session.modules.isEmpty {
                 record.lastKnownModules = session.modules
             }
