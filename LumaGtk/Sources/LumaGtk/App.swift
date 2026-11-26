@@ -100,8 +100,9 @@ final class LumaApplication {
     private func purgeStaleWorkingCopies() {
         let fm = FileManager.default
         let workingDir = LumaAppPaths.shared.workingDirectory
+        let kept = Set(LumaAppState.shared.keptWorkingCopies.values.map { URL(fileURLWithPath: $0).standardizedFileURL.path })
         guard let entries = try? fm.contentsOfDirectory(at: workingDir, includingPropertiesForKeys: nil) else { return }
-        for entry in entries {
+        for entry in entries where !kept.contains(entry.standardizedFileURL.path) {
             try? fm.removeItem(at: entry)
         }
     }
@@ -154,14 +155,24 @@ final class LumaApplication {
     private func restorePreviousSession() -> Bool {
         let fm = FileManager.default
         let remembered = LumaAppState.shared.openDocumentPaths
-        let surviving = remembered.filter { fm.fileExists(atPath: $0) }
+        let kept = LumaAppState.shared.keptWorkingCopies
+        let surviving = remembered.filter { fm.fileExists(atPath: $0) || kept[$0] != nil }
         if surviving != remembered {
             LumaAppState.shared.setOpenDocumentPaths(surviving)
         }
         for path in surviving {
-            openWindow(forFile: URL(fileURLWithPath: path))
+            reopen(path)
         }
         return !surviving.isEmpty
+    }
+
+    private func reopen(_ path: String) {
+        guard FileManager.default.fileExists(atPath: path) else {
+            LumaAppState.shared.noteDocumentClosed(path: path)
+            guard let untitled = try? LumaDocumentLoader.makeUntitled(in: LumaAppPaths.shared.untitledDirectory) else { return }
+            return openWindow(for: untitled, keptFrom: path)
+        }
+        openWindow(forFile: URL(fileURLWithPath: path))
     }
 
     func showWelcome() {
@@ -199,7 +210,7 @@ final class LumaApplication {
     func openWindow(forFile url: URL) {
         do {
             let document = try LumaDocumentLoader.open(at: url)
-            openWindow(for: document)
+            openWindow(for: document, keptFrom: url.path)
         } catch {
             presentOpenFailure(error)
         }
@@ -217,12 +228,16 @@ final class LumaApplication {
         alert.present(parent: parent)
     }
 
-    func openWindow(for document: LumaDocument) {
+    func openWindow(for document: LumaDocument, keptFrom keptPath: String? = nil) {
         let window = MainWindow(app: app, application: self, document: document)
         let key = ObjectIdentifier(window)
+        let kept = keptPath
+            .flatMap(LumaAppState.shared.takeKeptWorkingCopy(forDocumentAt:))
+            .map { URL(fileURLWithPath: $0, isDirectory: true) }
+            .flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil }
 
         do {
-            let workingURL = try prepareWorkingCopy(of: document)
+            let workingURL = try kept ?? prepareWorkingCopy(of: document)
             let engine = try buildEngine(workingURL: workingURL)
             openDocuments[key] = OpenDocument(
                 window: window,
@@ -235,6 +250,9 @@ final class LumaApplication {
             Task { @MainActor in
                 await engine.start()
                 window.attach(engine: engine)
+                if kept != nil {
+                    window.resumeUnsavedChanges()
+                }
             }
 
             recordDocumentOpened(document)
@@ -261,18 +279,21 @@ final class LumaApplication {
         }
     }
 
-    func beginWindowClose(_ window: MainWindow, persist: Bool) {
+    func beginWindowClose(_ window: MainWindow, persist: Bool, keepingWorkingCopy: Bool = false) {
         let key = ObjectIdentifier(window)
         guard let entry = openDocuments.removeValue(forKey: key) else {
             window.destroyWindow()
             return
         }
-        if !entry.document.isUntitled && !isTerminating {
+        if keepingWorkingCopy {
+            LumaAppState.shared.keepWorkingCopy(at: entry.workingURL.path, forDocumentAt: entry.document.url.path)
+            LumaAppState.shared.noteDocumentOpened(path: entry.document.url.path)
+        } else if !entry.document.isUntitled && !isTerminating {
             LumaAppState.shared.noteDocumentClosed(path: entry.document.url.path)
         }
         app.hold()
         Task { @MainActor in
-            await persistAndShutDown(entry, persist: persist)
+            await persistAndShutDown(entry, persist: persist, keepingWorkingCopy: keepingWorkingCopy)
             window.destroyWindow()
             app.release()
             if openDocuments.isEmpty && activeWelcome == nil {
@@ -384,8 +405,9 @@ final class LumaApplication {
         }
     }
 
-    private func persistAndShutDown(_ entry: OpenDocument, persist: Bool) async {
+    private func persistAndShutDown(_ entry: OpenDocument, persist: Bool, keepingWorkingCopy: Bool) async {
         await entry.engine.shutdown()
+        guard !keepingWorkingCopy else { return }
         let workingURL = entry.workingURL
         let destination = entry.document.url
         await Task.detached(priority: .userInitiated) {

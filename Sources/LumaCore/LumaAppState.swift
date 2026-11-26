@@ -46,6 +46,7 @@ public final class LumaAppState {
         var externalAbsolute: String?
         var recentPaths: [String] = []
         var openDocuments: [String] = []
+        var keptWorkingCopies: [String: String]?
         var providerBaseURLs: [String: String]?
         var missionDefaults: MissionDefaults?
         var externalMCPTrustsClient: Bool?
@@ -135,6 +136,21 @@ public final class LumaAppState {
         guard let index = stored.openDocuments.firstIndex(of: path) else { return }
         stored.openDocuments.remove(at: index)
         persist()
+    }
+
+    public var keptWorkingCopies: [String: String] {
+        stored.keptWorkingCopies ?? [:]
+    }
+
+    public func keepWorkingCopy(at workingPath: String, forDocumentAt documentPath: String) {
+        stored.keptWorkingCopies = keptWorkingCopies.merging([documentPath: workingPath]) { $1 }
+        persist()
+    }
+
+    public func takeKeptWorkingCopy(forDocumentAt documentPath: String) -> String? {
+        guard let working = stored.keptWorkingCopies?.removeValue(forKey: documentPath) else { return nil }
+        persist()
+        return working
     }
 
     public func setOpenDocumentPaths(_ paths: [String]) {

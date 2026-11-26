@@ -501,10 +501,14 @@ final class MainWindow: InstrumentUIHost {
     }
 
     func closeForTermination() {
-        proceedWithClose(persist: !isDirty && hasUnsnapshottedRecords)
+        proceedWithClose(persist: !isDirty && hasUnsnapshottedRecords, keepingWorkingCopy: isDirty)
     }
 
-    func proceedWithClose(persist: Bool) {
+    func resumeUnsavedChanges() {
+        markDirty()
+    }
+
+    func proceedWithClose(persist: Bool, keepingWorkingCopy: Bool = false) {
         guard !isClosing else { return }
         isClosing = true
         for observer in storeObservers {
@@ -512,7 +516,7 @@ final class MainWindow: InstrumentUIHost {
         }
         recordsSnapshot?.cancel()
         persistWindowState()
-        application?.beginWindowClose(self, persist: persist)
+        application?.beginWindowClose(self, persist: persist, keepingWorkingCopy: keepingWorkingCopy)
     }
 
     func documentDidSave() {
