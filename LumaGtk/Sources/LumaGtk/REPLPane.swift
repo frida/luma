@@ -1,5 +1,6 @@
 import CGtk
 import Foundation
+import Gdk
 import Gtk
 import LumaCore
 
@@ -357,6 +358,14 @@ final class REPLPane {
         return column
     }
 
+    private static func resultText(of result: LumaCore.REPLCell.Result) -> String? {
+        switch result {
+        case .text(let s): s
+        case .styled(let s): s.plainText
+        case .js, .binary: nil
+        }
+    }
+
     private static func isResultEmpty(_ result: LumaCore.REPLCell.Result) -> Bool {
         switch result {
         case .text(let s): return s.isEmpty
@@ -388,8 +397,11 @@ final class REPLPane {
     }
 
     private func presentCellContextMenu(at anchor: Widget, x: Double, y: Double, cell: LumaCore.REPLCell) {
+        let copy: [ContextMenu.Item] = Self.resultText(of: cell.result).map { text in
+            [.init("Copy Result") { Display.getDefault()?.clipboard.set(text: text) }]
+        } ?? []
         ContextMenu.present([
-            [
+            copy + [
                 .init("Add to Notebook") { [weak self] in
                     self?.engine?.pinToNotebook(cell)
                 },

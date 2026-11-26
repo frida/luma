@@ -263,6 +263,7 @@ private final class WidgetCanvas {
                 widgetName: definition.label,
                 engine: engine,
                 sessionID: instance?.sessionID ?? UUID(),
+                notKept: { [weak engine] in instance.flatMap { engine?.consoleEntriesNotKept(instanceID: $0.id, widget: slot) } },
                 onSubmit: onConsoleSubmit
             )
             consoleWidget = view
@@ -518,6 +519,8 @@ private final class ConsoleWidget {
     private var valueWidgetKeepers: [JSInspectValueWidget] = []
     private let maxEntries: Int
     private var rows: [Widget] = []
+    private let notKept: () -> String?
+    private let notKeptLabel = Label(str: "")
 
     init(
         config: InstrumentWidget.ConsoleConfig,
@@ -525,10 +528,12 @@ private final class ConsoleWidget {
         widgetName: String,
         engine: Engine,
         sessionID: UUID,
+        notKept: @escaping () -> String?,
         onSubmit: @escaping (_ text: String) -> Void
     ) {
         self.engine = engine
         self.sessionID = sessionID
+        self.notKept = notKept
         self.widgetName = widgetName
         maxEntries = config.maxEntries
         let placeholder = config.placeholder ?? ""
@@ -546,6 +551,11 @@ private final class ConsoleWidget {
         widget = Box(orientation: .vertical, spacing: 0)
         widget.add(cssClass: "luma-widget-console")
         widget.hexpand = true
+        notKeptLabel.add(cssClass: "dim-label")
+        notKeptLabel.add(cssClass: "caption")
+        notKeptLabel.halign = .start
+        notKeptLabel.visible = false
+        widget.append(child: notKeptLabel)
         widget.append(child: console.widget)
 
         append(entries: initialEntries)
@@ -557,6 +567,7 @@ private final class ConsoleWidget {
     }
 
     func append(entries: [WidgetConsoleEntry]) {
+        defer { showNotKept() }
         for entry in entries.suffix(maxEntries) {
             let row = makeRow(for: entry)
             rows.append(row)
@@ -578,6 +589,13 @@ private final class ConsoleWidget {
         console.setHistory([])
         rows.removeAll()
         valueWidgetKeepers.removeAll()
+        showNotKept()
+    }
+
+    private func showNotKept() {
+        let text = notKept()
+        notKeptLabel.label = text ?? ""
+        notKeptLabel.visible = text != nil
     }
 
     func replace(entries: [WidgetConsoleEntry]) {
@@ -631,6 +649,7 @@ private final class ConsoleWidget {
     private func presentRowContextMenu(at anchor: Widget, x: Double, y: Double, entry: WidgetConsoleEntry) {
         ContextMenu.present([
             [
+                .init("Copy Entry") { Display.getDefault()?.clipboard.set(text: entry.text) },
                 .init("Add to Notebook") { [weak self] in
                     self?.addEntryToNotebook(entry)
                 },

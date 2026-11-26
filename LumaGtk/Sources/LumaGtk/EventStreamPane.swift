@@ -50,6 +50,7 @@ final class EventStreamPane {
     private let scroll: ScrolledWindow
     private let scroller: BottomScroller
     private let listOverlay: Overlay
+    private let notShownLabel = Label(str: "")
     private let eventListBox: Box
     private let emptyStateBox: Box
     private let emptyStateTitle: Label
@@ -230,6 +231,13 @@ final class EventStreamPane {
         strip.widget.setSizeRequest(width: -1, height: 3)
         widget.append(child: strip.widget)
 
+        notShownLabel.add(cssClass: "dim-label")
+        notShownLabel.add(cssClass: "caption")
+        notShownLabel.halign = .start
+        notShownLabel.marginStart = 8
+        notShownLabel.visible = false
+        widget.append(child: notShownLabel)
+
         listOverlay = Overlay()
         listOverlay.hexpand = true
         listOverlay.vexpand = true
@@ -391,6 +399,7 @@ final class EventStreamPane {
         filterBar.visible = !isCollapsed
         headerSeparator.visible = !isCollapsed
         listOverlay.visible = !isCollapsed
+        showNotShown()
         if isCollapsed {
             widget.remove(cssClass: "is-expanded")
         } else {
@@ -433,6 +442,7 @@ final class EventStreamPane {
             appended = true
         }
         keepLast(engine.eventLog.maxVisible)
+        showNotShown()
 
         if appended {
             emptyStateBox.visible = false
@@ -440,6 +450,12 @@ final class EventStreamPane {
         }
         updateBar()
         updatePendingPill()
+    }
+
+    private func showNotShown() {
+        let text = engine?.eventLog.notShown
+        notShownLabel.label = text ?? ""
+        notShownLabel.visible = !isCollapsed && text != nil
     }
 
     private func keepLast(_ count: Int) {
@@ -486,6 +502,7 @@ final class EventStreamPane {
         rebuildProcessFilterMenu()
         rebuildFiltered()
         updatePendingPill()
+        showNotShown()
         scroller.pin()
     }
 
