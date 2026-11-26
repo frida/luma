@@ -348,6 +348,7 @@ public final class CollaborationSession {
     public var onWidgetStatesSnapshot: (([WidgetStateSnapshot]) -> Void)?
     public var onWidgetPlacementsSnapshot: (([UUID: [String: [PatternPlacement]]]) -> Void)?
     public var onObjectChatsSnapshot: (([ObjectChatThread]) -> Void)?
+    public var onSubjectKeptFromLab: ((LabSubject, String) -> Void)?
 
     public var onAuthRejected: ((AuthFailure) async -> Void)?
 
@@ -460,7 +461,7 @@ public final class CollaborationSession {
     }
 
     public func enqueueAdd(_ entry: NotebookEntry) {
-        guard isCollaborative else { return }
+        guard isCollaborative, !isWithheld(LabSubject(.entry, entry.id)) else { return }
         let op = NotebookOp.add(.init(entry: entry))
         try? store.saveOutboxOps([op])
         sendOpIfJoined(op)
@@ -477,7 +478,7 @@ public final class CollaborationSession {
         placements: [PatternPlacement]? = nil,
         placementSnapshots: [PlacementSnapshot]? = nil
     ) {
-        guard isCollaborative else { return }
+        guard isCollaborative, !isWithheld(LabSubject(.entry, entryID)) else { return }
         let op = NotebookOp.update(.init(
             entryID: entryID,
             title: title,
@@ -494,7 +495,7 @@ public final class CollaborationSession {
     }
 
     public func enqueueRemove(entryID: UUID) {
-        guard isCollaborative else { return }
+        guard isCollaborative, !isWithheld(LabSubject(.entry, entryID)) else { return }
         let op = NotebookOp.remove(.init(entryID: entryID))
         try? store.saveOutboxOps([op])
         sendOpIfJoined(op)
@@ -516,7 +517,7 @@ public final class CollaborationSession {
     }
 
     public func enqueueReorder(entryID: UUID, position: Double) {
-        guard isCollaborative else { return }
+        guard isCollaborative, !isWithheld(LabSubject(.entry, entryID)) else { return }
         let op = NotebookOp.reorder(.init(entryID: entryID, position: position))
         try? store.saveOutboxOps([op])
         sendOpIfJoined(op)
@@ -570,7 +571,9 @@ public final class CollaborationSession {
     }
 
     private func enqueueMissionOp(_ op: MissionOp) {
-        guard isCollaborative, !removedMissionIDs.contains(op.missionID) || op.kind == "mission_remove" else { return }
+        guard isCollaborative, !removedMissionIDs.contains(op.missionID) || op.kind == "mission_remove",
+            !isWithheld(LabSubject(.mission, op.missionID))
+        else { return }
         try? store.saveOutboxOps([op])
         sendMissionOpIfJoined(op)
     }
@@ -621,6 +624,12 @@ public final class CollaborationSession {
 
     private func isDismissed(_ sessionID: UUID) -> Bool {
         ((try? store.fetchDismissedLabSessions()) ?? []).contains(sessionID)
+    }
+
+    private static let familiesKeptWhenRefused: Set<LabSubject.Family> = [.entry, .definition, .pattern, .mission]
+
+    private func isKnownToLab(_ subject: LabSubject) -> Bool {
+        ((try? store.subjectsKnownToLab(subject.family)) ?? []).contains(subject.id)
     }
 
     private func isWithheld(_ subject: LabSubject) -> Bool {
@@ -2146,6 +2155,10 @@ public final class CollaborationSession {
             } else if case .objectChat(let op) = rejected {
                 onObjectChatOpRefused?(op, reason)
                 markKnown(QueuedOp.objectChat(op).labSubject)
+            } else if Self.familiesKeptWhenRefused.contains(rejected.labSubject.family), !isKnownToLab(rejected.labSubject) {
+                try? store.withholdFromLab(rejected.labSubject)
+                onSubjectKeptFromLab?(rejected.labSubject, reason)
+                return resyncWithLab()
             } else {
                 markKnown(rejected.labSubject)
             }

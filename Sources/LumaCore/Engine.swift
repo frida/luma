@@ -632,6 +632,11 @@ public final class Engine {
             self?.objectChats.adopt(threads)
         }
 
+        collaboration.onSubjectKeptFromLab = { [weak self] subject, reason in
+            guard let self, !self.subjectsKeptFromLab.contains(subject) else { return }
+            self.keepFromLab(subject, because: "the lab turned it away: \(reason)")
+        }
+
         collaboration.onObjectChatMessageRefused = { [weak self] message, reason in
             self?.objectChats.refused(message, because: reason)
         }
@@ -6837,6 +6842,25 @@ public func deleteCustomInstrument(_ defID: UUID) async {
             .copyKeptFromLab(LabSubject(.pattern, copy.id), name: copy.name), in: "collaboration",
             reason: "The pattern “\(copy.name)” was deleted in the lab, so your changes to it are kept here "
                 + "as a pattern the lab does not have. Add it to the lab again, or delete it.")
+    }
+
+    private func keepFromLab(_ subject: LabSubject, because reason: String) {
+        try? store.withholdFromLab(subject)
+        subjectsKeptFromLab.insert(subject)
+        let name = name(of: subject)
+        report(
+            .copyKeptFromLab(subject, name: name), in: "collaboration",
+            reason: "“\(name)” is kept here, and the lab does not have it: \(reason).")
+    }
+
+    private func name(of subject: LabSubject) -> String {
+        switch subject.family {
+        case .definition: (try? store.fetchCustomInstrumentDef(id: subject.id))?.name ?? "The instrument"
+        case .pattern: (try? store.fetchPatternSource(id: subject.id))?.name ?? "The pattern"
+        case .entry: notebookEntries.first { $0.id == subject.id }?.title ?? "The notebook entry"
+        case .mission: (try? store.fetchMission(id: subject.id)).flatMap { $0.title ?? $0.goalText } ?? "The mission"
+        default: "It"
+        }
     }
 
     public func dismiss(_ problem: LabProblem) {
