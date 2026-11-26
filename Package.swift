@@ -228,6 +228,12 @@ let lumaTargets: [Target] = [
         swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .executableTarget(
+        name: "LumaColumnCheck",
+        dependencies: ["LumaCore"],
+        path: "Sources/LumaColumnCheck",
+        swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .executableTarget(
         name: "LumaExampleCheck",
         dependencies: ["LumaCore"],
         path: "Sources/LumaExampleCheck",
@@ -302,6 +308,7 @@ let package = Package(
         .executable(name: "LumaExampleCheck", targets: ["LumaExampleCheck"]),
         .executable(name: "LumaEditorCheck", targets: ["LumaEditorCheck"]),
         .executable(name: "LumaSynthCheck", targets: ["LumaSynthCheck"]),
+        .executable(name: "LumaColumnCheck", targets: ["LumaColumnCheck"]),
     ],
     dependencies: [
         fridaSwift,

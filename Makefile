@@ -38,6 +38,9 @@ all: $(APP)
 check-patches: $(PHARO_IMAGE)
 	$(IN_BUILD_ENVIRONMENT) swift run --disable-sandbox LumaSynthCheck
 
+check-columns:
+	$(IN_BUILD_ENVIRONMENT) swift run --disable-sandbox LumaColumnCheck
+
 check-examples: $(PHARO_IMAGE)
 	$(IN_BUILD_ENVIRONMENT) swift run --disable-sandbox LumaExampleCheck
 
@@ -77,4 +80,4 @@ clean:
 	rm -rf "$(BUILD_DIR)"
 	rm -rf .build LumaGtk/.build
 
-.PHONY: all check-examples check-patches check-editor gtk gtk-release clean
+.PHONY: all check-columns check-examples check-patches check-editor gtk gtk-release clean
