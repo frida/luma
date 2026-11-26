@@ -47,10 +47,12 @@ struct InstrumentViewWidget: View {
                 HStack(spacing: 0) {
                     content
                         .frame(width: viewWidth(fitting: scroller.size.width))
+                        .pharoColumnExtent(PharoColumnPath.pageID, in: columnPath)
                         .id(PharoColumnPath.pageID)
                     inspectionSide(fitting: scroller.size.width)
                 }
                 .frame(height: scroller.size.height - 2 * columnMargin)
+                .coordinateSpace(.named(PharoColumnPath.coordinateSpace))
                 .scrollTargetLayout()
             }
             .contentMargins(columnMargin, for: .scrollContent)

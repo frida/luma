@@ -14,8 +14,12 @@ final class PharoColumnPath {
     private(set) var collapsed: Set<Int> = []
     private(set) var maximized: Int?
     private(set) var scrollTarget: PharoScrollTarget?
+    private(set) var extents: [Int: ClosedRange<CGFloat>] = [:]
+    var viewportWidth: CGFloat = 0
 
     let includesPage: Bool
+
+    static let coordinateSpace = "pharoColumns"
 
     init(includesPage: Bool = false) {
         self.includesPage = includesPage
@@ -128,6 +132,21 @@ final class PharoColumnPath {
 
     func markVisible(_ ids: [Int]) {
         visibleIDs = Set(ids)
+    }
+
+    func record(_ frame: CGRect, ofColumn id: Int) {
+        let extent = frame.minX...frame.maxX
+        guard extents[id] != extent else { return }
+        extents[id] = extent
+    }
+
+    var trailingRoom: CGFloat {
+        let present = Set(objects.map(\.handle) + (includesPage ? [Self.pageID] : []))
+        let shown = extents.filter { present.contains($0.key) }.values.sorted { $0.lowerBound < $1.lowerBound }
+        guard let end = shown.map(\.upperBound).max(),
+            let start = shown.first(where: { end - $0.lowerBound <= viewportWidth })?.lowerBound
+        else { return 0 }
+        return viewportWidth - (end - start)
     }
 
     private func revealNewest() {
@@ -251,6 +270,7 @@ func pharoColumns(
                     objects: objects,
                     hasFollowingExpanded: runs[safe: index + 1]?.isExpanded ?? false,
                     onExpand: { path.toggleCollapsed($0.handle) })
+                    .pharoColumnExtent(run.id, in: path)
                     .id(run.id)
             case .expanded(let object, let depth):
                 if runs[safe: index - 1]?.isExpanded ?? false {
@@ -278,13 +298,14 @@ func pharoColumns(
                     .pharoChatOrigin(at: depth, of: path)
                     .frame(width: width)
                     .pharoPane()
+                    .pharoColumnExtent(handle, in: path)
                     .id(handle)
                 }
             }
         }
 
         Color.clear
-            .frame(width: 1)
+            .frame(width: max(path.trailingRoom, 1))
             .id(PharoColumnPath.trailingID)
     }
 }
@@ -341,12 +362,21 @@ extension View {
     }
 }
 
+extension View {
+    func pharoColumnExtent(_ id: Int, in path: PharoColumnPath) -> some View {
+        onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named(PharoColumnPath.coordinateSpace)) }) {
+            path.record($0, ofColumn: id)
+        }
+    }
+}
+
 private struct PharoColumnScrolling: ViewModifier {
     let path: PharoColumnPath
 
     func body(content: Content) -> some View {
         ScrollViewReader { proxy in
             content
+                .onGeometryChange(for: CGFloat.self, of: \.size.width) { path.viewportWidth = $0 - 2 * pharoColumnMargin }
                 .onChange(of: path.scrollTarget) { _, target in
                     guard let target else { return }
                     proxy.scrollTo(target.id, anchor: target.anchor)

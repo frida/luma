@@ -103,6 +103,7 @@ struct AddressInsightDetailView: View {
                             scrollsHorizontally: !columnPath.objects.isEmpty
                         )
                         .frame(width: pageWidth(fitting: scroller.size.width))
+                        .pharoColumnExtent(PharoColumnPath.pageID, in: columnPath)
                         .id(PharoColumnPath.pageID)
                         if !columnPath.objects.isEmpty {
                             if !columnPath.isFirstColumnCollapsed {
@@ -116,6 +117,7 @@ struct AddressInsightDetailView: View {
                         }
                     }
                     .frame(height: scroller.size.height - 2 * columnMargin)
+                    .coordinateSpace(.named(PharoColumnPath.coordinateSpace))
                     .scrollTargetLayout()
                 }
                 .contentMargins(columnMargin, for: .scrollContent)

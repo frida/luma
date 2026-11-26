@@ -193,6 +193,7 @@ struct NotebookView: View {
                         width: pharoColumnWidth(fitting: width),
                         onCloseAll: closeDrill)
                 }
+                .coordinateSpace(.named(PharoColumnPath.coordinateSpace))
                 .scrollTargetLayout()
             }
             .contentMargins(8, for: .scrollContent)

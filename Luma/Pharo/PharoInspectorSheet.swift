@@ -58,6 +58,7 @@ struct PharoInspectorPane: View {
                         runtime: runtime, path: path, width: pharoColumnWidth(fitting: scroller.size.width), onCloseAll: onCloseAll)
                 }
                 .frame(height: scroller.size.height - 2 * pharoColumnMargin)
+                .coordinateSpace(.named(PharoColumnPath.coordinateSpace))
                 .scrollTargetLayout()
             }
             .contentMargins(pharoColumnMargin, for: .scrollContent)

@@ -85,11 +85,13 @@ struct PharoPlaygroundView: View {
                         .overlay(alignment: .trailing) { pageResizeHandle }
                         .overlay(alignment: .topTrailing) { if !isPageMaximized { pageMenuButton } }
                         .onHover { isPagePointedAt = $0 }
+                        .pharoColumnExtent(PharoColumnPath.pageID, in: columnPath)
                         .id(PharoColumnPath.pageID)
 
                         inspectionSide(fitting: scroller.size.width)
                     }
                     .frame(height: scroller.size.height - 2 * pharoColumnMargin)
+                    .coordinateSpace(.named(PharoColumnPath.coordinateSpace))
                     .scrollTargetLayout()
                 }
                 // A margin rather than padding, so that scrolling something to the
