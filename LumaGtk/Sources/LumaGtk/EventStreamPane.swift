@@ -432,6 +432,7 @@ final class EventStreamPane {
             eventListBox.append(child: row)
             appended = true
         }
+        keepLast(engine.eventLog.maxVisible)
 
         if appended {
             emptyStateBox.visible = false
@@ -439,6 +440,19 @@ final class EventStreamPane {
         }
         updateBar()
         updatePendingPill()
+    }
+
+    private func keepLast(_ count: Int) {
+        if displayedEvents.count > count {
+            displayedEvents.removeFirst(displayedEvents.count - count)
+        }
+        let excess = filteredEvents.count - count
+        guard excess > 0 else { return }
+        for row in rows.prefix(excess) {
+            eventListBox.remove(child: row)
+        }
+        rows.removeFirst(excess)
+        filteredEvents.removeFirst(excess)
     }
 
     private func handleEventUpdated(_ event: RuntimeEvent) {
