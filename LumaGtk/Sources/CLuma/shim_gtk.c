@@ -331,12 +331,12 @@ on_app_open(GApplication *app, GFile **files, int n_files, const char *hint, gpo
         gboolean is_local = scheme == NULL || g_strcmp0(scheme, "file") == 0;
         char *path = is_local ? g_file_get_path(files[i]) : NULL;
         if (path) {
-            ctx->callback(path, ctx->user_data);
+            ctx->callback(path, false, ctx->user_data);
             g_free(path);
         } else {
             char *uri = g_file_get_uri(files[i]);
             if (uri) {
-                ctx->callback(uri, ctx->user_data);
+                ctx->callback(uri, true, ctx->user_data);
                 g_free(uri);
             }
         }

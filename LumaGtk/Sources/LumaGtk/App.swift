@@ -854,15 +854,15 @@ private let lumaSavePathThunk: @convention(c) (
 }
 
 private let lumaOpenFilesThunk: @convention(c) (
-    UnsafePointer<CChar>?, UnsafeMutableRawPointer?
-) -> Void = { pathPtr, userData in
+    UnsafePointer<CChar>?, Bool, UnsafeMutableRawPointer?
+) -> Void = { pathPtr, isURI, userData in
     guard let pathPtr, let userData else { return }
     let str = String(cString: pathPtr)
     let raw = UInt(bitPattern: userData)
     MainActor.assumeIsolated {
         let ptr = UnsafeMutableRawPointer(bitPattern: raw)!
         let app = Unmanaged<LumaApplication>.fromOpaque(ptr).takeUnretainedValue()
-        if str.contains("://") {
+        if isURI {
             app.handleCollaborationURL(str)
         } else {
             app.openWindow(forFile: URL(fileURLWithPath: str))
