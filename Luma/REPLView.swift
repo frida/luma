@@ -472,7 +472,9 @@ private struct REPLCellView: View {
         switch cell.result {
         case .text(let s): s
         case .styled(let s): s.plainText
-        case .js, .binary: nil
+        case .js(.string(let s)): s
+        case .js(let v): String(v.prettyAttributedDescription().characters)
+        case .binary: nil
         }
     }
 
