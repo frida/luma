@@ -30,6 +30,10 @@ extension Engine {
         }
     }
 
+    public func acknowledgeLostOfferedFile(_ id: UUID) {
+        lostOfferedFiles.removeAll { $0.id == id }
+    }
+
     public func declineOfferedFile(_ id: UUID) {
         takeOfferedFile(id)?.refuse("the file was not saved")
     }
@@ -200,8 +204,9 @@ extension Engine {
         let file = OfferedFile(id: UUID(), name: name, mediaType: mediaType, instrumentName: instrumentName)
         offeredFiles.append(file)
         offeredFileStreams[file.id] = stream
-        stream.onAbort = { [weak self] _ in
-            self?.takeOfferedFile(file.id)
+        stream.onAbort = { [weak self] reason in
+            guard let self, self.takeOfferedFile(file.id) != nil else { return }
+            self.lostOfferedFiles.append(LostOfferedFile(file: file, reason: reason))
         }
     }
 }

@@ -27,6 +27,7 @@ final class OfferedFileSaver {
     private func observe() {
         withObservationTracking {
             follow(engine.offeredFiles)
+            report(engine.lostOfferedFiles)
         } onChange: { [weak self] in
             _Concurrency.Task { @MainActor in self?.observe() }
         }
@@ -47,6 +48,13 @@ final class OfferedFileSaver {
         }
     }
 
+    private func report(_ lost: [LostOfferedFile]) {
+        for file in lost {
+            engine.acknowledgeLostOfferedFile(file.id)
+            toasts.show(file.sentence, durationSeconds: 8)
+        }
+    }
+
     private func present(_ file: OfferedFile) {
         let cancellable = GIO.Cancellable()
         turn = .choosing(file, cancellable)
@@ -58,7 +66,6 @@ final class OfferedFileSaver {
 
     private func answer(_ file: OfferedFile, destination: String?) {
         guard engine.offeredFiles.contains(where: { $0.id == file.id }) else {
-            toasts.show("\u{201C}\(file.name)\u{201D} from \(file.instrumentName) is no longer available", durationSeconds: 8)
             return settle()
         }
         guard let destination else {

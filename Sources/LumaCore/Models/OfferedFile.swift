@@ -52,3 +52,14 @@ public struct OfferedFileSummary: Sendable, Equatable {
     public let mediaType: String
     public let size: Int?
 }
+
+public struct LostOfferedFile: Identifiable, Sendable, Equatable {
+    public let file: OfferedFile
+    public let reason: String
+
+    public var id: UUID { file.id }
+
+    public var sentence: String {
+        "“\(file.name)” was not saved: \(reason)."
+    }
+}

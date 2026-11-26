@@ -75,6 +75,7 @@ public final class Engine {
     var localFileReceivers: [UUID: RemoteStreamReceiver] = [:]
     var offeredFileStreams: [UUID: IncomingRemoteStream] = [:]
     public internal(set) var offeredFiles: [OfferedFile] = []
+    public internal(set) var lostOfferedFiles: [LostOfferedFile] = []
     public internal(set) var instrumentChildren: [UUID: [InstrumentChild]] = [:]
     public internal(set) var childSelectionRequest: ChildSelectionRequest?
     private var remoteInstrumentAgents: [UUID: InstrumentAgentState] = [:]

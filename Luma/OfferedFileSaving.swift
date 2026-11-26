@@ -27,6 +27,11 @@ private struct OfferedFileSaving: ViewModifier {
                     SavingBanner(file: saving)
                 }
             }
+            .onChange(of: failure == nil ? engine.lostOfferedFiles.first?.id : nil, initial: true) {
+                guard failure == nil, let lost = engine.lostOfferedFiles.first else { return }
+                engine.acknowledgeLostOfferedFile(lost.id)
+                failure = UIError(title: lost.file.saveFailureTitle, message: lost.sentence)
+            }
             .alert(failure?.title ?? "", isPresented: failureBinding, presenting: failure) { _ in
                 Button("OK") { failure = nil }
             } message: { failure in
