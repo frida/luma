@@ -35,7 +35,8 @@ final class ObjectChatTurn: ToolCallHost {
         if let reason = refusals.removeValue(forKey: callID) {
             return .settled(MissionTools.errorResult(reason, code: .rejected))
         }
-        if let settled = chats.decision(on: chats.call(callID)!) {
+        guard let call = chats.call(callID) else { return .cancelled }
+        if let settled = chats.decision(on: call) {
             return settled
         }
         return await withTaskCancellationHandler {

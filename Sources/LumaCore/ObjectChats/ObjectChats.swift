@@ -325,7 +325,7 @@ public final class ObjectChats {
         discardedDrafts.insert(chatID)
         LumaAppState.shared.setChatModelChoice(nil, forChatID: chatID)
         threads[chatID] = nil
-        try? await image(of: chatID).forget()
+        await tearDown([chatID], stopping: [])
     }
 
     func discardDrafts(ofSession sessionID: UUID) {
@@ -568,6 +568,7 @@ public final class ObjectChats {
     }
 
     private func appendAnswer(of turn: ObjectChatTurn, usage: LLMUsage, error: String?) {
+        guard chat(withID: turn.chatID) != nil else { return }
         let answer = ObjectChatMessage(
             id: turn.messageID,
             chatID: turn.chatID,
@@ -848,25 +849,36 @@ public final class ObjectChats {
         guard chats.contains(where: { $0.id == chatID }) else { return }
         guard canDelete(chatID) else { throw ObjectChatError.notYours }
         deletedHere.insert(chatID)
-        guard !removedInLab.contains(chatID), !isInSessionTheLabLacks(chatID) else { return await drop(chatID) }
+        if !removedInLab.contains(chatID) {
+            enqueue(.chatRemove(chatID: chatID))
+        }
         await drop(chatID)
-        enqueue(.chatRemove(chatID: chatID))
     }
 
     private func drop(_ chatID: UUID) async {
         replies[chatID]?.cancel()
         LumaAppState.shared.setChatModelChoice(nil, forChatID: chatID)
-        let calls = thread(of: chatID).toolCalls
+        let running = runningCalls(in: [chatID])
         persist(in: chatID) { try $0.deleteObjectChat(id: chatID) }
         chats.removeAll { $0.id == chatID }
         threads[chatID] = nil
         removedInLab.remove(chatID)
-        let engine = engine!
-        for call in calls {
-            await engine.pharo.stopRun(call.id)
+        await tearDown([chatID], stopping: running)
+    }
+
+    private func runningCalls(in chatIDs: [UUID]) -> [UUID] {
+        chatIDs.flatMap { thread(of: $0).toolCalls.filter { $0.status == .running }.map(\.id) }
+    }
+
+    private func tearDown(_ chatIDs: [UUID], stopping running: [UUID]) async {
+        guard PharoRuntime.shared.state == .running else { return }
+        for chatID in chatIDs {
+            try? await ObjectChatImage(runtime: PharoRuntime.shared, chatID: chatID).forget()
         }
-        if let image = try? await image(of: chatID) {
-            try? await image.forget()
+        let pharo = engine!.pharo
+        let stops = running.map { callID in Task { await pharo.stopRun(callID) } }
+        for stop in stops {
+            await stop.value
         }
     }
 
@@ -1053,11 +1065,15 @@ public final class ObjectChats {
 
     func forgetChats(ofSession sessionID: UUID) {
         discardDrafts(ofSession: sessionID)
-        for chat in chats where chat.sessionID == sessionID {
-            threads[chat.id] = nil
-            try? engine!.store.removeOutboxOps(family: ObjectChatOp.outboxFamily, subject: chat.id)
+        let removed = chats.filter { $0.sessionID == sessionID }.map(\.id)
+        let running = runningCalls(in: removed)
+        for chatID in removed {
+            replies[chatID]?.cancel()
+            threads[chatID] = nil
+            try? engine!.store.removeOutboxOps(family: ObjectChatOp.outboxFamily, subject: chatID)
         }
         chats.removeAll { $0.sessionID == sessionID }
+        Task { await self.tearDown(removed, stopping: running) }
     }
 
     func apply(_ op: ObjectChatOp) {
@@ -1213,6 +1229,7 @@ public final class ObjectChats {
     }
 
     private func keep(_ call: ObjectChatToolCall) {
+        guard chat(withID: call.chatID) != nil else { return }
         persist(in: call.chatID) { try $0.save(call) }
         var calls = threads[call.chatID]?.toolCalls.filter { $0.id != call.id } ?? []
         calls.append(call)
@@ -1237,6 +1254,7 @@ public final class ObjectChats {
     }
 
     private func keep(_ object: ObjectChatObject) {
+        guard chat(withID: object.chatID) != nil else { return }
         if !isDraft(object.chatID) {
             persist(in: object.chatID) { try $0.save(object) }
         }
@@ -1266,7 +1284,7 @@ public final class ObjectChats {
 
     private func enqueue(_ change: ObjectChatOp.Change) {
         let chatID = ObjectChatOp(change).chatID
-        guard !isInSessionTheLabLacks(chatID) else { return }
+        guard chat(withID: chatID) != nil, !isInSessionTheLabLacks(chatID) else { return }
         persist(in: chatID) { _ in try engine!.collaboration.enqueueObjectChat(change) }
     }
 
