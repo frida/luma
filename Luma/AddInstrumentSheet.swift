@@ -284,6 +284,9 @@ struct AddInstrumentSheet: View {
                     ForEach(shownInstalledStoreItems) { item in
                         storeItemLink(item)
                     }
+                    ForEach(storefront.installationsAwaitingStore) { outdated in
+                        awaitingStoreRow(outdated)
+                    }
                     ForEach(shownLibraryFolders, id: \.folderURL) { folder in
                         Button {
                             linkFolder(at: folder.folderURL)
@@ -363,6 +366,9 @@ struct AddInstrumentSheet: View {
             }
             ForEach(shownInstalledStoreItems) { item in
                 storeItemRow(item).tag(Self.storeItemDescriptorID(item))
+            }
+            ForEach(storefront.installationsAwaitingStore) { outdated in
+                awaitingStoreRow(outdated)
             }
             ForEach(shownLibraryFolders, id: \.folderURL) { folder in
                 libraryFolderRow(folder).tag(Self.libraryFolderDescriptorID(folder))
@@ -625,7 +631,7 @@ struct AddInstrumentSheet: View {
             StoreItemIconView(item: item, storefront: storefront, pointSize: 12)
             VStack(alignment: .leading, spacing: 1) {
                 Text(item.name)
-                Text(item.publisher.name)
+                Text(storefront.updateNotice(for: item.id) ?? item.publisher.name)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -707,6 +713,16 @@ struct AddInstrumentSheet: View {
                 dismiss()
             }
         }
+    }
+
+    private func awaitingStoreRow(_ outdated: Storefront.OutdatedInstallation) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(outdated.name)
+            Text(outdated.explanation)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .foregroundStyle(.secondary)
     }
 
     private func addStoreItem(_ item: StoreItem, localChanges: Storefront.LocalChanges) {
