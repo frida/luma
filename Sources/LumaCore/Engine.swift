@@ -133,6 +133,7 @@ public final class Engine {
     public internal(set) var customInstrumentDefUIStates: [UUID: CustomInstrumentDefUIState] = [:]
     public private(set) var missions: [Mission] = []
     public private(set) var subjectsKeptFromLab: Set<LabSubject> = []
+    private var definitionsKeptForLabLimits: Set<UUID> = []
     private var problemsOfThisEngine: [LabProblem] = []
 
     public var labProblems: [LabProblem] {
@@ -1550,6 +1551,7 @@ public final class Engine {
         #endif
         notebookEntries = (try? store.fetchNotebookEntries()) ?? []
         subjectsKeptFromLab = (try? store.subjectsWithheldFromLab()) ?? []
+        definitionsKeptForLabLimits = Set(subjectsKeptFromLab.filter { $0.family == .definition && overLabLimits($0.id) }.map(\.id))
         objectChats.load()
         widgetPlacements = (try? store.fetchWidgetPlacements()) ?? [:]
         sessions = (try? store.fetchSessions()) ?? []
@@ -5742,10 +5744,23 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         let bundle = CustomInstrumentBundle(def: def, files: files)
         if let refusal = bundle.labRefusal, collaboration.isCollaborative {
             guard !subjectsKeptFromLab.contains(LabSubject(.definition, defID)) else { return }
-            return keepFromLab(LabSubject(.definition, defID), because: refusal)
+            definitionsKeptForLabLimits.insert(defID)
+            return keepFromLab(
+                LabSubject(.definition, defID),
+                because: "\(refusal). Luma offers it to the lab again on the first save that brings it within these limits")
+        }
+        if definitionsKeptForLabLimits.remove(defID) != nil {
+            return addToLab(LabSubject(.definition, defID))
         }
         collaboration.enqueueCustomInstrumentOp(.upsert(.init(bundle: bundle)))
         instrumentsEditedSinceSnapshots.insert(defID)
+    }
+
+    private func overLabLimits(_ defID: UUID) -> Bool {
+        guard let def = try? store.fetchCustomInstrumentDef(id: defID),
+            let files = try? store.fetchCustomInstrumentFiles(defID: defID)
+        else { return false }
+        return CustomInstrumentBundle(def: def, files: files).labRefusal != nil
     }
 
     private func broadcastCustomInstrumentRemove(defID: UUID) {
