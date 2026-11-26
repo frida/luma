@@ -203,18 +203,23 @@ public final class PortalConnection {
     private func open(token: String) async throws {
         greeting = .pending
         do {
-            let device = try await deviceManager.addRemoteDevice(
-                address: address,
-                certificate: certificate,
-                origin: nil,
-                token: token,
-                keepaliveInterval: nil
-            )
+            let device = try await beforeSilence {
+                try await self.deviceManager.addRemoteDevice(
+                    address: self.address,
+                    certificate: self.certificate,
+                    origin: nil,
+                    token: token,
+                    keepaliveInterval: nil
+                )
+            }
             listen(to: device.bus)
-            try await device.bus.attach()
-            let welcome = try await awaitWelcome()
+            try await beforeSilence { try await device.bus.attach() }
+            try await beforeSilence(awaitWelcome) { self.loseGreeting() }
+            guard case .received(let welcome) = greeting else { throw Self.detachedFailure }
             try Self.checkProtocol(of: welcome)
-            try await sayHello(on: device)
+            try await beforeSilence { try await self.sayHello(on: device) } silenced: {
+                self.abandonReplies { if case .connection = $0.requester { true } else { false } }
+            }
             phase = .connected(device, welcome: welcome)
         } catch {
             busTask?.cancel()
@@ -223,6 +228,34 @@ public final class PortalConnection {
             phase = .idle
             throw error
         }
+    }
+
+    private func beforeSilence<T: Sendable>(
+        _ step: @escaping @MainActor () async throws -> T,
+        silenced: @escaping @MainActor () -> Void = {}
+    ) async throws -> T {
+        let silence = Silence()
+        let work = Task { @MainActor in try await step() }
+        let watch = Task { @MainActor in
+            try await Task.sleep(for: Self.silenceLimit)
+            silence.fell = true
+            work.cancel()
+            silenced()
+        }
+        defer { watch.cancel() }
+        do {
+            return try await work.value
+        } catch where silence.fell {
+            throw Self.silentFailure
+        }
+    }
+
+    private static let silenceLimit = Duration.seconds(30)
+    private static let silentFailure = AuthFailure(domain: "portal", code: "silent", message: "The lab's server did not answer.")
+
+    @MainActor
+    private final class Silence {
+        var fell = false
     }
 
     private func listen(to bus: Bus) {
@@ -234,12 +267,10 @@ public final class PortalConnection {
         }
     }
 
-    private func awaitWelcome() async throws -> JSONObject {
+    private func awaitWelcome() async throws {
         if case .pending = greeting {
             try await withCheckedThrowingContinuation { greeting = .awaited($0) }
         }
-        guard case .received(let welcome) = greeting else { throw Self.detachedFailure }
-        return welcome
     }
 
     private static func checkProtocol(of welcome: JSONObject) throws {
