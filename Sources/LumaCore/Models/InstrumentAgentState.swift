@@ -26,10 +26,12 @@ public struct InstrumentAgentState: Sendable, Equatable {
     }
 
     static func fromWireJSON(_ obj: [String: Any]) -> InstrumentAgentState? {
-        guard let isLive = obj["live"] as? Bool else { return nil }
-        let disabled = (obj["disabled_actions"] as? [String: [String]]) ?? [:]
+        guard let isLive = obj["live"] as? Bool,
+            let disabled = obj["disabled_actions"] as? [String: [String]],
+            let awaitsApproval = obj["awaits_approval"] as? Bool
+        else { return nil }
         return InstrumentAgentState(
-            isLive: isLive, disabledActions: disabled.mapValues(Set.init), awaitsApproval: obj["awaits_approval"] as? Bool ?? false,
+            isLive: isLive, disabledActions: disabled.mapValues(Set.init), awaitsApproval: awaitsApproval,
             allowedCode: obj["allowed_code"] as? String)
     }
 }
