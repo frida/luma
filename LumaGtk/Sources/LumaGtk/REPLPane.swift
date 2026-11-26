@@ -388,8 +388,10 @@ final class REPLPane {
     private func attachContextMenu(to anchor: Box, cell: LumaCore.REPLCell) {
         let gesture = GestureClick()
         gesture.set(button: 3)
+        gesture.propagationPhase = .capture
         gesture.onPressed { [weak self] gesture, _, x, y in
             MainActor.assumeIsolated {
+                _ = gesture.set(state: .claimed)
                 self?.presentCellContextMenu(at: gesture.widget, x: x, y: y, cell: cell)
             }
         }
