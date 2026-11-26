@@ -732,8 +732,20 @@ final class MainWindow: InstrumentUIHost {
             select(.mission(subject.id))
         case .pattern:
             select(.patterns(.source(subject.id.uuidString)))
-        default:
+        case .definition:
             select(selectionForCustomInstrument(defID: subject.id))
+        case .entry:
+            select(.notebook)
+        case .session:
+            select(.session(subject.id))
+        case .instrument:
+            engine?.sessionID(holding: subject).map { select(.instrument(sessionID: $0, instrumentID: subject.id)) }
+        case .insight:
+            engine?.sessionID(holding: subject).map { select(.insight(sessionID: $0, insightID: subject.id)) }
+        case .trace:
+            engine?.sessionID(holding: subject).map { select(.itrace(sessionID: $0, traceID: subject.id)) }
+        case .replCell, .objectChat, .objectChatMessage:
+            break
         }
     }
 

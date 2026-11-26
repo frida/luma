@@ -21,7 +21,9 @@ struct LabProblemNotice: View {
         case .copyKeptFromLab(let subject, _):
             ProblemNotice(text: problem.reason, onDismiss: dismiss) {
                 if engine.subjectsKeptFromLab.contains(subject) {
-                    Button("Show") { selection = item(showing: subject) }
+                    if let item = item(showing: subject) {
+                        Button("Show") { selection = item }
+                    }
                     Button("Add to Lab") { engine.addToLab(subject) }
                 }
             }
@@ -32,8 +34,20 @@ struct LabProblemNotice: View {
         engine.dismiss(problem)
     }
 
-    private func item(showing subject: LabSubject) -> SidebarItemID {
-        subject.family == .pattern ? .pattern(subject.id.uuidString) : .customInstrumentDef(subject.id)
+    private func item(showing subject: LabSubject) -> SidebarItemID? {
+        let sessionID = engine.sessionID(holding: subject)
+        switch subject.family {
+        case .definition: return .customInstrumentDef(subject.id)
+        case .pattern: return .pattern(subject.id.uuidString)
+        case .entry: return .notebook
+        case .mission: return .mission(subject.id)
+        case .session: return sessionID.map(SidebarItemID.session)
+        case .instrument: return sessionID.map { .instrument($0, subject.id) }
+        case .insight: return sessionID.map { .insight($0, subject.id) }
+        case .trace: return sessionID.map { .itrace($0, subject.id) }
+        case .replCell: return nil
+        case .objectChat, .objectChatMessage: return nil
+        }
     }
 }
 

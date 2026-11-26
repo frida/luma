@@ -7086,6 +7086,24 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         emitEngineWarning(subsystem: subsystem, text: reason)
     }
 
+    public func canShow(_ subject: LabSubject) -> Bool {
+        switch subject.family {
+        case .definition, .pattern, .entry, .mission: true
+        case .session, .instrument, .insight, .trace: sessionID(holding: subject) != nil
+        case .replCell, .objectChat, .objectChatMessage: false
+        }
+    }
+
+    public func sessionID(holding subject: LabSubject) -> UUID? {
+        switch subject.family {
+        case .session: sessions.first { $0.id == subject.id }?.id
+        case .instrument: instrumentsBySession.first { $0.value.contains { $0.id == subject.id } }?.key
+        case .insight: insightsBySession.first { $0.value.contains { $0.id == subject.id } }?.key
+        case .trace: tracesBySession.first { $0.value.contains { $0.id == subject.id } }?.key
+        default: nil
+        }
+    }
+
     public func addToLab(_ subject: LabSubject) {
         try? store.releaseToLab(subject)
         subjectsKeptFromLab.remove(subject)

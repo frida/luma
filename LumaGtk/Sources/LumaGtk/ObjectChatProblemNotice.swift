@@ -15,8 +15,8 @@ enum ObjectChatProblemNotice {
             return notice(problem.reason, actions: [("Show", { onShow(LabSubject(.mission, missionID)) })], onDismiss: dismiss)
         case .copyKeptFromLab(let subject, _):
             guard engine.subjectsKeptFromLab.contains(subject) else { return notice(problem.reason, onDismiss: dismiss) }
-            return notice(
-                problem.reason, actions: [("Show", { onShow(subject) }), ("Add to Lab", { engine.addToLab(subject) })], onDismiss: dismiss)
+            let show: [(String, () -> Void)] = engine.canShow(subject) ? [("Show", { onShow(subject) })] : []
+            return notice(problem.reason, actions: show + [("Add to Lab", { engine.addToLab(subject) })], onDismiss: dismiss)
         }
     }
 
