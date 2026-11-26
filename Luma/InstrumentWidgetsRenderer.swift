@@ -506,11 +506,17 @@ private final class PendingWidgetUpdates: NSObject {
     }
 
     @objc private func frameWillDraw() {
+        let now = CACurrentMediaTime()
+        guard now - lastApplied >= Self.burstInterval else { return }
+        lastApplied = now
         frames.isPaused = true
         let batch = kinds
         kinds.removeAll()
         apply(batch)
     }
+
+    private static let burstInterval: CFTimeInterval = 0.25
+    private var lastApplied: CFTimeInterval = 0
 }
 
 private struct ConsoleWidgetView: View {
