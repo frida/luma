@@ -138,7 +138,8 @@ public final class Storefront {
                     id: installation.itemID,
                     name: item?.name ?? folderName,
                     installedVersion: installation.version,
-                    update: item.flatMap { LumaVersion.meets($0.minAppVersion) ? $0 : nil })
+                    update: item.flatMap { LumaVersion.meets($0.minAppVersion) ? $0 : nil },
+                    isListed: item != nil)
             }
     }
 
@@ -147,9 +148,15 @@ public final class Storefront {
         public let name: String
         public let installedVersion: StoreVersion
         public let update: StoreItem?
+        public let isListed: Bool
 
         public var explanation: String {
-            update == nil ? "Needs updating for Luma 4; Luma offers the update once the store can be reached" : "Needs updating for Luma 4"
+            if update != nil {
+                return "Needs updating for Luma 4"
+            }
+            return isListed
+                ? "Needs updating for Luma 4; the store has no version for Luma 4 yet"
+                : "Needs updating for Luma 4; Luma offers the update once the store can be reached"
         }
     }
 
