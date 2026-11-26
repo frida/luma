@@ -77,6 +77,7 @@ export interface CounterValue {
     value: number;
     unit?: string;
     delta?: number;
+    fractionDigits?: number;
 }
 
 export interface HistogramBucket {

@@ -388,14 +388,15 @@ private struct WidgetCanvas: View {
     @ViewBuilder
     private func counterView(_ cfg: InstrumentWidget.CounterConfig) -> some View {
         if let value = state.counter {
+            let text = engine.counterText(value, instanceID: instance?.id ?? UUID(), widget: slot)
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(formatCounter(value.value))
+                Text(text.value)
                     .font(.system(size: 28, weight: .semibold, design: .rounded))
                 if let unit = value.unit ?? cfg.unit {
                     Text(unit).foregroundStyle(.secondary)
                 }
-                if let delta = value.delta {
-                    Text(formatDelta(delta))
+                if let delta = value.delta, let deltaText = text.delta {
+                    Text(deltaText)
                         .font(.caption)
                         .foregroundStyle(delta >= 0 ? .green : .red)
                 }
@@ -404,18 +405,6 @@ private struct WidgetCanvas: View {
         } else {
             Text("No data.").font(.caption).foregroundStyle(.secondary)
         }
-    }
-
-    private func formatCounter(_ value: Double) -> String {
-        if value.truncatingRemainder(dividingBy: 1) == 0 {
-            return String(Int64(value))
-        }
-        return String(format: "%.2f", value)
-    }
-
-    private func formatDelta(_ delta: Double) -> String {
-        let sign = delta >= 0 ? "+" : ""
-        return "\(sign)\(formatCounter(delta))"
     }
 
     @ViewBuilder

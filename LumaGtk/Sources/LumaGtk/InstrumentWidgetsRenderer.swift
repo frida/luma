@@ -217,7 +217,9 @@ private final class WidgetCanvas {
 
         switch definition.kind {
         case .counter(let cfg):
-            let view = CounterView(unit: cfg.unit, initial: snapshot.counter)
+            let view = CounterView(unit: cfg.unit, initial: snapshot.counter) { counter in
+                engine.counterText(counter, instanceID: instance?.id ?? UUID(), widget: slot)
+            }
             counterView = view
             column.append(child: view.widget)
         case .histogram:
@@ -389,7 +391,7 @@ enum WidgetCardMetrics {
             lineHeight: Double(naturalHeight(of: WidgetEmptyLabel.make("No rows."))),
             rowHeight: Double(tableRowHeight()),
             twoLineRowHeight: Double(twoLineRowHeight()),
-            counterHeight: Double(naturalHeight(of: CounterView(unit: "calls", initial: WidgetCounterValue(value: 1)).widget)))
+            counterHeight: Double(naturalHeight(of: CounterView(unit: "calls", initial: WidgetCounterValue(value: 1)) { $0.text(steadyFractionDigits: 0) }.widget)))
     }
 
     private static func headerHeight() -> Int {
@@ -1436,9 +1438,11 @@ private final class CounterView {
     private let unitLabel: Label
     private let deltaLabel: Label
     private let emptyLabel: Label
+    private let text: (WidgetCounterValue) -> CounterText
 
-    init(unit: String?, initial: WidgetCounterValue?) {
+    init(unit: String?, initial: WidgetCounterValue?, text: @escaping (WidgetCounterValue) -> CounterText) {
         self.unitFromConfig = unit
+        self.text = text
 
         widget = Box(orientation: .vertical, spacing: 0)
 
@@ -1480,12 +1484,13 @@ private final class CounterView {
     }
 
     func set(value: WidgetCounterValue) {
-        valueLabel.label = formatNumber(value.value)
+        let shown = text(value)
+        valueLabel.label = shown.value
         let resolvedUnit = value.unit ?? unitFromConfig
         unitLabel.label = resolvedUnit ?? ""
         unitLabel.visible = resolvedUnit != nil
-        if let delta = value.delta {
-            deltaLabel.label = formatDelta(delta)
+        if let delta = value.delta, let deltaText = shown.delta {
+            deltaLabel.label = deltaText
             deltaLabel.remove(cssClass: delta >= 0 ? "error" : "success")
             deltaLabel.add(cssClass: delta >= 0 ? "success" : "error")
             deltaLabel.visible = true
@@ -1513,17 +1518,6 @@ private final class CounterView {
         emptyLabel.visible = true
     }
 
-    private func formatNumber(_ value: Double) -> String {
-        if value.truncatingRemainder(dividingBy: 1) == 0 {
-            return String(Int64(value))
-        }
-        return String(format: "%.2f", value)
-    }
-
-    private func formatDelta(_ delta: Double) -> String {
-        let sign = delta >= 0 ? "+" : ""
-        return "\(sign)\(formatNumber(delta))"
-    }
 }
 
 @MainActor

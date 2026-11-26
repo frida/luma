@@ -578,7 +578,8 @@ public final class ProcessNode: Identifiable {
     private func decodeCounterSetUpdate(_ dict: [String: Any]) -> WidgetUpdate? {
         guard let context = decodeWidgetContext(dict),
             let counterObj = dict["counter"] as? [String: Any],
-            let value = decodeNumber(counterObj["value"])
+            let value = decodeNumber(counterObj["value"]),
+            WidgetCounterValue.isFractionDigits(counterObj["fractionDigits"])
         else { return nil }
         return WidgetUpdate(
             instanceID: context.instanceID,
@@ -586,7 +587,8 @@ public final class ProcessNode: Identifiable {
             kind: .counterSet(WidgetCounterValue(
                 value: value,
                 unit: (counterObj["unit"] as? String).map(Self.kept),
-                delta: decodeNumber(counterObj["delta"])
+                delta: decodeNumber(counterObj["delta"]),
+                fractionDigits: counterObj["fractionDigits"] as? Int
             ))
         )
     }

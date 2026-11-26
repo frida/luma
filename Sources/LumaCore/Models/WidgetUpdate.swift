@@ -60,12 +60,14 @@ public struct WidgetUpdate: Sendable, Identifiable {
         switch kindStr {
         case "counter-set":
             guard let counter = obj["counter"] as? [String: Any],
-                let value = decodeDouble(counter["value"])
+                let value = decodeDouble(counter["value"]),
+                WidgetCounterValue.isFractionDigits(counter["fraction_digits"])
             else { return nil }
             return .counterSet(WidgetCounterValue(
                 value: value,
                 unit: counter["unit"] as? String,
-                delta: decodeDouble(counter["delta"])
+                delta: decodeDouble(counter["delta"]),
+                fractionDigits: counter["fraction_digits"] as? Int
             ))
         case "histogram-set":
             guard let buckets = obj["buckets"] as? [[String: Any]] else { return nil }
@@ -147,6 +149,7 @@ extension WidgetUpdate.Kind {
             var counter: [String: Any] = ["value": value.value]
             if let unit = value.unit { counter["unit"] = unit }
             if let delta = value.delta { counter["delta"] = delta }
+            if let fractionDigits = value.fractionDigits { counter["fraction_digits"] = fractionDigits }
             obj["counter"] = counter
         case .histogramSet(let buckets):
             obj["kind"] = "histogram-set"
@@ -201,12 +204,40 @@ public struct WidgetCounterValue: Codable, Sendable, Equatable {
     public var value: Double
     public var unit: String?
     public var delta: Double?
+    public var fractionDigits: Int?
 
-    public init(value: Double, unit: String? = nil, delta: Double? = nil) {
+    public static let fractionDigitRange = 0...6
+
+    public init(value: Double, unit: String? = nil, delta: Double? = nil, fractionDigits: Int? = nil) {
         self.value = value
         self.unit = unit
         self.delta = delta
+        self.fractionDigits = fractionDigits
     }
+
+    public var hasFraction: Bool {
+        value.rounded() != value || delta.map { $0.rounded() != $0 } == true
+    }
+
+    public func text(steadyFractionDigits: Int) -> CounterText {
+        let digits = fractionDigits ?? steadyFractionDigits
+        return CounterText(
+            value: Self.format(value, digits),
+            delta: delta.map { ($0 >= 0 ? "+" : "") + Self.format($0, digits) })
+    }
+
+    static func isFractionDigits(_ raw: Any?) -> Bool {
+        raw == nil || (raw as? Int).map(fractionDigitRange.contains) == true
+    }
+
+    private static func format(_ number: Double, _ digits: Int) -> String {
+        String(format: "%.\(digits)f", number)
+    }
+}
+
+public struct CounterText: Sendable, Equatable {
+    public let value: String
+    public let delta: String?
 }
 
 public struct WidgetHistogramBucket: Codable, Sendable, Equatable {
@@ -501,11 +532,14 @@ public struct WidgetState: Codable, Sendable, Equatable {
 
     init(wireJSON stateObj: [String: Any]) {
         var counter: WidgetCounterValue?
-        if let c = stateObj["counter"] as? [String: Any], let value = (c["value"] as? NSNumber)?.doubleValue {
+        if let c = stateObj["counter"] as? [String: Any], let value = (c["value"] as? NSNumber)?.doubleValue,
+            WidgetCounterValue.isFractionDigits(c["fraction_digits"])
+        {
             counter = WidgetCounterValue(
                 value: value,
                 unit: c["unit"] as? String,
-                delta: (c["delta"] as? NSNumber)?.doubleValue
+                delta: (c["delta"] as? NSNumber)?.doubleValue,
+                fractionDigits: c["fraction_digits"] as? Int
             )
         }
 

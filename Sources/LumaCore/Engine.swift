@@ -53,6 +53,12 @@ public final class Engine {
     public var widgetUpdates: AsyncStream<WidgetUpdate> { _widgetUpdates.makeStream() }
     @ObservationIgnored private var widgetStates: [UUID: [String: WidgetState]] = [:]
     @ObservationIgnored private var consoleEntriesDropped: [InstrumentViews.Key: Int] = [:]
+    @ObservationIgnored private var fractionalCounters: Set<FractionalCounter> = []
+
+    private struct FractionalCounter: Hashable {
+        let key: InstrumentViews.Key
+        let unit: String?
+    }
     private var widgetStateWrite = WidgetStateWrite.idle
     private static let widgetStateWriteDelay = Duration.seconds(1)
 
@@ -4587,6 +4593,7 @@ public final class Engine {
                 var obj: [String: Any] = ["value": counter.value]
                 if let unit = counter.unit { obj["unit"] = unit }
                 if let delta = counter.delta { obj["delta"] = delta }
+                if let fractionDigits = counter.fractionDigits { obj["fractionDigits"] = fractionDigits }
                 return ["counter": obj]
             } else {
                 return ["counter": NSNull()]
@@ -4628,6 +4635,12 @@ public final class Engine {
         case .view:
             return ["state": state.view?.payload.value ?? NSNull()]
         }
+    }
+
+    public func counterText(_ counter: WidgetCounterValue, instanceID: UUID, widget: String) -> CounterText {
+        let key = InstrumentViews.Key(instanceID: instanceID, widget: widget)
+        let steady = counter.hasFraction || fractionalCounters.contains(FractionalCounter(key: key, unit: counter.unit))
+        return counter.text(steadyFractionDigits: steady ? 1 : 0)
     }
 
     public func consoleEntriesNotKept(instanceID: UUID, widget: String) -> String? {
@@ -5306,6 +5319,9 @@ public final class Engine {
                 state.revision = max(state.revision, update.revision)
             }
             if let widgetDef { dropped = state.cap(to: widgetDef.kind) }
+        }
+        if case .counterSet(let counter) = update.kind, counter.hasFraction {
+            fractionalCounters.insert(FractionalCounter(key: key, unit: counter.unit))
         }
         switch update.kind {
         case .clear, .snapshot:

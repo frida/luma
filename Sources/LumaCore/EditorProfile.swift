@@ -206,7 +206,7 @@ public enum CustomInstrumentTypings {
         }
 
         declare interface CustomInstrumentCounterWidget {
-            setCounter(value: { value: number, unit?: string, delta?: number }): void;
+            setCounter(value: { value: number, unit?: string, delta?: number, fractionDigits?: number }): void;
             clear(): void;
         }
 
@@ -354,7 +354,7 @@ public enum CustomInstrumentTypings {
         }
 
         declare interface CustomInstrumentCounterSnapshot {
-            counter: { value: number; unit?: string; delta?: number } | null;
+            counter: { value: number; unit?: string; delta?: number; fractionDigits?: number } | null;
         }
 
         declare interface CustomInstrumentHistogramSnapshot {
