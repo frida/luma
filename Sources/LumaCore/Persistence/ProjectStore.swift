@@ -332,6 +332,16 @@ public final class ProjectStore: Sendable {
         }
     }
 
+    public func dropUnreadableOutboxOps() throws -> Int {
+        try db.write { db in
+            let unreadable = try OutboxRecord.fetchAll(db).filter { $0.toQueuedOp() == nil }
+            for record in unreadable {
+                try record.delete(db)
+            }
+            return unreadable.count
+        }
+    }
+
     public func fetchOutboxOp(opID: UUID) throws -> QueuedOp? {
         try db.read { db in
             try OutboxRecord.fetchOne(db, key: opID)?.toQueuedOp()

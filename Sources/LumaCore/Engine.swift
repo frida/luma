@@ -1597,6 +1597,11 @@ public final class Engine {
         #endif
         notebookEntries = (try? store.fetchNotebookEntries()) ?? []
         subjectsKeptFromLab = (try? store.subjectsWithheldFromLab()) ?? []
+        if let dropped = try? store.dropUnreadableOutboxOps(), dropped > 0 {
+            emitEngineWarning(
+                subsystem: "collaboration",
+                text: "\(dropped) queued lab \(dropped == 1 ? "change was" : "changes were") dropped: \(dropped == 1 ? "it was" : "they were") written by an earlier build and cannot be sent.")
+        }
         definitionsKeptForLabLimits = Set(subjectsKeptFromLab.filter { $0.family == .definition && overLabLimits($0.id) }.map(\.id))
         objectChats.load()
         widgetPlacements = (try? store.fetchWidgetPlacements()) ?? [:]
