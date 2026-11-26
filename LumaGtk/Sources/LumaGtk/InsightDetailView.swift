@@ -798,7 +798,6 @@ final class InsightDetailView {
         bytesLabel.ellipsize = EllipsizeMode.end
         bytesLabel.widthChars = 18
         bytesLabel.maxWidthChars = 18
-        row.append(child: bytesLabel)
 
         let asmRow = Box(orientation: .horizontal, spacing: 6)
         asmRow.hexpand = true
@@ -846,6 +845,8 @@ final class InsightDetailView {
             commentLabel.maxWidthChars = 50
             row.append(child: commentLabel)
         }
+
+        row.append(child: bytesLabel)
 
         let motion = EventControllerMotion()
         motion.onEnter { [weak self] _, _, _ in
