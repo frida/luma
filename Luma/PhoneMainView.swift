@@ -173,6 +173,7 @@ private struct PhoneContentView: View {
                     .background(.bar)
             }
             .offeredFileSaving(engine: engine)
+            .errorAlertHost()
         }
         .environment(picker)
         .gitHubSignInSheet(auth: engine.gitHubAuth, precedence: .ambient)

@@ -11,7 +11,9 @@ struct ErrorPresenter {
 }
 
 private struct ErrorPresenterKey: EnvironmentKey {
-    static let defaultValue = ErrorPresenter(present: { _, _ in })
+    static let defaultValue = ErrorPresenter { title, message in
+        assertionFailure("No view hosts error presentation, so “\(title): \(message)” would be lost")
+    }
 }
 
 extension EnvironmentValues {
@@ -49,6 +51,22 @@ struct ErrorPopoverHost: ViewModifier {
     }
 }
 
+private struct ErrorAlertHost: ViewModifier {
+    @State private var uiError: UIError?
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.errorPresenter, ErrorPresenter { title, message in uiError = UIError(title: title, message: message) })
+            .alert(uiError?.title ?? "", isPresented: Binding(get: { uiError != nil }, set: { if !$0 { uiError = nil } }), presenting: uiError) { _ in
+                Button("OK") { uiError = nil }
+            } message: { error in
+                Text(error.message)
+            }
+    }
+}
+
 extension View {
     func errorPopoverHost() -> some View { modifier(ErrorPopoverHost()) }
+
+    func errorAlertHost() -> some View { modifier(ErrorAlertHost()) }
 }

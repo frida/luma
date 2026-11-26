@@ -233,6 +233,7 @@ private struct ProjectContentView: View {
         }
         .offeredFileSaving(engine: engine)
         .childSelectionRequests(engine: engine)
+        .errorAlertHost()
     }
 
     @ViewBuilder
