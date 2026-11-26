@@ -2216,6 +2216,8 @@ public final class Engine {
                 }
                 seedReplSeekToMainModule(sessionID: s.id)
                 collaboration.enqueueUpdateProcessInfo(sessionID: s.id, info: storedInfo, pid: process.pid, processName: process.name)
+            } else if let known = s.processInfo {
+                collaboration.enqueueUpdateProcessInfo(sessionID: s.id, info: known, pid: process.pid, processName: process.name)
             }
 
             await loadAllPackages(on: node)
