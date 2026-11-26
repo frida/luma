@@ -83,6 +83,24 @@ public struct CustomInstrumentFile: Sendable, Equatable, FetchableRecord, Persis
 }
 
 public struct CustomInstrumentBundle: Sendable, Equatable {
+    public static let labMaxFiles = 256
+    public static let labMaxFileBytes = 256 * 1024
+    public static let labMaxTotalBytes = 8 * 1024 * 1024
+
+    public var labRefusal: String? {
+        if files.count > Self.labMaxFiles {
+            return "“\(def.name)” has \(files.count) files; a lab takes at most \(Self.labMaxFiles)"
+        }
+        if let large = files.first(where: { $0.content.utf8.count > Self.labMaxFileBytes }) {
+            return "“\(def.name)” has \(large.path) at \(large.content.utf8.count / 1024) KiB; a lab takes files of at most \(Self.labMaxFileBytes / 1024) KiB"
+        }
+        let total = files.reduce(0) { $0 + $1.content.utf8.count }
+        if total > Self.labMaxTotalBytes {
+            return "“\(def.name)” has \(total / 1024 / 1024) MiB of files; a lab takes at most \(Self.labMaxTotalBytes / 1024 / 1024) MiB"
+        }
+        return nil
+    }
+
     public var def: CustomInstrumentDef
     public var files: [CustomInstrumentFile]
 

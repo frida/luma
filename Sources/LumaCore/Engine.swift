@@ -5047,6 +5047,9 @@ public final class Engine {
         let bundle = try Self.validatedCustomInstrumentBundle(
             InstrumentFolder(folderURL: folderURL).customInstrument(id: UUID(), createdAt: now, updatedAt: now)
         )
+        if collaboration.isCollaborative, let refusal = bundle.labRefusal {
+            throw LumaCoreError.invalidArgument(refusal)
+        }
         try saveCustomInstrumentBundle(bundle)
         recordCodeOrigin(.folder(path: folderURL.path), ofCustomInstrument: bundle.def.id)
         try InstrumentFolder.writeTypings(for: bundle.def, to: folderURL)
@@ -5672,6 +5675,10 @@ public func deleteCustomInstrument(_ defID: UUID) async {
             let files = try? store.fetchCustomInstrumentFiles(defID: defID)
         else { return }
         let bundle = CustomInstrumentBundle(def: def, files: files)
+        if let refusal = bundle.labRefusal, collaboration.isCollaborative {
+            guard !subjectsKeptFromLab.contains(LabSubject(.definition, defID)) else { return }
+            return keepFromLab(LabSubject(.definition, defID), because: refusal)
+        }
         collaboration.enqueueCustomInstrumentOp(.upsert(.init(bundle: bundle)))
         instrumentsEditedSinceSnapshots.insert(defID)
     }
