@@ -10,7 +10,7 @@ struct LabProblemNotice: View {
         switch problem.concern {
         case .objectChat(let chatProblem):
             ObjectChatProblemNotice(problem: chatProblem, chats: engine.objectChats)
-        case .missionDeletedInLab:
+        case .missionDeletedInLab, .keptFromLab:
             ProblemNotice(text: problem.reason, onDismiss: dismiss) {}
         case .missionStoppedByOwner(let missionID, _):
             ProblemNotice(text: problem.reason, onDismiss: dismiss) {

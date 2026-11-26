@@ -8,7 +8,7 @@ enum ObjectChatProblemNotice {
         switch problem.concern {
         case .objectChat(let chatProblem):
             return make(chatProblem, chats: engine.objectChats, namesChat: true)
-        case .missionDeletedInLab:
+        case .missionDeletedInLab, .keptFromLab:
             return notice(problem.reason, onDismiss: dismiss)
         case .missionStoppedByOwner(let missionID, _):
             guard engine.missions.contains(where: { $0.id == missionID }) else { return notice(problem.reason, onDismiss: dismiss) }

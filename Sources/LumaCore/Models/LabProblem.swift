@@ -6,6 +6,7 @@ public struct LabProblem: Identifiable, Sendable, Equatable {
         case missionDeletedInLab(missionID: UUID, title: String)
         case missionStoppedByOwner(missionID: UUID, title: String)
         case copyKeptFromLab(LabSubject, name: String)
+        case keptFromLab(LabSubject, name: String)
     }
 
     public let id: UUID

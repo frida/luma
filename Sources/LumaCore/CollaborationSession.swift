@@ -291,7 +291,8 @@ public final class CollaborationSession {
     public var onEntryUpserted: ((NotebookEntry) -> Void)?
     public var onEntryRemoved: ((UUID) -> Void)?
     public var onEntryRepositioned: ((UUID, Double) -> Void)?
-    public var onOpRejected: ((String) -> Void)?
+    public var onOpRejected: ((LabSubject, String) -> Void)?
+    public var onChangeKeptAsCopy: ((LabSubject, String) -> Void)?
     public var onMemberAdded: ((Member) -> Void)?
     public var onMemberRemoved: ((String) -> Void)?
     public var onMemberRoleChanged: ((String, Member.Role) -> Void)?
@@ -647,7 +648,10 @@ public final class CollaborationSession {
         ((try? store.fetchDismissedLabSessions()) ?? []).contains(sessionID)
     }
 
-    private static let familiesKeptWhenRefused: Set<LabSubject.Family> = [.entry, .definition, .pattern, .mission]
+    private static let familiesKeptWhenRefused: Set<LabSubject.Family> = [
+        .entry, .definition, .pattern, .mission, .session, .instrument, .insight, .trace, .replCell,
+    ]
+    private static let familiesCopiedWhenRefused: Set<LabSubject.Family> = [.entry, .definition, .pattern]
 
     private func isKnownToLab(_ subject: LabSubject) -> Bool {
         ((try? store.subjectsKnownToLab(subject.family)) ?? []).contains(subject.id)
@@ -655,6 +659,18 @@ public final class CollaborationSession {
 
     private func isWithheld(_ subject: LabSubject) -> Bool {
         ((try? store.subjectsWithheldFromLab()) ?? []).contains(subject)
+    }
+
+    private func isWithheld(_ op: SessionOp) -> Bool {
+        let withheld = (try? store.subjectsWithheldFromLab()) ?? []
+        guard !withheld.contains(op.labSubject), !withheld.contains(LabSubject(.session, op.sessionID)) else { return true }
+        let instance: InstrumentInstance? = switch op {
+        case .addInstrument(let a): a.instance
+        case .updateInstrument(let u): u.instance
+        default: nil
+        }
+        guard let instance, instance.kind == .custom, let defID = UUID(uuidString: instance.sourceIdentifier) else { return false }
+        return withheld.contains(LabSubject(.definition, defID))
     }
 
     private func sendPatternSourceOpOverWire(_ op: PatternSourceOp, labID: String) {
@@ -1434,7 +1450,7 @@ public final class CollaborationSession {
     }
 
     private func enqueueSessionOp(_ op: SessionOp) {
-        guard isCollaborative, !removedSessionIDs.contains(op.sessionID) || op.kind == "remove" else { return }
+        guard isCollaborative, !removedSessionIDs.contains(op.sessionID) || op.kind == "remove", !isWithheld(op) else { return }
         if case .add = op {
             sessionsHeldByLab.insert(op.sessionID)
         }
@@ -2182,15 +2198,16 @@ public final class CollaborationSession {
 
     func handleOpRejected(_ payload: JSONObject) {
         guard let opID = (payload["op_id"] as? String).flatMap(UUID.init(uuidString:)) else { return }
-        let reason = (payload["reason"] as? String) ?? "rejected"
+        let refusal = (payload["reason"] as? String) ?? "rejected"
+        let reason = refusal
         opsOverridingJoinSnapshot.removeValue(forKey: opID)
         replayedForSubjectsTheLabLacks.remove(opID)
         guard let rejected = try? store.fetchOutboxOp(opID: opID) else { return }
         _ = try? store.removeOutboxOp(opID: opID)
-        if reason == Self.patternNameTaken, case .pattern(.upsert(let upsert)) = rejected {
+        if refusal == Self.patternNameTaken, case .pattern(.upsert(let upsert)) = rejected {
             onPatternSourceNameTaken?(upsert.record)
         } else {
-            if announceRemovalInLab(of: rejected, because: reason) {
+            if announceRemovalInLab(of: rejected, because: refusal) {
                 markKnown(rejected.labSubject)
                 return resyncWithLab()
             }
@@ -2203,10 +2220,13 @@ public final class CollaborationSession {
                 try? store.withholdFromLab(rejected.labSubject)
                 onSubjectKeptFromLab?(rejected.labSubject, reason)
                 return resyncWithLab()
+            } else if Self.familiesCopiedWhenRefused.contains(rejected.labSubject.family) {
+                onChangeKeptAsCopy?(rejected.labSubject, reason)
+                return resyncWithLab()
             } else {
                 markKnown(rejected.labSubject)
             }
-            onOpRejected?(reason)
+            onOpRejected?(rejected.labSubject, reason)
             resyncWithLab()
         }
     }

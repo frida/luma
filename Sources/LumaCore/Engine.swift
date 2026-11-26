@@ -617,8 +617,13 @@ public final class Engine {
             self?.adoptPatternSources(records)
         }
 
-        collaboration.onOpRejected = { [weak self] reason in
-            self?.emitEngineWarning(subsystem: "collaboration", text: "The lab turned a change away: \(reason)")
+        collaboration.onOpRejected = { [weak self] subject, reason in
+            guard let self else { return }
+            emitEngineWarning(subsystem: "collaboration", text: "The lab turned away your change to “\(name(of: subject))”: \(reason).")
+        }
+
+        collaboration.onChangeKeptAsCopy = { [weak self] subject, reason in
+            self?.keepCopy(of: subject, turnedAwayBecause: reason)
         }
 
         collaboration.onPatternSourceNameTaken = { [weak self] record in
@@ -673,11 +678,17 @@ public final class Engine {
         }
 
         collaboration.onCustomInstrumentRemovedInLab = { [weak self] defID in
-            self?.keepRemovedCustomInstrument(defID)
+            self?.keepCopy(ofCustomInstrument: defID) { name in
+                "“\(name)” was deleted in the lab, so your changes to it are kept here as an instrument the lab does not have. "
+                    + "Add it to the lab again, or delete it."
+            }
         }
 
         collaboration.onPatternRemovedInLab = { [weak self] sourceID in
-            self?.keepRemovedPattern(sourceID)
+            self?.keepCopy(ofPattern: sourceID) { name in
+                "The pattern “\(name)” was deleted in the lab, so your changes to it are kept here "
+                    + "as a pattern the lab does not have. Add it to the lab again, or delete it."
+            }
         }
 
         collaboration.onCustomInstrumentSnapshot = { [weak self] bundles, editors in
@@ -6961,7 +6972,25 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         return wasRunningHere
     }
 
-    private func keepRemovedCustomInstrument(_ defID: UUID) {
+    private func keepCopy(of subject: LabSubject, turnedAwayBecause reason: String) {
+        let name = name(of: subject)
+        let saying = { (what: String) in
+            "The lab turned away your change to “\(name)”: \(reason). The lab's “\(name)” stays as it was, and your version is kept here as "
+                + "\(what) the lab does not have. Add it to the lab again, or delete it."
+        }
+        switch subject.family {
+        case .definition:
+            keepCopy(ofCustomInstrument: subject.id) { _ in saying("an instrument") }
+        case .pattern:
+            keepCopy(ofPattern: subject.id) { _ in saying("a pattern") }
+        case .entry:
+            keepCopy(ofEntry: subject.id, saying: saying("a notebook entry"))
+        default:
+            break
+        }
+    }
+
+    private func keepCopy(ofCustomInstrument defID: UUID, saying reason: (String) -> String) {
         guard let def = try? store.fetchCustomInstrumentDef(id: defID),
             let files = try? store.fetchCustomInstrumentFiles(defID: defID)
         else { return }
@@ -6980,32 +7009,38 @@ public func deleteCustomInstrument(_ defID: UUID) async {
             unlinkInstrumentFolder(defID: defID)
         }
         subjectsKeptFromLab.insert(LabSubject(.definition, copy.id))
-        report(
-            .copyKeptFromLab(LabSubject(.definition, copy.id), name: def.name), in: "collaboration",
-            reason: "“\(def.name)” was deleted in the lab, so your changes to it are kept here as an instrument the lab does not have. "
-                + "Add it to the lab again, or delete it.")
+        report(.copyKeptFromLab(LabSubject(.definition, copy.id), name: def.name), in: "collaboration", reason: reason(def.name))
     }
 
-    private func keepRemovedPattern(_ sourceID: UUID) {
+    private func keepCopy(ofPattern sourceID: UUID, saying reason: (String) -> String) {
         guard var copy = try? store.fetchPatternSource(id: sourceID) else { return }
         copy.id = UUID()
         try? store.withholdFromLab(LabSubject(.pattern, copy.id))
         patterns.adopt(copy)
         subjectsKeptFromLab.insert(LabSubject(.pattern, copy.id))
-        report(
-            .copyKeptFromLab(LabSubject(.pattern, copy.id), name: copy.name), in: "collaboration",
-            reason: "The pattern “\(copy.name)” was deleted in the lab, so your changes to it are kept here "
-                + "as a pattern the lab does not have. Add it to the lab again, or delete it.")
+        report(.copyKeptFromLab(LabSubject(.pattern, copy.id), name: copy.name), in: "collaboration", reason: reason(copy.name))
+    }
+
+    private func keepCopy(ofEntry entryID: UUID, saying reason: String) {
+        guard let original = notebookEntries.first(where: { $0.id == entryID }) else { return }
+        var copy = original
+        copy.id = UUID()
+        try? store.withholdFromLab(LabSubject(.entry, copy.id))
+        addNotebookEntry(copy, after: original)
+        subjectsKeptFromLab.insert(LabSubject(.entry, copy.id))
+        report(.copyKeptFromLab(LabSubject(.entry, copy.id), name: copy.title), in: "collaboration", reason: reason)
     }
 
     private func keepFromLab(_ subject: LabSubject, because reason: String) {
         try? store.withholdFromLab(subject)
         subjectsKeptFromLab.insert(subject)
         let name = name(of: subject)
-        report(
-            .copyKeptFromLab(subject, name: name), in: "collaboration",
-            reason: "“\(name)” is kept here, and the lab does not have it: \(reason).")
+        let concern: LabProblem.Concern = Self.familiesCopiedWhenKept.contains(subject.family)
+            ? .copyKeptFromLab(subject, name: name) : .keptFromLab(subject, name: name)
+        report(concern, in: "collaboration", reason: "“\(name)” is kept here, and the lab does not have it: \(reason).")
     }
+
+    private static let familiesCopiedWhenKept: Set<LabSubject.Family> = [.definition, .pattern, .entry, .mission]
 
     private func name(of subject: LabSubject) -> String {
         switch subject.family {
@@ -7013,7 +7048,12 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         case .pattern: (try? store.fetchPatternSource(id: subject.id))?.name ?? "The pattern"
         case .entry: notebookEntries.first { $0.id == subject.id }?.title ?? "The notebook entry"
         case .mission: (try? store.fetchMission(id: subject.id)).flatMap { $0.title ?? $0.goalText } ?? "The mission"
-        default: "It"
+        case .instrument: instrumentsBySession.values.joined().first { $0.id == subject.id }.map { descriptor(for: $0).displayName } ?? "The instrument"
+        case .session: sessions.first { $0.id == subject.id }?.processName ?? "The session"
+        case .insight: insightsBySession.values.joined().first { $0.id == subject.id }?.userTitle ?? "The insight"
+        case .trace: tracesBySession.values.joined().first { $0.id == subject.id }?.displayName ?? "The trace"
+        case .replCell: (try? store.fetchREPLCell(id: subject.id)).map { String($0.code.prefix(40)) } ?? "The REPL cell"
+        case .objectChat, .objectChatMessage: "The chat"
         }
     }
 
@@ -7040,11 +7080,31 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         switch subject.family {
         case .definition:
             broadcastCustomInstrumentUpsert(defID: subject.id)
+            announceInstances(ofDefinition: subject.id)
         case .pattern:
             guard let record = try? store.fetchPatternSource(id: subject.id) else { return }
             collaboration.enqueuePatternSourceUpsert(record)
+        case .entry:
+            guard let entry = notebookEntries.first(where: { $0.id == subject.id }) else { return }
+            collaboration.enqueueAdd(entry)
         default:
             break
+        }
+    }
+
+    private func announceInstances(ofDefinition defID: UUID) {
+        let known = knownToLab(.instrument)
+        for (sessionID, instances) in instrumentsBySession where localUserHosts(sessionID) && collabSessionID(forSessionID: sessionID) != nil {
+            for instance in instances where instance.kind == .custom && instance.sourceIdentifier == defID.uuidString && !known.contains(instance.id) {
+                let subject = LabSubject(.instrument, instance.id)
+                try? store.releaseToLab(subject)
+                subjectsKeptFromLab.remove(subject)
+                problemsOfThisEngine.removeAll {
+                    if case .keptFromLab(subject, _) = $0.concern { return true }
+                    return false
+                }
+                announce(instance, sessionID: sessionID)
+            }
         }
     }
 
