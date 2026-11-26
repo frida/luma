@@ -152,6 +152,22 @@ extension CustomInstrumentDef {
         Self.childrenProblem(children, pageWidgets: widgets)
     }
 
+    public var childrenProblemSentence: String? {
+        childrenProblem.map { "\(place(of: $0.path)): \($0.text)" }
+    }
+
+    private func place(of path: [InstrumentWidget.Problem.Step]) -> String {
+        guard path.count > 2, path[1] == .key("children") else { return "Widgets" }
+        guard case .index(let index) = path[2], children.indices.contains(index) else { return "Kinds of child" }
+        let kind = children[index]
+        let name = kind.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        var place = name.isEmpty ? "Kind of child \(index + 1)" : "Kind of child “\(name)”"
+        if path.count > 4, path[3] == .key("widgets"), case .index(let widgetIndex) = path[4], kind.widgets.indices.contains(widgetIndex) {
+            place += ", widget “\(kind.widgets[widgetIndex].label)”"
+        }
+        return place
+    }
+
     static func childrenProblem(_ templates: [InstrumentChildTemplate], pageWidgets: [InstrumentWidget]) -> InstrumentWidget.Problem? {
         let base: [InstrumentWidget.Problem.Step] = [.key("luma"), .key("children")]
         if let text = InstrumentChildTemplate.countProblem(templates, pageWidgets: pageWidgets.count) {

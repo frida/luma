@@ -95,8 +95,8 @@ struct CustomInstrumentWidgetsSheet: View {
         if let layoutProblem = savedLayout?.problem(placing: draft.widgets, keys: .camelCase, widgetsName: "widgets", layoutName: "layout") {
             problems.append("layout\(InstrumentLayout.text(of: layoutProblem.path)): \(layoutProblem.text)")
         }
-        if let childrenProblem = draft.childrenProblem {
-            problems.append("\(InstrumentLayout.text(of: childrenProblem.path).dropFirst()): \(childrenProblem.text)")
+        if let childrenProblem = draft.childrenProblemSentence {
+            problems.append(childrenProblem)
         }
         return problems
     }

@@ -4825,10 +4825,8 @@ public final class Engine {
     }
 
     public func updateCustomInstrument(_ def: CustomInstrumentDef) {
-        if let problem = def.childrenProblem {
-            emitEngineError(
-                subsystem: "instruments",
-                text: "“\(def.name)” was not saved: \(InstrumentLayout.text(of: problem.path).dropFirst()): \(problem.text)")
+        if let problem = def.childrenProblemSentence {
+            emitEngineError(subsystem: "instruments", text: "“\(def.name)” was not saved: \(problem)")
             return
         }
         var updated = def

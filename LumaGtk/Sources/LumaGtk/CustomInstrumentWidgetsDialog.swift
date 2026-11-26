@@ -369,7 +369,7 @@ final class CustomInstrumentWidgetsDialog {
         if let text = InstrumentLayoutDesigner.savingProblem(layout: pageLayout, widgets: pageWidgets) {
             return text
         }
-        return candidate.childrenProblem.map { "\(Self.describe($0.path)): \($0.text)" }
+        return candidate.childrenProblemSentence
     }
 
     private var candidate: CustomInstrumentDef {
