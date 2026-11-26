@@ -92,13 +92,24 @@ public struct CustomInstrumentBundle: Sendable, Equatable {
             return "“\(def.name)” has \(files.count) files; a lab takes at most \(Self.labMaxFiles)"
         }
         if let large = files.first(where: { $0.content.utf8.count > Self.labMaxFileBytes }) {
-            return "“\(def.name)” has \(large.path) at \(large.content.utf8.count / 1024) KiB; a lab takes files of at most \(Self.labMaxFileBytes / 1024) KiB"
+            let (size, cap) = Self.sizes(large.content.utf8.count, over: Self.labMaxFileBytes, unit: 1024, unitName: "KiB")
+            return "“\(def.name)” has \(large.path) at \(size); a lab takes files of at most \(cap)"
         }
         let total = files.reduce(0) { $0 + $1.content.utf8.count }
         if total > Self.labMaxTotalBytes {
-            return "“\(def.name)” has \(total / 1024 / 1024) MiB of files; a lab takes at most \(Self.labMaxTotalBytes / 1024 / 1024) MiB"
+            let (size, cap) = Self.sizes(total, over: Self.labMaxTotalBytes, unit: 1024 * 1024, unitName: "MiB")
+            return "“\(def.name)” has \(size) of files; a lab takes at most \(cap)"
         }
         return nil
+    }
+
+    private static func sizes(_ bytes: Int, over cap: Int, unit: Int, unitName: String) -> (size: String, cap: String) {
+        let tenths = (bytes * 10 + unit - 1) / unit
+        let capUnits = cap / unit
+        if tenths <= capUnits * 10 {
+            return ("\(bytes) bytes", "\(cap) bytes (\(capUnits) \(unitName))")
+        }
+        return (String(format: "%.1f \(unitName)", Double(tenths) / 10), "\(capUnits) \(unitName)")
     }
 
     public var def: CustomInstrumentDef
