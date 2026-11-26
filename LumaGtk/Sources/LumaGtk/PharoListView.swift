@@ -15,7 +15,8 @@ final class PharoListView {
 
     private let source: any PharoViewSource
     private let selector: String
-    private let titles: [String]
+    private let columns: [PharoColumn]
+    private let isSized: Bool
     private let onDrill: (PharoObject) -> Void
 
     private let search: SearchEntry
@@ -23,6 +24,7 @@ final class PharoListView {
     private let groups = ColumnAlignment()
     private let showMore: Button
     private let failureLabel: Label
+    private let scroll = ScrolledWindow()
 
     private var loaded = 0
     private var total = 0
@@ -30,13 +32,24 @@ final class PharoListView {
     private var query = ""
     private var reloadToken = 0
 
+    private var sample: (rows: [[PharoCell]], total: Int)?
+    private var layout: PharoTableLayout?
+    private var widths: [Double?] = []
+    private var fittedPage = 0.0
+    private var header: [Widget] = []
+    private var lines: [[Widget]] = []
+
     private let pageSize = 50
     private let searchThreshold = 12
+    private static let rowChrome = 28.0
+    private static let spacing = 16.0
 
     init(source: any PharoViewSource, view: PharoViewDeclaration, onDrill: @escaping (PharoObject) -> Void) {
         self.source = source
         self.selector = view.methodSelector
-        self.titles = (view.columns ?? []).map(\.title)
+        let columns = view.columns ?? []
+        self.columns = columns
+        self.isSized = PharoTableLayout.isDeclared(columns)
         self.onDrill = onDrill
 
         search = SearchEntry()
@@ -92,7 +105,13 @@ final class PharoListView {
 
     func refresh() {
         reloadToken += 1
+        sample = nil
+        layout = nil
         loadPage(from: 1, count: max(loaded, pageSize), replacing: true)
+    }
+
+    private var titles: [String] {
+        columns.map(\.title)
     }
 
     private func scroller() -> ScrolledWindow {
@@ -103,11 +122,16 @@ final class PharoListView {
         }
         inner.append(child: rows)
 
-        let scroll = ScrolledWindow()
         scroll.hexpand = true
         scroll.vexpand = true
         scroll.propagateNaturalWidth = false
         scroll.set(child: inner)
+        if isSized {
+            scroll.setPolicy(hscrollbarPolicy: .external, vscrollbarPolicy: .automatic)
+            scroll.hadjustment.onChanged { [weak self] _ in
+                MainActor.assumeIsolated { self?.fitColumns() }
+            }
+        }
         return scroll
     }
 
@@ -154,8 +178,14 @@ final class PharoListView {
                     clearRows()
                     loaded = 0
                 }
+                if isSized, sample == nil {
+                    sample = (page.items, page.total)
+                }
                 for cells in page.items {
                     rows.append(child: itemRow(cells))
+                }
+                if layout == nil {
+                    fitColumns()
                 }
                 loaded += page.items.count
                 total = page.total
@@ -203,6 +233,7 @@ final class PharoListView {
             label.add(cssClass: "caption-heading")
             groups.join(label, at: index)
             row.append(child: label)
+            header.append(label)
         }
         return row
     }
@@ -213,9 +244,15 @@ final class PharoListView {
         line.marginEnd = 8
         line.marginTop = 4
         line.marginBottom = 4
-        for (index, cell) in cells.enumerated() {
-            let expands = index == cells.count - 1
-            line.append(child: cellWidget(cell, at: index, expands: expands, dim: cells.count > 1 && index == 0))
+        let widgets = cells.enumerated().map { index, cell in
+            cellWidget(cell, at: index, expands: index == cells.count - 1, dim: cells.count > 1 && index == 0)
+        }
+        for widget in widgets {
+            line.append(child: widget)
+        }
+        if isSized {
+            lines.append(widgets)
+            size(widgets)
         }
         let row = ListBoxRow()
         row.set(child: line)
@@ -275,6 +312,50 @@ final class PharoListView {
     private func clearRows() {
         while let existing = rows.getFirstChild() {
             rows.remove(child: existing)
+        }
+        lines.removeAll()
+    }
+
+    private func fitColumns() {
+        let page = scroll.hadjustment.pageSize
+        guard isSized, page > 0, let sample, let probe = lines.first?.first as? Label else { return }
+        if layout == nil {
+            layout = PharoTableLayout(columns: columns, rows: sample.rows, total: sample.total, metrics: metrics(of: probe))
+        } else if page == fittedPage {
+            return
+        }
+        fittedPage = page
+        widths = layout!.widths(in: page - Self.rowChrome)
+        for line in [header] + lines {
+            size(line)
+        }
+    }
+
+    private func metrics(of probe: Label) -> PharoTableLayout.Metrics {
+        let digits = 10
+        var width: Int32 = 0
+        probe.createPangoLayout(text: String(repeating: "0", count: digits)).getPixelSize(width: &width)
+        let character = Double(width) / Double(digits)
+        return PharoTableLayout.Metrics(measure: { Double($0.count) * character }, iconWidth: 16, padding: 0, spacing: Self.spacing)
+    }
+
+    private func size(_ line: [Widget]) {
+        guard let layout else { return }
+        let last = widths.lastIndex { $0 != nil }
+        for (column, widget) in line.enumerated() {
+            guard let width = widths[column] else {
+                widget.visible = false
+                continue
+            }
+            widget.visible = true
+            widget.setSizeRequest(width: Int(width), height: -1)
+            widget.hexpand = column == last
+            widget.marginEnd = column == last ? 0 : Int(Self.spacing)
+            if let label = widget as? Label {
+                label.ellipsize = .end
+                label.maxWidthChars = 1
+                label.tooltipText = layout.fit(of: column, width: width) == .truncated ? label.label : nil
+            }
         }
     }
 
