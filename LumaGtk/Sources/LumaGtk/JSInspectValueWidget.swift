@@ -138,25 +138,20 @@ final class JSInspectValueWidget {
             return labelWithMarkup(span("{}", color: cyan))
         }
         let body = makeBodyBox()
-        appendChunkedRows(into: body, children: InspectedChildren(.properties, total: props.count), onExpand: onExpand, keepAlive: &keepAlive) { idx, keepers in
-            let prop = props[idx]
-            let row = Box(orientation: .horizontal, spacing: 4)
-            row.hexpand = true
-            let key = labelWithMarkup(span(escape(prop.displayKey + ":"), color: green))
-            key.valign = .start
-            row.append(child: key)
-            let child = build(value: prop.value, depth: depth + 1, engine: engine, sessionID: sessionID, stored: stored, onExpand: onExpand, keepAlive: &keepers)
-            child.hexpand = true
-            row.append(child: child)
-            return row
+        return makeExpander(title: "Object{\(props.count)}", preview: preview, color: cyan, depth: depth, body: body, keepAlive: &keepAlive) { keepers in
+            appendChunkedRows(into: body, children: InspectedChildren(.properties, total: props.count), onExpand: onExpand, keepAlive: &keepers) { idx, keepers in
+                let prop = props[idx]
+                let row = Box(orientation: .horizontal, spacing: 4)
+                row.hexpand = true
+                let key = labelWithMarkup(span(escape(prop.displayKey + ":"), color: green))
+                key.valign = .start
+                row.append(child: key)
+                let child = build(value: prop.value, depth: depth + 1, engine: engine, sessionID: sessionID, stored: stored, onExpand: onExpand, keepAlive: &keepers)
+                child.hexpand = true
+                row.append(child: child)
+                return row
+            }
         }
-        return makeExpander(
-            title: "Object{\(props.count)}",
-            preview: preview,
-            color: cyan,
-            depth: depth,
-            body: body
-        )
     }
 
     private static func makeArrayExpander(
@@ -173,24 +168,19 @@ final class JSInspectValueWidget {
             return labelWithMarkup(span("[]", color: cyan))
         }
         let body = makeBodyBox()
-        appendChunkedRows(into: body, children: InspectedChildren(.items, total: elements.count), onExpand: onExpand, keepAlive: &keepAlive) { idx, keepers in
-            let row = Box(orientation: .horizontal, spacing: 4)
-            row.hexpand = true
-            let indexLabel = labelWithMarkup(span("[\(idx)]", color: dim))
-            indexLabel.valign = .start
-            row.append(child: indexLabel)
-            let child = build(value: elements[idx], depth: depth + 1, engine: engine, sessionID: sessionID, stored: stored, onExpand: onExpand, keepAlive: &keepers)
-            child.hexpand = true
-            row.append(child: child)
-            return row
+        return makeExpander(title: "Array[\(elements.count)]", preview: preview, color: cyan, depth: depth, body: body, keepAlive: &keepAlive) { keepers in
+            appendChunkedRows(into: body, children: InspectedChildren(.items, total: elements.count), onExpand: onExpand, keepAlive: &keepers) { idx, keepers in
+                let row = Box(orientation: .horizontal, spacing: 4)
+                row.hexpand = true
+                let indexLabel = labelWithMarkup(span("[\(idx)]", color: dim))
+                indexLabel.valign = .start
+                row.append(child: indexLabel)
+                let child = build(value: elements[idx], depth: depth + 1, engine: engine, sessionID: sessionID, stored: stored, onExpand: onExpand, keepAlive: &keepers)
+                child.hexpand = true
+                row.append(child: child)
+                return row
+            }
         }
-        return makeExpander(
-            title: "Array[\(elements.count)]",
-            preview: preview,
-            color: cyan,
-            depth: depth,
-            body: body
-        )
     }
 
     private static func makeMapExpander(
@@ -207,22 +197,23 @@ final class JSInspectValueWidget {
             return labelWithMarkup(span("Map{}", color: cyan))
         }
         let body = makeBodyBox()
-        appendChunkedRows(into: body, children: InspectedChildren(.entries, total: entries.count), onExpand: onExpand, keepAlive: &keepAlive) { idx, keepers in
-            let entry = entries[idx]
-            let row = Box(orientation: .horizontal, spacing: 4)
-            row.hexpand = true
-            let keyChild = build(value: entry.key, depth: depth + 1, engine: engine, sessionID: sessionID, stored: stored, onExpand: onExpand, keepAlive: &keepers)
-            keyChild.valign = .start
-            row.append(child: keyChild)
-            let arrow = labelWithMarkup(span("→", color: dim))
-            arrow.valign = .start
-            row.append(child: arrow)
-            let valChild = build(value: entry.value, depth: depth + 1, engine: engine, sessionID: sessionID, stored: stored, onExpand: onExpand, keepAlive: &keepers)
-            valChild.hexpand = true
-            row.append(child: valChild)
-            return row
+        return makeExpander(title: "Map{\(entries.count)}", preview: preview, color: cyan, depth: depth, body: body, keepAlive: &keepAlive) { keepers in
+            appendChunkedRows(into: body, children: InspectedChildren(.entries, total: entries.count), onExpand: onExpand, keepAlive: &keepers) { idx, keepers in
+                let entry = entries[idx]
+                let row = Box(orientation: .horizontal, spacing: 4)
+                row.hexpand = true
+                let keyChild = build(value: entry.key, depth: depth + 1, engine: engine, sessionID: sessionID, stored: stored, onExpand: onExpand, keepAlive: &keepers)
+                keyChild.valign = .start
+                row.append(child: keyChild)
+                let arrow = labelWithMarkup(span("→", color: dim))
+                arrow.valign = .start
+                row.append(child: arrow)
+                let valChild = build(value: entry.value, depth: depth + 1, engine: engine, sessionID: sessionID, stored: stored, onExpand: onExpand, keepAlive: &keepers)
+                valChild.hexpand = true
+                row.append(child: valChild)
+                return row
+            }
         }
-        return makeExpander(title: "Map{\(entries.count)}", preview: preview, color: cyan, depth: depth, body: body)
     }
 
     private static func makeSetExpander(
@@ -239,18 +230,19 @@ final class JSInspectValueWidget {
             return labelWithMarkup(span("Set{}", color: cyan))
         }
         let body = makeBodyBox()
-        appendChunkedRows(into: body, children: InspectedChildren(.items, total: elements.count), onExpand: onExpand, keepAlive: &keepAlive) { idx, keepers in
-            let row = Box(orientation: .horizontal, spacing: 4)
-            row.hexpand = true
-            let bullet = labelWithMarkup(span("•", color: dim))
-            bullet.valign = .start
-            row.append(child: bullet)
-            let child = build(value: elements[idx], depth: depth + 1, engine: engine, sessionID: sessionID, stored: stored, onExpand: onExpand, keepAlive: &keepers)
-            child.hexpand = true
-            row.append(child: child)
-            return row
+        return makeExpander(title: "Set{\(elements.count)}", preview: preview, color: cyan, depth: depth, body: body, keepAlive: &keepAlive) { keepers in
+            appendChunkedRows(into: body, children: InspectedChildren(.items, total: elements.count), onExpand: onExpand, keepAlive: &keepers) { idx, keepers in
+                let row = Box(orientation: .horizontal, spacing: 4)
+                row.hexpand = true
+                let bullet = labelWithMarkup(span("•", color: dim))
+                bullet.valign = .start
+                row.append(child: bullet)
+                let child = build(value: elements[idx], depth: depth + 1, engine: engine, sessionID: sessionID, stored: stored, onExpand: onExpand, keepAlive: &keepers)
+                child.hexpand = true
+                row.append(child: child)
+                return row
+            }
         }
-        return makeExpander(title: "Set{\(elements.count)}", preview: preview, color: cyan, depth: depth, body: body)
     }
 
     private static func isComposite(_ value: JSInspectValue) -> Bool {
@@ -294,7 +286,9 @@ final class JSInspectValueWidget {
         pager.installButton()
     }
 
-    private static func makeExpander(title: String, preview: String?, color: String, depth: Int, body: Widget) -> Widget {
+    private static func makeExpander(
+        title: String, preview: String?, color: String, depth: Int, body: Widget, keepAlive: inout [Any], fill: @escaping (inout [Any]) -> Void
+    ) -> Widget {
         let expander = Expander(label: "")
         expander.add(cssClass: "luma-js-expander")
         let initiallyExpanded = (depth == 0)
@@ -306,10 +300,18 @@ final class JSInspectValueWidget {
         titleLabel.halign = .start
         expander.set(labelWidget: titleLabel)
         expander.set(child: body)
-        expander.onNotifyExpanded { [titleLabel] expander, _ in
+        let deferred = DeferredBody(fill: fill)
+        keepAlive.append(deferred)
+        if initiallyExpanded {
+            deferred.fillOnce()
+        }
+        expander.onNotifyExpanded { [titleLabel, deferred] expander, _ in
             MainActor.assumeIsolated {
                 let visiblePreview = expander.expanded ? nil : preview
                 titleLabel.setMarkup(str: headerMarkup(title: title, preview: visiblePreview, color: color))
+                if expander.expanded {
+                    deferred.fillOnce()
+                }
             }
         }
         return expander
@@ -461,4 +463,20 @@ final class JSInspectValueWidget {
         return label
     }
 
+}
+
+@MainActor
+private final class DeferredBody {
+    private var fill: ((inout [Any]) -> Void)?
+    private var keepers: [Any] = []
+
+    init(fill: @escaping (inout [Any]) -> Void) {
+        self.fill = fill
+    }
+
+    func fillOnce() {
+        guard let fill else { return }
+        self.fill = nil
+        fill(&keepers)
+    }
 }
