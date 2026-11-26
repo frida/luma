@@ -1025,12 +1025,11 @@ final class EventStreamPane {
     private func attachRowContextMenu(to row: Box, event: RuntimeEvent) {
         let gesture = GestureClick()
         gesture.set(button: 3)
-        let anchor = widget
-        gesture.onPressed { [weak self, row, anchor] _, _, x, y in
+        gesture.onPressed { [weak self] gesture, _, x, y in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                let (tx, ty) = computePoint(x: x, y: y, from: row, to: anchor)
-                self.presentRowContextMenu(at: anchor, x: tx, y: ty, event: event)
+                let (tx, ty) = computePoint(x: x, y: y, from: gesture.widget, to: self.widget)
+                self.presentRowContextMenu(at: self.widget, x: tx, y: ty, event: event)
             }
         }
         row.add(controller: gesture)

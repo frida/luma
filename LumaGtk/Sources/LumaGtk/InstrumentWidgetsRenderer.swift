@@ -640,15 +640,17 @@ private final class ConsoleWidget {
     private func attachContextMenu(to anchor: Box, entry: WidgetConsoleEntry) {
         let gesture = GestureClick()
         gesture.set(button: 3)
-        gesture.onPressed { [weak self, anchor] _, _, x, y in
+        gesture.propagationPhase = .capture
+        gesture.onPressed { [weak self] gesture, _, x, y in
             MainActor.assumeIsolated {
-                self?.presentRowContextMenu(at: anchor, x: x, y: y, entry: entry)
+                _ = gesture.set(state: .claimed)
+                self?.presentRowContextMenu(at: gesture.widget, x: x, y: y, entry: entry)
             }
         }
         anchor.add(controller: gesture)
     }
 
-    private func presentRowContextMenu(at anchor: Widget, x: Double, y: Double, entry: WidgetConsoleEntry) {
+    private func presentRowContextMenu(at anchor: WidgetRef, x: Double, y: Double, entry: WidgetConsoleEntry) {
         ContextMenu.present([
             [
                 .init("Copy Entry") { Display.getDefault()?.clipboard.set(text: entry.text) },
