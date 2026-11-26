@@ -400,21 +400,42 @@ private struct WidgetCanvas: View {
     private func counterView(_ cfg: InstrumentWidget.CounterConfig) -> some View {
         if let value = state.counter {
             let text = engine.counterText(value, instanceID: instance?.id, widget: slot)
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(text.value)
-                    .font(.system(size: 28, weight: .semibold, design: .rounded))
-                if let unit = value.unit ?? cfg.unit {
-                    Text(unit).foregroundStyle(.secondary)
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    counterFigure(text.value)
+                    counterCaption(value, text: text, cfg: cfg)
+                    Spacer()
                 }
-                if let delta = value.delta, let deltaText = text.delta {
-                    Text(deltaText)
-                        .font(.caption)
-                        .foregroundStyle(delta >= 0 ? .green : .red)
+                VStack(alignment: .leading, spacing: 2) {
+                    counterFigure(text.value)
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        counterCaption(value, text: text, cfg: cfg)
+                    }
                 }
-                Spacer()
             }
         } else {
             Text("No data.").font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private func counterFigure(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 28, weight: .semibold, design: .rounded))
+            .lineLimit(1)
+            .minimumScaleFactor(0.4)
+    }
+
+    @ViewBuilder
+    private func counterCaption(_ value: WidgetCounterValue, text: CounterText, cfg: InstrumentWidget.CounterConfig) -> some View {
+        if let unit = value.unit ?? cfg.unit {
+            Text(unit)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        if let delta = value.delta, let deltaText = text.delta {
+            Text(deltaText)
+                .font(.caption)
+                .foregroundStyle(delta >= 0 ? .green : .red)
         }
     }
 
