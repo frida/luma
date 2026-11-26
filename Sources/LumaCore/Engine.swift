@@ -4517,6 +4517,7 @@ public final class Engine {
         config: CustomInstrumentConfig,
         on node: ProcessNode
     ) async throws -> Bool {
+        consoleEntriesDropped = consoleEntriesDropped.filter { $0.key.instanceID != instanceID }
         let def = bundle.def
         guard await instrumentViews.isAllowed(instanceID) else {
             broadcastInstrumentStatus(instanceID: instanceID, sessionID: node.sessionID)
