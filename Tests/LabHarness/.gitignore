@@ -1,0 +1,5 @@
+/.build/
+/.swiftpm/
+/runs/
+/lab/run/
+__pycache__/
