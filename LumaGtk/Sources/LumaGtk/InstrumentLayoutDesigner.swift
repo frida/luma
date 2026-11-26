@@ -839,7 +839,7 @@ enum LayoutCommand: CaseIterable {
         case .moveRight: return [Gdk.keyRight]
         case .placeBelow: return [Gdk.keyp]
         case .placeBeside: return [Gdk.keyb]
-        case .removeFromLayout: return [Gdk.keyDelete]
+        case .removeFromLayout: return [Gdk.keyDelete, Gdk.keyBackSpace]
         case .resetToStack: return [Gdk.key0, Gdk.keyparenright]
         }
     }
