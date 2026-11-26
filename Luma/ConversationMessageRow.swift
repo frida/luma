@@ -106,6 +106,23 @@ struct ConversationBubble: View {
     }
 }
 
+struct ConversationErrorCard: View {
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.red)
+            Text(text)
+                .textSelection(.enabled)
+        }
+        .font(.callout)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(Color.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
 struct ConversationEditableMessage<Row: View>: View {
     let isEditing: Bool
     var editFocus: FocusState<Bool>.Binding

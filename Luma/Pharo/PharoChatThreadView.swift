@@ -317,7 +317,8 @@ struct PharoChatThreadView: View {
     private func answer(_ message: ObjectChatMessage, calls: [ObjectChatToolCall]) -> some View {
         ConversationMessageRow(message: message, isMine: chats.isMine(message), isEditing: false, editingDraft: .constant("")) {
             VStack(alignment: .leading, spacing: 6) {
-                ForEach(PharoChatSegment.split(message.bodyMarkdown, around: calls)) { segment in
+                let segments = PharoChatSegment.split(message.bodyMarkdown, around: calls)
+                ForEach(segments) { segment in
                     switch segment {
                     case .text(let text, _):
                         ConversationBubble(markdown: text, speaker: .assistant)
@@ -326,10 +327,9 @@ struct PharoChatThreadView: View {
                     }
                 }
                 if let error = message.error {
-                    Text(error)
-                        .font(.footnote)
-                        .foregroundStyle(.red)
-                        .textSelection(.enabled)
+                    ConversationErrorCard(text: error)
+                } else if segments.isEmpty {
+                    ConversationBubble(markdown: "", speaker: .assistant)
                 }
                 if let reason = chats.unsent[message.id] {
                     unsentNotice(for: message, reason: reason)
@@ -375,7 +375,7 @@ private enum PharoChatSegment: Identifiable {
             segments.append(.call(call))
         }
         segments += piece(of: text, from: cursor, to: text.count)
-        return segments.isEmpty ? [.text("", at: 0)] : segments
+        return segments
     }
 
     private static func piece(of text: String, from start: Int, to end: Int) -> [PharoChatSegment] {
