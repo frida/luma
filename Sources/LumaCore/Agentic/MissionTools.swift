@@ -1234,7 +1234,7 @@ public enum MissionTools {
             let processName = sessionID.flatMap { id in engine.sessions.first(where: { $0.id == id })?.processName }
             let entry = NotebookEntry(
                 kind: kind,
-                title: title,
+                title: title.withoutInlineMarkdown,
                 details: details,
                 sessionID: sessionID,
                 processName: processName
@@ -1263,7 +1263,7 @@ public enum MissionTools {
                 return errorResult("no notebook entry with id \(entryID)", code: .notFound)
             }
             if let title = invocation.args["title"] as? String, !title.isEmpty {
-                entry.title = title
+                entry.title = title.withoutInlineMarkdown
             }
             if let details = invocation.args["details"] as? String {
                 entry.details = details
@@ -3216,7 +3216,7 @@ public enum MissionTools {
             let sessionID = parseSessionID(invocation.args)
             let finding = MissionFinding(
                 missionID: invocation.mission.id,
-                title: title,
+                title: title.withoutInlineMarkdown,
                 bodyMarkdown: body,
                 confidence: confidence,
                 kind: kind,
@@ -3707,7 +3707,7 @@ public enum MissionTools {
                 return errorResult("must supply either 'address' or 'anchor'", code: .invalidInput)
             }
 
-            let title = (invocation.args["title"] as? String) ?? finding.title
+            let title = ((invocation.args["title"] as? String) ?? finding.title).withoutInlineMarkdown
             let insight = AddressInsight(sessionID: sessionID, userTitle: title, kind: insightKind, anchor: anchor)
 
             do {
@@ -3800,7 +3800,7 @@ public enum MissionTools {
             guard let raw = invocation.args["title"] as? String else {
                 return errorResult("missing title", code: .invalidInput)
             }
-            let title = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            let title = raw.withoutInlineMarkdown.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !title.isEmpty else {
                 return errorResult("title must be non-empty", code: .invalidInput)
             }
@@ -4416,5 +4416,22 @@ public enum MissionTools {
             }
         }
         return out
+    }
+}
+
+extension String {
+    var withoutInlineMarkdown: String {
+        let unheaded = replacingOccurrences(of: #"^\s*#{1,6}\s+"#, with: "", options: .regularExpression)
+        return unheaded.split(separator: "`", omittingEmptySubsequences: false).enumerated()
+            .map { index, part in index.isMultiple(of: 2) ? Self.withoutEmphasis(String(part)) : String(part) }
+            .joined()
+    }
+
+    private static func withoutEmphasis(_ text: String) -> String {
+        var plain = text.replacingOccurrences(of: #"\[([^\]]*)\]\([^)]*\)"#, with: "$1", options: .regularExpression)
+        plain = plain.replacingOccurrences(of: "**", with: "")
+        plain = plain.replacingOccurrences(of: #"(?<!\w)__(?!\s)(.+?)(?<!\s)__(?!\w)"#, with: "$1", options: .regularExpression)
+        plain = plain.replacingOccurrences(of: #"(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])"#, with: "$1", options: .regularExpression)
+        return plain.replacingOccurrences(of: #"(?<![\w_])_(?!\s)(.+?)(?<!\s)_(?![\w_])"#, with: "$1", options: .regularExpression)
     }
 }

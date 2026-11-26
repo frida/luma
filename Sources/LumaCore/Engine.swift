@@ -6672,11 +6672,12 @@ public func deleteCustomInstrument(_ defID: UUID) async {
 
     private func sanitizeMissionTitle(_ raw: String) -> String {
         var trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        trimmed = trimmed.trimmingCharacters(in: CharacterSet(charactersIn: "\"'.!?:;"))
         if let nl = trimmed.firstIndex(of: "\n") {
-            trimmed = String(trimmed[..<nl]).trimmingCharacters(in: .whitespacesAndNewlines)
+            trimmed = String(trimmed[..<nl])
         }
-        return trimmed
+        return trimmed.withoutInlineMarkdown
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "\"'.!?:;"))
     }
 
     public func cancelMission(missionID: UUID) {
