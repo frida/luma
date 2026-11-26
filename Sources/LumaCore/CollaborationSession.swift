@@ -406,9 +406,14 @@ public final class CollaborationSession {
                 setStatus(.error(message: failure.message))
                 await onAuthRejected?(failure)
             } else {
-                setStatus(.error(message: error.localizedDescription))
+                setStatus(.error(message: Self.connectFailure(error)))
             }
         }
+    }
+
+    private static func connectFailure(_ error: any Swift.Error) -> String {
+        guard let failure = (error as? AuthFailure) ?? AuthFailure.fromError(error) else { return "Could not reach the lab's server." }
+        return failure.code == "detached" ? "The connection to the lab's server was lost." : failure.message
     }
 
     public func stop() async {
