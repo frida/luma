@@ -141,8 +141,8 @@ private struct SidebarPatternRow: View {
             Text(source.name)
                 .lineLimit(1)
                 .truncationMode(.tail)
-            if keptSubject != nil {
-                NotInLabMark()
+            if let keptSubject {
+                NotInLabMark(reason: engine.keptFromLabReason(keptSubject))
                     .padding(.leading, 6)
             }
             Spacer(minLength: 0)

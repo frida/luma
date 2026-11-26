@@ -7077,6 +7077,16 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         emitEngineWarning(subsystem: subsystem, text: reason)
     }
 
+    public func keptFromLabReason(_ subject: LabSubject) -> String {
+        if let reason = problemsOfThisEngine.last(where: { $0.concern.keeps(subject) })?.reason {
+            return reason
+        }
+        let labHoldsEarlier = (try? store.subjectsKnownToLab(subject.family))?.contains(subject.id) == true
+        return labHoldsEarlier
+            ? "Your version is kept only here, and the lab still has the earlier one. Add it to the lab, or delete it."
+            : "It is kept only here, and the lab does not have it. Add it to the lab, or delete it."
+    }
+
     public func canShow(_ subject: LabSubject) -> Bool {
         switch subject.family {
         case .definition, .pattern, .entry, .mission: true

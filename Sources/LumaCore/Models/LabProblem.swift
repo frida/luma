@@ -7,6 +7,13 @@ public struct LabProblem: Identifiable, Sendable, Equatable {
         case missionStoppedByOwner(missionID: UUID, title: String)
         case copyKeptFromLab(LabSubject, name: String)
         case keptFromLab(LabSubject, name: String)
+
+        func keeps(_ subject: LabSubject) -> Bool {
+            switch self {
+            case .copyKeptFromLab(let kept, _), .keptFromLab(let kept, _): kept == subject
+            default: false
+            }
+        }
     }
 
     public let id: UUID

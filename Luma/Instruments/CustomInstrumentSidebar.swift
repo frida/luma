@@ -79,7 +79,7 @@ struct SidebarCustomInstrumentDefRow: View {
                     .accessibilityIdentifier("sidebar.customInstrumentUpdate.\(def.id.uuidString)")
             }
             if engine.isKeptFromLab(LabSubject(.definition, def.id)) {
-                NotInLabMark()
+                NotInLabMark(reason: engine.keptFromLabReason(LabSubject(.definition, def.id)))
                     .padding(.leading, 6)
             }
             Spacer()

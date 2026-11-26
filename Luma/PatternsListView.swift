@@ -185,8 +185,8 @@ private struct PatternListRow: View {
                 HStack(spacing: 6) {
                     Text(source.name)
                         .font(.headline)
-                    if source.keptFromLab(in: engine) != nil {
-                        NotInLabMark()
+                    if let kept = source.keptFromLab(in: engine) {
+                        NotInLabMark(reason: engine.keptFromLabReason(kept))
                     }
                 }
                 Text(source.originDescription)

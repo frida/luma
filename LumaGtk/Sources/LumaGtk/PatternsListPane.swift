@@ -211,8 +211,8 @@ final class PatternsListPane {
         text.append(child: path)
         box.append(child: text)
 
-        if MainWindow.keptFromLab(.pattern, source.id, in: engine) != nil {
-            box.append(child: MainWindow.makeKeptFromLabMark())
+        if let kept = MainWindow.keptFromLab(.pattern, source.id, in: engine) {
+            box.append(child: MainWindow.makeKeptFromLabMark(reason: engine.keptFromLabReason(kept)))
         }
 
         let kind = Label(str: source.kind.title)

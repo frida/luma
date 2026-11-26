@@ -1602,8 +1602,8 @@ final class MainWindow: InstrumentUIHost {
         let label = Label(str: def.name)
         label.halign = .start
         box.append(child: label)
-        if MainWindow.keptFromLab(.definition, def.id.uuidString, in: engine!) != nil {
-            let keptMark = MainWindow.makeKeptFromLabMark()
+        if let kept = MainWindow.keptFromLab(.definition, def.id.uuidString, in: engine!) {
+            let keptMark = MainWindow.makeKeptFromLabMark(reason: engine!.keptFromLabReason(kept))
             keptMark.marginStart = MainWindow.sidebarIconToLabelSpacing
             box.append(child: keptMark)
         }
@@ -1627,12 +1627,11 @@ final class MainWindow: InstrumentUIHost {
         return engine.subjectsKeptFromLab.first { $0.family == family && $0.id.uuidString == id }
     }
 
-    static func makeKeptFromLabMark() -> Label {
+    static func makeKeptFromLabMark(reason: String) -> Label {
         let mark = Label(str: "Not in the lab")
         mark.add(cssClass: "caption")
         mark.add(cssClass: "dim-label")
-        mark.tooltipText =
-            "A member deleted it in the lab after you changed it, so your version is kept only here. Add it to the lab again, or delete it."
+        mark.tooltipText = reason
         return mark
     }
 

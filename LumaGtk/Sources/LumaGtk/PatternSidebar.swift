@@ -293,8 +293,8 @@ final class PatternSidebar {
         label.halign = .start
         label.ellipsize = .end
         box.append(child: label)
-        if MainWindow.keptFromLab(.pattern, source.id, in: engine) != nil {
-            let keptMark = MainWindow.makeKeptFromLabMark()
+        if let kept = MainWindow.keptFromLab(.pattern, source.id, in: engine) {
+            let keptMark = MainWindow.makeKeptFromLabMark(reason: engine.keptFromLabReason(kept))
             keptMark.marginStart = 6
             box.append(child: keptMark)
         }
