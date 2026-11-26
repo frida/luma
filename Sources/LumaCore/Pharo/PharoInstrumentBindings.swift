@@ -32,7 +32,7 @@ enum PharoInstrumentBindings {
         viewing := ProcessLocalVariable << #LumaViewing slots: {}; package: 'Luma'; install.
         viewing compile: 'isInheritable ^ true'.
 
-        code := Object << #LumaInstrumentCode slots: { #environment. #problems }; sharedVariables: { #Loaded }; package: 'Luma'; install.
+        code := Object << #LumaInstrumentCode slots: { #environment. #problems. #sources }; sharedVariables: { #Loaded }; package: 'Luma'; install.
         code class compile: 'load: aKey
             | loading |
             (self loaded includesKey: aKey) ifTrue: [ ^ self loaded at: aKey ].
@@ -49,14 +49,22 @@ enum PharoInstrumentBindings {
             ^ Loaded'.
         code compile: 'initialize
             environment := LumaInstrumentEnvironment new.
-            problems := OrderedCollection new'.
+            problems := OrderedCollection new.
+            sources := Dictionary new'.
         code compile: 'install: aCollection
             | definitions |
             definitions := OrderedCollection new.
             aCollection do: [ :file |
-                [ definitions addAll: ((TonelParser parseString: (file at: ''source'')) collect: [ :each | (file at: ''path'') -> each ]) ]
+                | parser |
+                sources at: (file at: ''path'') put: (file at: ''source'').
+                parser := TonelParser on: (file at: ''source'') readStream.
+                [ definitions addAll: (parser start collect: [ :each | (file at: ''path'') -> each ]) ]
                     on: Error
-                    do: [ :failure | self note: (file at: ''path''), '': '', failure messageText ] ].
+                    do: [ :failure |
+                        self
+                            note: (file at: ''path'')
+                            line: (self lineAt: (parser instVarNamed: ''stream'') position in: (file at: ''source''))
+                            says: (self reasonOf: failure) ] ].
             problems ifNotEmpty: [ ^ self ].
             self defineClasses: (definitions select: [ :each | each value isClassDefinition ]).
             problems ifNotEmpty: [ ^ self ].
@@ -98,11 +106,35 @@ enum PharoInstrumentBindings {
             aDefinition classIsMeta ifTrue: [ target := target class ].
             [ method := target >> (target compile: aDefinition source classified: aDefinition protocol) ]
                 on: Error
-                do: [ :failure | ^ self note: aPath, '': '', target name, ''>>'', aDefinition selector, '': '', failure messageText ].
+                do: [ :failure |
+                    ^ self
+                        note: aPath
+                        line: (self lineOf: aDefinition in: aPath failingAt: failure)
+                        says: target name, ''>>'', aDefinition selector, '': '', (self reasonOf: failure) ].
             (method literals select: [ :each | each isKindOf: UndeclaredVariable ]) do: [ :each |
                 self note: aPath, '': '', target name, ''>>'', aDefinition selector, '' names '', each name, '', which nothing defines'' ]'.
         code compile: 'note: aString
             problems add: aString'.
+        code compile: 'note: aPath line: aLine says: aString
+            problems add: (aLine
+                ifNil: [ aPath, '': '', aString ]
+                ifNotNil: [ aPath, '', line '', aLine printString, '': '', aString ])'.
+        code compile: 'reasonOf: aFailure
+            (aFailure isKindOf: SubscriptOutOfBounds) ifTrue: [ ^ ''the file could not be read from here on'' ].
+            ^ aFailure messageText isEmptyOrNil
+                ifTrue: [ aFailure class name ]
+                ifFalse: [ aFailure messageText ]'.
+        code compile: 'lineAt: aPosition in: aSource
+            ^ ((aSource first: (aPosition min: aSource size)) occurrencesOf: Character lf) + 1'.
+        code compile: 'lineOf: aDefinition in: aPath failingAt: aFailure
+            | source header start |
+            source := sources at: aPath ifAbsent: [ ^ nil ].
+            header := aDefinition className, (aDefinition classIsMeta ifTrue: [ '' class'' ] ifFalse: [ '''' ]), '' >> '', aDefinition selector.
+            start := source lines findFirst: [ :each | each beginsWith: header ].
+            start = 0 ifTrue: [ ^ nil ].
+            ^ (aFailure respondsTo: #location)
+                ifTrue: [ start + (self lineAt: aFailure location in: aDefinition source) - 1 ]
+                ifFalse: [ start ]'.
         code compile: 'isSound
             ^ problems isEmpty'.
         code compile: 'printOn: aStream
