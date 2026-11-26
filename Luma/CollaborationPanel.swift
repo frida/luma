@@ -115,7 +115,7 @@ struct CollaborationPanel: View {
         VStack(alignment: .leading, spacing: 8) {
             switch collaboration.status {
             case .disconnected:
-                let storedLabID = (try? engine.store.fetchCollaborationState())?.labID
+                let storedLabID = engine.collaboration.projectLabID
                 let hasExistingLab = storedLabID != nil
                 if let stored = storedLabID {
                     Text("You're currently offline from the shared lab (lab \(truncatedLabID(stored))).")

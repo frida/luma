@@ -390,8 +390,7 @@ struct ITraceDetailView: View {
     }
 
     private var otherTracesForSameHook: [LumaCore.ITrace] {
-        let traces = (try? engine.store.fetchITraces(sessionID: session.id)) ?? []
-        return traces
+        (engine.tracesBySession[session.id] ?? [])
             .filter { sameHook($0.origin, trace.origin) && $0.id != trace.id }
             .sorted(by: { $0.startedAt < $1.startedAt })
     }

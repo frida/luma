@@ -1047,10 +1047,9 @@ private struct HookEditorView: View {
     @State private var editorFocused: Bool = false
 
     var body: some View {
-        let packages = (try? engine.store.fetchPackagesState().packages) ?? []
         CodeEditorView(
             text: $draftCode,
-            profile: EditorProfile.fridaTracerHook(packages: packages),
+            profile: EditorProfile.fridaTracerHook(packages: engine.installedPackages),
             focused: $editorFocused,
             chrome: .pane,
             engine: engine,

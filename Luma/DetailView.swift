@@ -113,7 +113,7 @@ struct DetailView: View {
 
             case .some(.instrument(let sessionID, let instID)),
                 .some(.instrumentComponent(let sessionID, let instID, _)):
-                if (try? engine.store.fetchInstrument(id: instID)) != nil {
+                if engine.instrumentsBySession[sessionID]?.contains(where: { $0.id == instID }) == true {
                     SessionContent(sessionID: sessionID, engine: engine) {
                         InstrumentDetailView(
                             instanceID: instID,
@@ -140,7 +140,7 @@ struct DetailView: View {
             case .some(.itrace(let sessionID, let traceID)):
                 let session = engine.sessions.first(where: { $0.id == sessionID })
                 if let session,
-                    let trace = (try? engine.store.fetchITraces(sessionID: sessionID))?.first(where: { $0.id == traceID })
+                    let trace = engine.tracesBySession[sessionID]?.first(where: { $0.id == traceID })
                 {
                     SessionContent(sessionID: sessionID, engine: engine) {
                         ITraceDetailView(
