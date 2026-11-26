@@ -4652,9 +4652,10 @@ public final class Engine {
         fractionalCounters = fractionalCounters.filter { $0.key.instanceID != instanceID }
     }
 
-    public func counterText(_ counter: WidgetCounterValue, instanceID: UUID, widget: String) -> CounterText {
-        let key = InstrumentViews.Key(instanceID: instanceID, widget: widget)
-        let steady = counter.hasFraction || fractionalCounters.contains(FractionalCounter(key: key, unit: counter.unit))
+    public func counterText(_ counter: WidgetCounterValue, instanceID: UUID?, widget: String) -> CounterText {
+        let steady = counter.hasFraction || instanceID.map {
+            fractionalCounters.contains(FractionalCounter(key: InstrumentViews.Key(instanceID: $0, widget: widget), unit: counter.unit))
+        } ?? false
         return counter.text(steadyFractionDigits: steady ? 1 : 0)
     }
 

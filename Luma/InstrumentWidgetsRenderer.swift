@@ -395,7 +395,7 @@ private struct WidgetCanvas: View {
     @ViewBuilder
     private func counterView(_ cfg: InstrumentWidget.CounterConfig) -> some View {
         if let value = state.counter {
-            let text = engine.counterText(value, instanceID: instance?.id ?? UUID(), widget: slot)
+            let text = engine.counterText(value, instanceID: instance?.id, widget: slot)
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(text.value)
                     .font(.system(size: 28, weight: .semibold, design: .rounded))

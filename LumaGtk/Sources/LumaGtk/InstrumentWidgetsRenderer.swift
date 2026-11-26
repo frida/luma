@@ -218,7 +218,7 @@ private final class WidgetCanvas {
         switch definition.kind {
         case .counter(let cfg):
             let view = CounterView(unit: cfg.unit, initial: snapshot.counter) { counter in
-                engine.counterText(counter, instanceID: instance?.id ?? UUID(), widget: slot)
+                engine.counterText(counter, instanceID: instance?.id, widget: slot)
             }
             counterView = view
             column.append(child: view.widget)
