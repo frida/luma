@@ -946,12 +946,15 @@ const sourceBudget = {
     widgetUpdatesPerSecond: 2000,
 };
 
+const batchLimits = {
+    items: 1000,
+    bytes: 4 * 1024 * 1024,
+};
+
 interface Batch {
-    items: Message[];
-    blobs: Uint8Array[];
+    items: { message: Message, bytes: Uint8Array | null }[];
     size: number;
     latest: Map<string, number>;
-    barriers: Map<string, number>;
 }
 
 interface Budget {
@@ -972,26 +975,23 @@ function queue(instanceId: string, message: Message, data: Payload): void {
         return;
     }
     const batch = batchOf(instanceId);
-    if (data !== null) {
-        const bytes = bytesOf(data);
-        message.data_offset = batch.size;
-        message.data_size = bytes.byteLength;
-        batch.blobs.push(bytes);
-        batch.size += bytes.byteLength;
-    }
+    const bytes = (data !== null) ? bytesOf(data) : null;
     const key = coalescingKey(message);
     const earlier = (key !== null) ? batch.latest.get(key) : undefined;
-    const target = widgetKey(message);
-    if (earlier !== undefined && earlier > (batch.barriers.get(target) ?? -1)) {
-        batch.items[earlier] = message;
+    if (earlier !== undefined) {
+        batch.size -= batch.items[earlier].bytes?.byteLength ?? 0;
+        batch.items[earlier] = { message, bytes };
     } else {
+        forgetCoalescingAcross(batch, message);
         if (key !== null) {
             batch.latest.set(key, batch.items.length);
         }
-        if (isBarrier(message)) {
-            batch.barriers.set(target, batch.items.length);
-        }
-        batch.items.push(message);
+        batch.items.push({ message, bytes });
+    }
+    batch.size += bytes?.byteLength ?? 0;
+    if (batch.items.length >= batchLimits.items || batch.size >= batchLimits.bytes) {
+        flushBatches();
+        return;
     }
     scheduleFlush();
 }
@@ -1006,13 +1006,22 @@ function flushBatches(): void {
     const instanceIds = new Set([...batches.keys(), ...budgets.keys()]);
     for (const instanceId of instanceIds) {
         const batch = batches.get(instanceId);
-        const items = [...(batch?.items ?? []), ...droppedReports(instanceId)];
-        if (items.length === 0) {
+        batches.delete(instanceId);
+        const items = batch?.items ?? [];
+        let offset = 0;
+        for (const { message, bytes } of items) {
+            if (bytes !== null) {
+                message.blob_offset = offset;
+                message.blob_size = bytes.byteLength;
+                offset += bytes.byteLength;
+            }
+        }
+        const messages = [...items.map(item => item.message), ...droppedReports(instanceId)];
+        if (messages.length === 0) {
             continue;
         }
-        send({ type: "instrument-batch", instance_id: instanceId, items }, (batch !== undefined && batch.size > 0) ? joined(batch) : null);
+        send({ type: "instrument-batch", instance_id: instanceId, items: messages }, (offset > 0) ? joined(items, offset) : null);
     }
-    batches.clear();
 }
 
 function scheduleFlush(): void {
@@ -1066,23 +1075,61 @@ function coalescingKey(message: Message): string | null {
     switch (message.type) {
         case "widget-counter-set":
         case "widget-hex-set":
-            return `${message.type} ${widgetKey(message)}`;
+            return keyOf([...widgetParts(message), message.type]);
         case "widget-table-upsert":
-            return `${message.type} ${widgetKey(message)} ${(message.row as { id: string }).id}`;
+            return rowKey(message, "widget-table-upsert", (message.row as { id?: unknown }).id);
         case "widget-list-upsert":
-            return `${message.type} ${widgetKey(message)} ${(message.item as { id: string }).id}`;
+            return rowKey(message, "widget-list-upsert", (message.item as { id?: unknown }).id);
         default:
             return null;
     }
 }
 
-function isBarrier(message: Message): boolean {
-    return message.type === "widget-clear" || message.type === "widget-table-remove" || message.type === "widget-list-remove";
+function forgetCoalescingAcross(batch: Batch, message: Message): void {
+    switch (message.type) {
+        case "widget-table-remove":
+            batch.latest.delete(rowKey(message, "widget-table-upsert", message.row) ?? "");
+            break;
+        case "widget-list-remove":
+            batch.latest.delete(rowKey(message, "widget-list-upsert", message.item) ?? "");
+            break;
+        case "widget-clear":
+            forgetKeysUnder(batch, widgetParts(message));
+            break;
+        case "instrument-child-remove":
+            forgetKeysUnder(batch, childParts(message.child as ChildRef));
+            break;
+    }
+}
+
+function forgetKeysUnder(batch: Batch, parts: unknown[]): void {
+    const prefix = keyOf(parts).slice(0, -1) + ",";
+    for (const key of batch.latest.keys()) {
+        if (key.startsWith(prefix)) {
+            batch.latest.delete(key);
+        }
+    }
+}
+
+function rowKey(message: Message, upsertType: string, id: unknown): string | null {
+    return (typeof id === "string") ? keyOf([...widgetParts(message), upsertType, id]) : null;
 }
 
 function widgetKey(message: Message): string {
+    return keyOf(widgetParts(message));
+}
+
+function widgetParts(message: Message): unknown[] {
     const child = message.child as ChildRef | undefined;
-    return (child !== undefined) ? `${child.template}/${child.id}/${message.widget}` : String(message.widget);
+    return (child !== undefined) ? [...childParts(child), message.widget] : ["widget", message.widget];
+}
+
+function childParts(child: ChildRef): unknown[] {
+    return ["child", child.template, child.id];
+}
+
+function keyOf(parts: unknown[]): string {
+    return JSON.stringify(parts);
 }
 
 function droppedReports(instanceId: string): Message[] {
@@ -1105,7 +1152,7 @@ function droppedReports(instanceId: string): Message[] {
 function batchOf(instanceId: string): Batch {
     let batch = batches.get(instanceId);
     if (batch === undefined) {
-        batch = { items: [], blobs: [], size: 0, latest: new Map(), barriers: new Map() };
+        batch = { items: [], size: 0, latest: new Map() };
         batches.set(instanceId, batch);
     }
     return batch;
@@ -1130,12 +1177,14 @@ function bytesOf(data: ArrayBuffer | ArrayBufferView | number[]): Uint8Array {
     return Uint8Array.from(data);
 }
 
-function joined(batch: Batch): ArrayBuffer {
-    const all = new Uint8Array(batch.size);
+function joined(items: Batch["items"], size: number): ArrayBuffer {
+    const all = new Uint8Array(size);
     let offset = 0;
-    for (const blob of batch.blobs) {
-        all.set(blob, offset);
-        offset += blob.byteLength;
+    for (const { bytes } of items) {
+        if (bytes !== null) {
+            all.set(bytes, offset);
+            offset += bytes.byteLength;
+        }
     }
     return all.buffer;
 }

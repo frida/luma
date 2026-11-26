@@ -405,8 +405,13 @@ public final class ProcessNode: Identifiable {
             case "instrument-batch":
                 guard let items = dict["items"] as? [[String: Any]] else { return false }
                 for item in items {
-                    let slice = (item["data_offset"] as? Int).flatMap { offset in
-                        (item["data_size"] as? Int).map { size in Array((data ?? [])[offset..<offset + size]) }
+                    let slice: [UInt8]?
+                    switch Self.slice(of: item, in: data) {
+                    case .success(let bytes):
+                        slice = bytes
+                    case .failure(let problem):
+                        onMalformedMessage?("Dropped a malformed \(item["type"] as? String ?? "untyped") item from an instrument's batch: \(problem.reason)")
+                        continue
                     }
                     let envelope: [String: Any] = ["type": "send", "payload": item]
                     if !tryHandleMessage(envelope, data: slice) {
@@ -829,6 +834,25 @@ public final class ProcessNode: Identifiable {
         return .set(instanceID: context.instanceID, widget: context.widget, action: action, isEnabled: isEnabled)
     }
 
+    private struct BatchItemProblem: Swift.Error {
+        let reason: String
+    }
+
+    private static func slice(of item: [String: Any], in data: [UInt8]?) -> Result<[UInt8]?, BatchItemProblem> {
+        let offset = item["blob_offset"]
+        let size = item["blob_size"]
+        if offset == nil && size == nil {
+            return .success(nil)
+        }
+        guard let offset = offset as? Int, let size = size as? Int, offset >= 0, size >= 0 else {
+            return .failure(BatchItemProblem(reason: "its data offset and size are not both non-negative integers"))
+        }
+        guard let data, offset <= data.count, size <= data.count - offset else {
+            return .failure(BatchItemProblem(reason: "its \(size) bytes at \(offset) lie outside the batch's \(data?.count ?? 0) bytes"))
+        }
+        return .success(Array(data[offset..<offset + size]))
+    }
+
     private func decodeWidgetContext(_ dict: [String: Any]) -> (instanceID: UUID, widget: String)? {
         guard let instanceId = dict["instance_id"] as? String,
             let instanceID = UUID(uuidString: instanceId),
@@ -901,6 +925,7 @@ public final class ProcessNode: Identifiable {
 
     public var evaluateRadare2: ((String) async -> REPLResult.Value)!
     public var onDroppedAtSource: ((DroppedAtSource) -> Void)?
+    public var onMalformedMessage: ((String) -> Void)?
 
     public enum DroppedAtSource: Sendable {
         case events(instanceID: UUID, count: Int)

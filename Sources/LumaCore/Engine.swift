@@ -6085,6 +6085,10 @@ public func deleteCustomInstrument(_ defID: UUID) async {
             }
         }
 
+        node.onMalformedMessage = { [weak self] problem in
+            self?.emitEngineError(subsystem: "instruments", text: problem)
+        }
+
         node.onDroppedAtSource = { [weak self] dropped in
             switch dropped {
             case .events(_, let count):
