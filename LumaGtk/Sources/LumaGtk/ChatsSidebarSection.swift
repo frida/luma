@@ -116,6 +116,7 @@ final class ChatsSidebarSection {
             Task { @MainActor in self?.follow() }
         }
         countLabel.label = "\(rows.count)"
+        countLabel.visible = !engine.objectChats.listed.isEmpty
         let unread = engine.objectChats.unreadTotal
         unreadBadge.label = "\(unread)"
         unreadBadge.visible = unread > 0
