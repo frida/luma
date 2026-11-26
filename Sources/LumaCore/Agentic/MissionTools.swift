@@ -3836,6 +3836,9 @@ public enum MissionTools {
                 return errorResult("missing widget", code: .invalidInput)
             }
             let maxDimension = parseImageMaxDimension(invocation.args["image_options"])
+            guard engine.gate(ofInstance: instanceID) == .none else {
+                return errorResult("the instrument is waiting for its code to be allowed, and its widgets show nothing until then", code: .unavailable)
+            }
             let state = engine.widgetState(instanceID: instanceID, widget: widgetID)
             let (payload, attachments) = widgetStatePayload(
                 state,
