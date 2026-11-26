@@ -852,7 +852,7 @@ private let lumaOpenFilesThunk: @convention(c) (
     MainActor.assumeIsolated {
         let ptr = UnsafeMutableRawPointer(bitPattern: raw)!
         let app = Unmanaged<LumaApplication>.fromOpaque(ptr).takeUnretainedValue()
-        if str.hasPrefix("luma://") || str.hasPrefix(BackendConfig.inviteLinkBase) {
+        if str.contains("://") {
             app.handleCollaborationURL(str)
         } else {
             app.openWindow(forFile: URL(fileURLWithPath: str))

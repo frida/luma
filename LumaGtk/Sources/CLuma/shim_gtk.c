@@ -327,7 +327,9 @@ on_app_open(GApplication *app, GFile **files, int n_files, const char *hint, gpo
     (void)hint;
     LumaOpenCtx *ctx = (LumaOpenCtx *)user_data;
     for (int i = 0; i < n_files; i++) {
-        char *path = g_file_get_path(files[i]);
+        char *scheme = g_file_get_uri_scheme(files[i]);
+        gboolean is_local = scheme == NULL || g_strcmp0(scheme, "file") == 0;
+        char *path = is_local ? g_file_get_path(files[i]) : NULL;
         if (path) {
             ctx->callback(path, ctx->user_data);
             g_free(path);
@@ -338,6 +340,7 @@ on_app_open(GApplication *app, GFile **files, int n_files, const char *hint, gpo
                 g_free(uri);
             }
         }
+        g_free(scheme);
     }
 }
 
