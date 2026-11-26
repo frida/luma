@@ -46,7 +46,11 @@ final class InstalledStoreItems {
     }
 
     func folderURL(for itemID: StoreItem.ID) -> URL {
-        library.directory.appendingPathComponent(itemID.replacingOccurrences(of: "/", with: "."), isDirectory: true)
+        Self.folderURL(for: itemID, in: library.directory)
+    }
+
+    static func folderURL(for itemID: StoreItem.ID, in directory: URL) -> URL {
+        directory.appendingPathComponent(itemID.replacingOccurrences(of: "/", with: "."), isDirectory: true)
     }
 
     func holdsLocalChanges(itemID: StoreItem.ID, linkedCopy: InstrumentFolderLink.Snapshot?) -> Bool {

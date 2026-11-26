@@ -341,6 +341,11 @@ public final class Engine {
         instrumentFolders.onError = { [weak self] message in
             self?.emitEngineError(subsystem: "instruments", text: message)
         }
+        instrumentFolders.awaitsUpdate = { [directory = instrumentFolders.directory] folderURL in
+            LumaAppState.shared.storeInstallations.keys.contains {
+                InstalledStoreItems.folderURL(for: $0, in: directory).standardizedFileURL == folderURL
+            }
+        }
         instrumentFolders.reload()
         patterns.onChange = { [weak self] in
             self?.publishPatternGlobals()

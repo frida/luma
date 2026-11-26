@@ -8,6 +8,7 @@ public final class InstrumentFolderLibrary {
     public private(set) var unreadableFolders: [URL: String] = [:]
 
     @ObservationIgnored public var onError: ((String) -> Void)?
+    @ObservationIgnored var awaitsUpdate: ((URL) -> Bool)?
 
     public let directory: URL
 
@@ -41,7 +42,9 @@ public final class InstrumentFolderLibrary {
                 result.append(try InstrumentFolder(folderURL: url))
             } catch {
                 unreadable[url.standardizedFileURL] = Self.name(declaredIn: manifestURL) ?? url.lastPathComponent
-                onError?("Failed to read instrument manifest at \(manifestURL.path): \(error)")
+                if awaitsUpdate?(url.standardizedFileURL) != true {
+                    onError?("Failed to read instrument manifest at \(manifestURL.path): \(error)")
+                }
             }
         }
 
