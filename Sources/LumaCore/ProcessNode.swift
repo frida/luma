@@ -212,7 +212,6 @@ public final class ProcessNode: Identifiable {
             guard let self else { return }
 
             self.scriptEventsStarted = true
-            self.scriptMessagesEnded = false
             let waiters = self.scriptEventsStartWaiters
             self.scriptEventsStartWaiters.removeAll(keepingCapacity: false)
             for w in waiters { w.resume() }
@@ -1817,6 +1816,8 @@ public final class ProcessNode: Identifiable {
 
     private func endScriptMessages() {
         scriptMessagesEnded = true
+        handledMarkers.removeAll()
+        abandonedMarkers.removeAll()
         let waiters = markerWaiters
         markerWaiters.removeAll()
         for waiter in waiters.values {
