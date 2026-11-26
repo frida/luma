@@ -118,14 +118,18 @@ enum PharoInstrumentBindings {
         code compile: 'note: aPath line: aLine says: aString
             problems add: (aLine
                 ifNil: [ aPath, '': '', aString ]
-                ifNotNil: [ aPath, '', line '', aLine printString, '': '', aString ])'.
+                ifNotNil: [ aPath, '', '', (aLine isString ifTrue: [ aLine ] ifFalse: [ ''line '', aLine printString ]), '': '', aString ])'.
         code compile: 'reasonOf: aFailure
             (aFailure isKindOf: SubscriptOutOfBounds) ifTrue: [ ^ ''the file could not be read from here on'' ].
             ^ aFailure messageText isEmptyOrNil
                 ifTrue: [ aFailure class name ]
                 ifFalse: [ aFailure messageText ]'.
         code compile: 'lineAt: aPosition in: aSource
-            ^ ((aSource first: (aPosition min: aSource size)) occurrencesOf: Character lf) + 1'.
+            | before breaks |
+            before := aSource first: (aPosition min: aSource size).
+            breaks := before occurrencesOf: Character lf.
+            breaks = 0 ifTrue: [ breaks := before occurrencesOf: Character cr ].
+            ^ breaks + 1'.
         code compile: 'lineOf: aDefinition in: aPath failingAt: aFailure
             | source header start |
             source := sources at: aPath ifAbsent: [ ^ nil ].
@@ -134,7 +138,7 @@ enum PharoInstrumentBindings {
             start = 0 ifTrue: [ ^ nil ].
             ^ (aFailure respondsTo: #location)
                 ifTrue: [ start + (self lineAt: aFailure location in: aDefinition source) - 1 ]
-                ifFalse: [ start ]'.
+                ifFalse: [ ''the method starting at line '', start printString ]'.
         code compile: 'isSound
             ^ problems isEmpty'.
         code compile: 'printOn: aStream
