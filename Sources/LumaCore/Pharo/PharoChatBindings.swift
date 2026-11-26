@@ -76,9 +76,21 @@ enum PharoChatBindings {
                 title: ''Objects'';
                 priority: 2;
                 items: [ objects associations ];
-                column: ''Id'' text: [ :each | each key ];
-                column: ''Name'' text: [ :each | names at: each key ifAbsent: [ '''' ] ];
-                column: ''Object'' text: [ :each | each value printString ];
+                column: ''Id'' do: [ :column |
+                    column
+                        text: [ :each | each key ];
+                        fitContent;
+                        priority: 2 ];
+                column: ''Name'' do: [ :column |
+                    column
+                        text: [ :each | names at: each key ifAbsent: [ '''' ] ];
+                        fitContent;
+                        priority: 3 ];
+                column: ''Object'' do: [ :column |
+                    column
+                        text: [ :each | each value printString ];
+                        priority: 1;
+                        minimumCharacters: 16 ];
                 send: [ :each | each value ]'.
         LumaProject class compile: 'gtSessionsFor: aView
             <gtView>

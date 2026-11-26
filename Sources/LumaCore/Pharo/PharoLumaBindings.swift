@@ -71,7 +71,10 @@ public enum PharoLumaBindings {
             ^ aView columnedList
                 title: ''Sessions'';
                 items: [ items ];
-                column: ''Icon'' icon: [ :each | each icon ];
+                column: ''Icon'' do: [ :column |
+                    column
+                        icon: [ :each | each icon ];
+                        fitContent ];
                 column: ''Name'' text: [ :each | each name ]'.
 
         entries := records << #LumaNotebookEntries slots: {}; package: 'Luma'; install.
@@ -80,7 +83,10 @@ public enum PharoLumaBindings {
             ^ aView columnedList
                 title: ''Entries'';
                 items: [ items ];
-                column: ''Kind'' text: [ :each | each at: #kind ];
+                column: ''Kind'' do: [ :column |
+                    column
+                        text: [ :each | each at: #kind ];
+                        fitContent ];
                 column: ''Title'' text: [ :each | each name ]'.
 
         events := records << #LumaEvents slots: {}; package: 'Luma'; install.
@@ -89,8 +95,16 @@ public enum PharoLumaBindings {
             ^ aView columnedList
                 title: ''Events'';
                 items: [ items ];
-                column: ''Time'' text: [ :each | each at: #timestamp ];
-                column: ''Event'' text: [ :each | each name ]'.
+                column: ''Time'' do: [ :column |
+                    column
+                        text: [ :each | each at: #timestamp ];
+                        fitContent;
+                        priority: 2 ];
+                column: ''Event'' do: [ :column |
+                    column
+                        text: [ :each | each name ];
+                        priority: 1;
+                        minimumCharacters: 16 ]'.
 
         hostError := Error << #LumaHostError slots: {}; package: 'Luma'; install.
 
@@ -927,18 +941,37 @@ public enum PharoLumaBindings {
                 title: ''Classes'';
                 priority: 1;
                 items: [ classes ];
-                column: ''Name'' text: [ :each | each name ];
-                column: ''Superclass'' text: [ :each | each superclass ];
-                column: ''Package'' text: [ :each | each package ]'.
+                column: ''Name'' do: [ :column |
+                    column
+                        text: [ :each | each name ];
+                        priority: 1 ];
+                column: ''Superclass'' do: [ :column |
+                    column
+                        text: [ :each | each superclass ];
+                        priority: 2 ];
+                column: ''Package'' do: [ :column |
+                    column
+                        text: [ :each | each package ];
+                        priority: 3 ]'.
         definitions compile: 'gtMethodsFor: aView
             <gtView>
             ^ aView columnedList
                 title: ''Methods'';
                 priority: 2;
                 items: [ methods ];
-                column: ''Class'' text: [ :each | each className ];
-                column: ''Side'' text: [ :each | each side ];
-                column: ''Selector'' text: [ :each | each selector ]'.
+                column: ''Class'' do: [ :column |
+                    column
+                        text: [ :each | each className ];
+                        priority: 2 ];
+                column: ''Side'' do: [ :column |
+                    column
+                        text: [ :each | each side ];
+                        fitContent;
+                        priority: 3 ];
+                column: ''Selector'' do: [ :column |
+                    column
+                        text: [ :each | each selector ];
+                        priority: 1 ]'.
 
         classDefinition := Object << #LumaClassDefinition slots: { #json }; package: 'Luma'; install.
         classDefinition class compile: 'fromJSON: aDictionary
@@ -957,7 +990,10 @@ public enum PharoLumaBindings {
             ^ aView columnedList
                 title: ''Definition'';
                 items: [ json associations asSortedCollection: [ :a :b | a key <= b key ] ];
-                column: ''Field'' text: [ :each | each key ];
+                column: ''Field'' do: [ :column |
+                    column
+                        text: [ :each | each key ];
+                        fitContent ];
                 column: ''Value'' text: [ :each | each value ]'.
 
         methodDefinition := Object << #LumaMethodDefinition slots: { #json }; package: 'Luma'; install.

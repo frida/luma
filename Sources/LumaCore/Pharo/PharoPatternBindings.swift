@@ -85,9 +85,20 @@ enum PharoPatternBindings {
             ^ aView columnedList
                 title: ''Types'';
                 items: [ types ];
-                column: ''Name'' text: [ :each | each at: ''name'' ];
-                column: ''Kind'' text: [ :each | each at: ''kind'' ];
-                column: ''Size'' text: [ :each | (each at: ''size'' ifAbsent: [ '''' ]) asString ]'.
+                column: ''Name'' do: [ :column |
+                    column
+                        text: [ :each | each at: ''name'' ];
+                        priority: 1 ];
+                column: ''Kind'' do: [ :column |
+                    column
+                        text: [ :each | each at: ''kind'' ];
+                        fitContent;
+                        priority: 2 ];
+                column: ''Size'' do: [ :column |
+                    column
+                        text: [ :each | (each at: ''size'' ifAbsent: [ '''' ]) asString ];
+                        fitContent;
+                        priority: 3 ]'.
         pattern compile: 'gtSourceFor: aView
             <gtView>
             ^ aView text
@@ -99,7 +110,10 @@ enum PharoPatternBindings {
             ^ aView columnedList
                 title: ''Diagnostics'';
                 items: [ diagnostics ];
-                column: ''Line'' text: [ :each | (each at: ''line'') asString ];
+                column: ''Line'' do: [ :column |
+                    column
+                        text: [ :each | (each at: ''line'') asString ];
+                        fitContent ];
                 column: ''Message'' text: [ :each | each at: ''message'' ]'.
 
         patterns := LumaRecords << #LumaPatterns slots: {}; package: 'Luma'; install.
@@ -113,7 +127,10 @@ enum PharoPatternBindings {
                 title: ''Patterns'';
                 items: [ items ];
                 column: ''Name'' text: [ :each | each name ];
-                column: ''Types'' text: [ :each | each types size asString ]'.
+                column: ''Types'' do: [ :column |
+                    column
+                        text: [ :each | each types size asString ];
+                        fitContent ]'.
 
         value := Object << #LumaPatternValue
             slots: { #json. #children. #decoding. #pattern. #session };
@@ -187,9 +204,20 @@ enum PharoPatternBindings {
                 title: ''Fields'';
                 priority: 1;
                 items: [ children ];
-                column: ''Name'' text: [ :each | each name ];
-                column: ''Type'' text: [ :each | each typeName ];
-                column: ''Value'' text: [ :each | each value ifNil: [ '''' ] ]'.
+                column: ''Name'' do: [ :column |
+                    column
+                        text: [ :each | each name ];
+                        fitContent;
+                        priority: 1 ];
+                column: ''Type'' do: [ :column |
+                    column
+                        text: [ :each | each typeName ];
+                        fitContent;
+                        priority: 3 ];
+                column: ''Value'' do: [ :column |
+                    column
+                        text: [ :each | each value ifNil: [ '''' ] ];
+                        priority: 2 ]'.
         value compile: 'gtPointeeFor: aView
             <gtView>
             (self isPointer and: [ children isEmpty ]) ifFalse: [ ^ aView ].

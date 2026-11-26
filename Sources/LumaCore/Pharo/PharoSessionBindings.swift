@@ -79,16 +79,31 @@ enum PharoSessionBindings {
                 title: ''Modules'';
                 priority: 1;
                 items: [ self modules items ];
-                column: ''Name'' text: [ :each | each name ];
-                column: ''Base'' text: [ :each | each baseString ];
-                column: ''Size'' text: [ :each | each size printString ]'.
+                column: ''Name'' do: [ :column |
+                    column
+                        text: [ :each | each name ];
+                        priority: 1;
+                        minimumCharacters: 16 ];
+                column: ''Base'' do: [ :column |
+                    column
+                        text: [ :each | each baseString ];
+                        fitContent;
+                        priority: 2 ];
+                column: ''Size'' do: [ :column |
+                    column
+                        text: [ :each | each size printString ];
+                        fitContent;
+                        priority: 3 ]'.
         session compile: 'gtThreadsFor: aView
             <gtView>
             ^ aView columnedList
                 title: ''Threads'';
                 priority: 2;
                 items: [ self threads items ];
-                column: ''Id'' text: [ :each | each id printString ];
+                column: ''Id'' do: [ :column |
+                    column
+                        text: [ :each | each id printString ];
+                        fitContent ];
                 column: ''Name'' text: [ :each | each name ifNil: [ '''' ] ]'.
         session compile: 'gtEventsFor: aView
             <gtView>
@@ -96,8 +111,16 @@ enum PharoSessionBindings {
                 title: ''Events'';
                 priority: 3;
                 items: [ self events items ];
-                column: ''Time'' text: [ :each | each at: #timestamp ];
-                column: ''Event'' text: [ :each | each name ]'.
+                column: ''Time'' do: [ :column |
+                    column
+                        text: [ :each | each at: #timestamp ];
+                        fitContent;
+                        priority: 2 ];
+                column: ''Event'' do: [ :column |
+                    column
+                        text: [ :each | each name ];
+                        priority: 1;
+                        minimumCharacters: 16 ]'.
 
         modules := LumaRecords << #LumaModules slots: {}; package: 'Luma'; install.
         modules compile: 'gtModulesFor: aView
@@ -105,9 +128,21 @@ enum PharoSessionBindings {
             ^ aView columnedList
                 title: ''Modules'';
                 items: [ items ];
-                column: ''Name'' text: [ :each | each name ];
-                column: ''Base'' text: [ :each | each baseString ];
-                column: ''Size'' text: [ :each | each size printString ]'.
+                column: ''Name'' do: [ :column |
+                    column
+                        text: [ :each | each name ];
+                        priority: 1;
+                        minimumCharacters: 16 ];
+                column: ''Base'' do: [ :column |
+                    column
+                        text: [ :each | each baseString ];
+                        fitContent;
+                        priority: 2 ];
+                column: ''Size'' do: [ :column |
+                    column
+                        text: [ :each | each size printString ];
+                        fitContent;
+                        priority: 3 ]'.
 
         module := Object << #LumaModule slots: { #session. #name. #path. #base. #size }; package: 'Luma'; install.
         module class compile: 'fromJSON: aDictionary in: aSession
@@ -144,9 +179,21 @@ enum PharoSessionBindings {
                 title: ''Functions'';
                 priority: 1;
                 items: [ self functions items ];
-                column: ''Address'' text: [ :each | each addressString ];
-                column: ''Name'' text: [ :each | each name ];
-                column: ''Source'' text: [ :each | each detail ]'.
+                column: ''Address'' do: [ :column |
+                    column
+                        text: [ :each | each addressString ];
+                        fitContent;
+                        priority: 2 ];
+                column: ''Name'' do: [ :column |
+                    column
+                        text: [ :each | each name ];
+                        priority: 1;
+                        minimumCharacters: 16 ];
+                column: ''Source'' do: [ :column |
+                    column
+                        text: [ :each | each detail ];
+                        fitContent;
+                        priority: 3 ]'.
         module compile: 'gtDetailsFor: aView
             <gtView>
             ^ aView columnedList
@@ -157,7 +204,10 @@ enum PharoSessionBindings {
                     ''Path'' -> path.
                     ''Base'' -> self baseString.
                     ''Size'' -> size printString } ];
-                column: ''Field'' text: [ :each | each key ];
+                column: ''Field'' do: [ :column |
+                    column
+                        text: [ :each | each key ];
+                        fitContent ];
                 column: ''Value'' text: [ :each | each value ]'.
 
         functions := LumaRecords << #LumaFunctions slots: {}; package: 'Luma'; install.
@@ -166,9 +216,21 @@ enum PharoSessionBindings {
             ^ aView columnedList
                 title: ''Functions'';
                 items: [ items ];
-                column: ''Address'' text: [ :each | each addressString ];
-                column: ''Name'' text: [ :each | each name ];
-                column: ''Detail'' text: [ :each | each detail ]'.
+                column: ''Address'' do: [ :column |
+                    column
+                        text: [ :each | each addressString ];
+                        fitContent;
+                        priority: 2 ];
+                column: ''Name'' do: [ :column |
+                    column
+                        text: [ :each | each name ];
+                        priority: 1;
+                        minimumCharacters: 16 ];
+                column: ''Detail'' do: [ :column |
+                    column
+                        text: [ :each | each detail ];
+                        fitContent;
+                        priority: 3 ]'.
 
         function := Object << #LumaFunction
             slots: { #session. #name. #address. #detail. #names. #arity. #captures };
@@ -244,11 +306,26 @@ enum PharoSessionBindings {
                 title: ''Disassembly'';
                 priority: 1;
                 items: [ self instructions items ];
-                column: ''Address'' text: [ :each | each addressString ];
-                column: ''Instruction'' text: [ :each | each text ];
-                column: ''Comment'' text: [ :each |
-                    (comments ifNil: [ comments := self comments ]) at: each addressString ifAbsent: [ '''' ] ];
-                column: ''Bytes'' text: [ :each | each bytesString ]'.
+                column: ''Address'' do: [ :column |
+                    column
+                        text: [ :each | each addressString ];
+                        fitContent;
+                        priority: 2 ];
+                column: ''Instruction'' do: [ :column |
+                    column
+                        text: [ :each | each text ];
+                        fitContent;
+                        priority: 1 ];
+                column: ''Comment'' do: [ :column |
+                    column
+                        text: [ :each |
+                            (comments ifNil: [ comments := self comments ]) at: each addressString ifAbsent: [ '''' ] ];
+                        priority: 3 ];
+                column: ''Bytes'' do: [ :column |
+                    column
+                        text: [ :each | each bytesString ];
+                        fitContent;
+                        priority: 4 ]'.
         function compile: 'gtDecompileFor: aView
             <gtView>
             ^ aView text
@@ -261,10 +338,26 @@ enum PharoSessionBindings {
                 title: ''References'';
                 priority: 3;
                 items: [ self references items ];
-                column: ''From'' text: [ :each | each fromString ];
-                column: ''Kind'' text: [ :each | each kind ];
-                column: ''In'' text: [ :each | each functionName ];
-                column: ''Instruction'' text: [ :each | each opcode ]'.
+                column: ''From'' do: [ :column |
+                    column
+                        text: [ :each | each fromString ];
+                        fitContent;
+                        priority: 2 ];
+                column: ''Kind'' do: [ :column |
+                    column
+                        text: [ :each | each kind ];
+                        fitContent;
+                        priority: 3 ];
+                column: ''In'' do: [ :column |
+                    column
+                        text: [ :each | each functionName ];
+                        priority: 1;
+                        minimumCharacters: 24 ];
+                column: ''Instruction'' do: [ :column |
+                    column
+                        text: [ :each | each opcode ];
+                        fitContent;
+                        priority: 4 ]'.
         function compile: 'gtBlocksFor: aView
             <gtView>
             ^ aView forward
@@ -384,7 +477,10 @@ enum PharoSessionBindings {
                 title: ''Arguments'';
                 priority: 1;
                 items: [ self arguments ];
-                column: ''Name'' text: [ :each | self nameOfArgument: (self arguments indexOf: each) ];
+                column: ''Name'' do: [ :column |
+                    column
+                        text: [ :each | self nameOfArgument: (self arguments indexOf: each) ];
+                        fitContent ];
                 column: ''Value'' text: [ :each | each hex ]'.
         call compile: 'gtCapturedFor: aView
             <gtView>
@@ -393,7 +489,10 @@ enum PharoSessionBindings {
                 title: ''Captured'';
                 priority: 2;
                 items: [ self captured associations ];
-                column: ''Name'' text: [ :each | each key ];
+                column: ''Name'' do: [ :column |
+                    column
+                        text: [ :each | each key ];
+                        fitContent ];
                 column: ''Value'' text: [ :each | each value printString ]'.
         call compile: 'gtCallFor: aView
             <gtView>
@@ -405,7 +504,10 @@ enum PharoSessionBindings {
                     ''Thread'' -> self thread printString.
                     ''Return address'' -> self returnAddress hex.
                     ''Returned'' -> (self retval ifNil: [ '''' ] ifNotNil: [ :result | result hex ]) } ];
-                column: ''Field'' text: [ :each | each key ];
+                column: ''Field'' do: [ :column |
+                    column
+                        text: [ :each | each key ];
+                        fitContent ];
                 column: ''Value'' text: [ :each | each value ]'.
 
         instructions := LumaRecords << #LumaInstructions slots: {}; package: 'Luma'; install.
@@ -414,9 +516,21 @@ enum PharoSessionBindings {
             ^ aView columnedList
                 title: ''Instructions'';
                 items: [ items ];
-                column: ''Address'' text: [ :each | each addressString ];
-                column: ''Instruction'' text: [ :each | each text ];
-                column: ''Bytes'' text: [ :each | each bytesString ]'.
+                column: ''Address'' do: [ :column |
+                    column
+                        text: [ :each | each addressString ];
+                        fitContent;
+                        priority: 2 ];
+                column: ''Instruction'' do: [ :column |
+                    column
+                        text: [ :each | each text ];
+                        fitContent;
+                        priority: 1 ];
+                column: ''Bytes'' do: [ :column |
+                    column
+                        text: [ :each | each bytesString ];
+                        fitContent;
+                        priority: 3 ]'.
 
         instruction := Object << #LumaInstruction slots: { #session. #anchor. #address. #op }; package: 'Luma'; install.
         instruction class compile: 'in: aSession at: anAddress
@@ -492,10 +606,26 @@ enum PharoSessionBindings {
                 title: ''Instructions'';
                 priority: 2;
                 items: [ self surroundings items ];
-                column: '''' text: [ :each | each = self ifTrue: [ ''▸'' ] ifFalse: [ '''' ] ];
-                column: ''Address'' text: [ :each | each addressString ];
-                column: ''Instruction'' text: [ :each | each text ];
-                column: ''Bytes'' text: [ :each | each bytesString ]'.
+                column: '''' do: [ :column |
+                    column
+                        text: [ :each | each = self ifTrue: [ ''▸'' ] ifFalse: [ '''' ] ];
+                        fitContent;
+                        priority: 2 ];
+                column: ''Address'' do: [ :column |
+                    column
+                        text: [ :each | each addressString ];
+                        fitContent;
+                        priority: 2 ];
+                column: ''Instruction'' do: [ :column |
+                    column
+                        text: [ :each | each text ];
+                        fitContent;
+                        priority: 1 ];
+                column: ''Bytes'' do: [ :column |
+                    column
+                        text: [ :each | each bytesString ];
+                        fitContent;
+                        priority: 3 ]'.
         instruction compile: 'gtDecompileFor: aView
             <gtView>
             | function |
@@ -527,9 +657,21 @@ enum PharoSessionBindings {
             ^ aView columnedList
                 title: ''Blocks'';
                 items: [ items ];
-                column: ''Address'' text: [ :each | each addressString ];
-                column: ''Size'' text: [ :each | each size printString ];
-                column: ''Instructions'' text: [ :each | each instructionCount printString ]'.
+                column: ''Address'' do: [ :column |
+                    column
+                        text: [ :each | each addressString ];
+                        fitContent;
+                        priority: 1 ];
+                column: ''Size'' do: [ :column |
+                    column
+                        text: [ :each | each size printString ];
+                        fitContent;
+                        priority: 2 ];
+                column: ''Instructions'' do: [ :column |
+                    column
+                        text: [ :each | each instructionCount printString ];
+                        fitContent;
+                        priority: 3 ]'.
 
         block := Object << #LumaBasicBlock slots: { #session. #address. #json }; package: 'Luma'; install.
         block class compile: 'in: aSession json: aDictionary
@@ -693,7 +835,10 @@ enum PharoSessionBindings {
                 title: ''Symbol'';
                 priority: 1;
                 items: [ symbol associations select: [ :each | each value notNil ] ];
-                column: ''Field'' text: [ :each | each key ];
+                column: ''Field'' do: [ :column |
+                    column
+                        text: [ :each | each key ];
+                        fitContent ];
                 column: ''Value'' text: [ :each | each value printString ]'.
         pointer compile: 'gtBytesFor: aView
             <gtView>
@@ -709,7 +854,10 @@ enum PharoSessionBindings {
             ^ aView columnedList
                 title: ''Threads'';
                 items: [ items ];
-                column: ''Id'' text: [ :each | each id printString ];
+                column: ''Id'' do: [ :column |
+                    column
+                        text: [ :each | each id printString ];
+                        fitContent ];
                 column: ''Name'' text: [ :each | each name ifNil: [ '''' ] ]'.
 
         thread := Object << #LumaThread slots: { #session. #id. #name. #entrypoint }; package: 'Luma'; install.
@@ -749,7 +897,10 @@ enum PharoSessionBindings {
                 title: ''Registers'';
                 priority: 1;
                 items: [ self snapshot at: ''registers'' ];
-                column: ''Register'' text: [ :each | each at: ''name'' ];
+                column: ''Register'' do: [ :column |
+                    column
+                        text: [ :each | each at: ''name'' ];
+                        fitContent ];
                 column: ''Value'' text: [ :each | each at: ''value'' ]'.
         thread compile: 'gtBacktraceFor: aView
             <gtView>
@@ -757,9 +908,17 @@ enum PharoSessionBindings {
                 title: ''Backtrace'';
                 priority: 2;
                 items: [ self backtrace ];
-                column: ''Address'' text: [ :each | each hex ];
-                column: ''Symbol'' text: [ :each | each symbol ifNil: [ '''' ] ifNotNil: [ :found |
-                    (found at: ''module'') , ''!'' , (found at: ''name'') ] ]'.
+                column: ''Address'' do: [ :column |
+                    column
+                        text: [ :each | each hex ];
+                        fitContent;
+                        priority: 2 ];
+                column: ''Symbol'' do: [ :column |
+                    column
+                        text: [ :each | each symbol ifNil: [ '''' ] ifNotNil: [ :found |
+                            (found at: ''module'') , ''!'' , (found at: ''name'') ] ];
+                        priority: 1;
+                        minimumCharacters: 16 ]'.
 
         radare := Object << #LumaRadare slots: { #session }; package: 'Luma'; install.
         radare class compile: 'on: aSession
@@ -795,18 +954,42 @@ enum PharoSessionBindings {
                 title: ''Functions'';
                 priority: 1;
                 items: [ self functions items ];
-                column: ''Address'' text: [ :each | each addressString ];
-                column: ''Name'' text: [ :each | each name ];
-                column: ''Type'' text: [ :each | each detail ]'.
+                column: ''Address'' do: [ :column |
+                    column
+                        text: [ :each | each addressString ];
+                        fitContent;
+                        priority: 2 ];
+                column: ''Name'' do: [ :column |
+                    column
+                        text: [ :each | each name ];
+                        priority: 1;
+                        minimumCharacters: 16 ];
+                column: ''Type'' do: [ :column |
+                    column
+                        text: [ :each | each detail ];
+                        fitContent;
+                        priority: 3 ]'.
         radare compile: 'gtFlagsFor: aView
             <gtView>
             ^ aView columnedList
                 title: ''Flags'';
                 priority: 2;
                 items: [ self flags items ];
-                column: ''Address'' text: [ :each | each addressString ];
-                column: ''Name'' text: [ :each | each name ];
-                column: ''Size'' text: [ :each | each size printString ]'.
+                column: ''Address'' do: [ :column |
+                    column
+                        text: [ :each | each addressString ];
+                        fitContent;
+                        priority: 2 ];
+                column: ''Name'' do: [ :column |
+                    column
+                        text: [ :each | each name ];
+                        priority: 1;
+                        minimumCharacters: 16 ];
+                column: ''Size'' do: [ :column |
+                    column
+                        text: [ :each | each size printString ];
+                        fitContent;
+                        priority: 3 ]'.
 
         flags := LumaRecords << #LumaFlags slots: {}; package: 'Luma'; install.
         flags compile: 'gtFlagsFor: aView
@@ -814,9 +997,21 @@ enum PharoSessionBindings {
             ^ aView columnedList
                 title: ''Flags'';
                 items: [ items ];
-                column: ''Address'' text: [ :each | each addressString ];
-                column: ''Name'' text: [ :each | each name ];
-                column: ''Size'' text: [ :each | each size printString ]'.
+                column: ''Address'' do: [ :column |
+                    column
+                        text: [ :each | each addressString ];
+                        fitContent;
+                        priority: 2 ];
+                column: ''Name'' do: [ :column |
+                    column
+                        text: [ :each | each name ];
+                        priority: 1;
+                        minimumCharacters: 16 ];
+                column: ''Size'' do: [ :column |
+                    column
+                        text: [ :each | each size printString ];
+                        fitContent;
+                        priority: 3 ]'.
 
         flag := Object << #LumaFlag slots: { #session. #name. #address. #size }; package: 'Luma'; install.
         flag class compile: 'fromJSON: aDictionary in: aSession
@@ -843,10 +1038,26 @@ enum PharoSessionBindings {
             ^ aView columnedList
                 title: ''References'';
                 items: [ items ];
-                column: ''From'' text: [ :each | each fromString ];
-                column: ''Kind'' text: [ :each | each kind ];
-                column: ''In'' text: [ :each | each functionName ];
-                column: ''Instruction'' text: [ :each | each opcode ]'.
+                column: ''From'' do: [ :column |
+                    column
+                        text: [ :each | each fromString ];
+                        fitContent;
+                        priority: 2 ];
+                column: ''Kind'' do: [ :column |
+                    column
+                        text: [ :each | each kind ];
+                        fitContent;
+                        priority: 3 ];
+                column: ''In'' do: [ :column |
+                    column
+                        text: [ :each | each functionName ];
+                        priority: 1;
+                        minimumCharacters: 24 ];
+                column: ''Instruction'' do: [ :column |
+                    column
+                        text: [ :each | each opcode ];
+                        fitContent;
+                        priority: 4 ]'.
 
         reference := Object << #LumaReference
             slots: { #session. #from. #kind. #functionName. #opcode };
