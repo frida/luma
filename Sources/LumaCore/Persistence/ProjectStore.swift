@@ -20,7 +20,8 @@ public enum ProjectStoreError: Error, LocalizedError {
 }
 
 public final class ProjectStore: Sendable {
-    public static let didChangeNotification = Notification.Name("LumaCore.ProjectStore.didChange")
+    public static let didEditNotification = Notification.Name("LumaCore.ProjectStore.didEdit")
+    public static let didRecordNotification = Notification.Name("LumaCore.ProjectStore.didRecord")
     private static let formatVersion = 7
 
     public let instanceID = UUID()
@@ -28,6 +29,17 @@ public final class ProjectStore: Sendable {
     private let databasePath: String
 
     private static let stagedWidgetStates = Mutex<[String: [StagedWidgetState: WidgetState]]>([:])
+    private static let pendingAnnouncements = Mutex<Set<Announcement>>([])
+
+    fileprivate struct Announcement: Hashable {
+        let kind: Kind
+        let instanceID: UUID
+
+        enum Kind {
+            case edit
+            case record
+        }
+    }
 
     private struct StagedWidgetState: Hashable {
         let instanceID: UUID
@@ -189,7 +201,11 @@ public final class ProjectStore: Sendable {
 
     public func save(_ session: ProcessSession) throws {
         try db.write { db in
-            try session.save(db)
+            if let stored = try ProcessSession.fetchOne(db, key: session.id) {
+                try session.updateChanges(db, from: stored)
+            } else {
+                try session.insert(db)
+            }
         }
     }
 
@@ -453,7 +469,11 @@ public final class ProjectStore: Sendable {
 
     public func save(_ insight: AddressInsight) throws {
         try db.write { db in
-            try insight.save(db)
+            if let stored = try AddressInsight.fetchOne(db, key: insight.id) {
+                try insight.updateChanges(db, from: stored)
+            } else {
+                try insight.insert(db)
+            }
         }
     }
 
@@ -1420,24 +1440,50 @@ public final class ProjectStore: Sendable {
     }
 
     public func stageWidgetState(_ state: WidgetState, instanceID: UUID, widgetID: String) {
-        let wasClean = Self.stagedWidgetStates.withLock { staged in
-            defer { staged[databasePath, default: [:]][StagedWidgetState(instanceID: instanceID, widgetID: widgetID)] = state }
-            return staged[databasePath] == nil
-        }
-        if wasClean {
-            Self.announceChange(ofStore: self.instanceID)
+        Self.stagedWidgetStates.withLock { staged in
+            staged[databasePath, default: [:]][StagedWidgetState(instanceID: instanceID, widgetID: widgetID)] = state
         }
     }
 
-    fileprivate static func announceChange(ofStore instanceID: UUID) {
+    public func announceRecorded() {
+        Self.announce(Announcement(kind: .record, instanceID: instanceID))
+    }
+
+    fileprivate static func announce(_ announcement: Announcement) {
+        guard pendingAnnouncements.withLock({ $0.insert(announcement).inserted }) else { return }
         DispatchQueue.main.async {
+            pendingAnnouncements.withLock { _ = $0.remove(announcement) }
             NotificationCenter.default.post(
-                name: didChangeNotification,
+                name: announcement.kind == .edit ? didEditNotification : didRecordNotification,
                 object: nil,
-                userInfo: ["instanceID": instanceID]
+                userInfo: ["instanceID": announcement.instanceID]
             )
         }
     }
+
+    fileprivate static func isRuntime(_ change: DatabaseEventKind) -> Bool {
+        switch change {
+        case .insert(let table), .delete(let table):
+            runtimeTables.contains(table)
+        case .update(let table, let columns):
+            runtimeTables.contains(table) || runtimeColumns[table].map(columns.isSubset) == true
+        }
+    }
+
+    private static let runtimeTables: Set<String> = [
+        "itrace", "memory_page_module", "memory_page_anon", "module_analysis", "module_analysis_function", "module_analysis_block",
+        "module_symbol", "widget_state", "instrument_child", "outbox", "lab_known_subject", "object_chat_unsent", "object_chat_read_marker",
+        "project_collaboration_state", "lab_membership", "recent_placement", "session_ui_state", "project_ui_state",
+        "custom_instrument_def_ui_state", "target_picker_state",
+    ]
+
+    private static let runtimeColumns: [String: Set<String>] = [
+        "process_session": [
+            "phase", "detach_reason", "last_error", "last_known_pid", "last_attached_at", "process_info", "last_known_main_module",
+            "last_known_modules", "last_known_threads", "icon_png_data",
+        ],
+        "address_insight": ["last_resolved_address"],
+    ]
 
     public func writeStagedWidgetStates() {
         Self.stagedWidgetStates.withLock { staged in
@@ -2231,10 +2277,22 @@ private final class CommitNotifyingObserver: TransactionObserver {
         self.instanceID = instanceID
     }
 
-    func observes(eventsOfKind eventKind: DatabaseEventKind) -> Bool { true }
-    func databaseDidChange(with event: DatabaseEvent) {}
-    func databaseDidCommit(_ db: Database) {
-        ProjectStore.announceChange(ofStore: instanceID)
+    private var edits = false
+
+    func observes(eventsOfKind eventKind: DatabaseEventKind) -> Bool {
+        !ProjectStore.isRuntime(eventKind)
     }
-    func databaseDidRollback(_ db: Database) {}
+
+    func databaseDidChange(with event: DatabaseEvent) {
+        edits = true
+    }
+
+    func databaseDidCommit(_ db: Database) {
+        ProjectStore.announce(ProjectStore.Announcement(kind: edits ? .edit : .record, instanceID: instanceID))
+        edits = false
+    }
+
+    func databaseDidRollback(_ db: Database) {
+        edits = false
+    }
 }

@@ -305,9 +305,10 @@ public final class Engine {
             eventLog.onEventsToPersist = { [weak self] batch in
                 guard let self else { return }
                 let previous = self.eventStoreFlushTail
-                self.eventStoreFlushTail = Task {
+                self.eventStoreFlushTail = Task { [store = self.store] in
                     await previous.value
                     await eventStore.append(batch)
+                    store.announceRecorded()
                 }
             }
         }
