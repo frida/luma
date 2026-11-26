@@ -1,3 +1,4 @@
+import { sendNow } from "./instrument.js";
 import { encodeValues } from "./value.js";
 
 type ConsoleLevel = "info" | "debug" | "warning" | "error";
@@ -11,5 +12,5 @@ proto.error = (...args: unknown[]) => { emitLogMessage("error", args); };
 
 function emitLogMessage(level: ConsoleLevel, args: unknown[]) {
     const [trees, blob] = encodeValues(args);
-    send({ type: "console", level, args: trees }, blob);
+    sendNow({ type: "console", level, args: trees }, blob);
 }

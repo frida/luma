@@ -996,12 +996,12 @@ function queue(instanceId: string, message: Message, data: Payload): void {
     scheduleFlush();
 }
 
-function sendNow(message: Message, data: Payload): void {
+export function sendNow(message: Message, data: Payload = null): void {
     flushBatches();
     send(message, data);
 }
 
-function flushBatches(): void {
+export function flushBatches(): void {
     flushScheduled = false;
     const instanceIds = new Set([...batches.keys(), ...budgets.keys()]);
     for (const instanceId of instanceIds) {

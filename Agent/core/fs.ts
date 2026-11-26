@@ -1,5 +1,6 @@
 import { Buffer } from "buffer";
 import fs, { Stats } from "frida-fs";
+import { sendNow } from "./instrument.js";
 
 export interface FilesystemRoots {
     root: string;
@@ -204,15 +205,15 @@ export function pullFile(path: string, id: number): number {
     const reader = fs.createReadStream(path);
     activePulls.set(id, () => reader.destroy());
     reader.on("data", (chunk: Buffer) => {
-        send({ type: "fs:chunk", id }, chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + chunk.byteLength) as ArrayBuffer);
+        sendNow({ type: "fs:chunk", id }, chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + chunk.byteLength) as ArrayBuffer);
     });
     reader.on("end", () => {
         activePulls.delete(id);
-        send({ type: "fs:end", id });
+        sendNow({ type: "fs:end", id });
     });
     reader.on("error", (error: Error) => {
         activePulls.delete(id);
-        send({ type: "fs:error", id, error: error.message });
+        sendNow({ type: "fs:error", id, error: error.message });
     });
     return size;
 }
@@ -231,17 +232,17 @@ type PushMessage =
 export function pushFile(path: string, id: number): void {
     const writer = fs.createWriteStream(path);
     writer.on("finish", () => {
-        send({ type: "fs:end", id });
+        sendNow({ type: "fs:end", id });
     });
     writer.on("error", (error: Error) => {
-        send({ type: "fs:error", id, error: error.message });
+        sendNow({ type: "fs:error", id, error: error.message });
     });
     const messageType = `fs:push:${id}`;
     const onMessage = (message: PushMessage, data: ArrayBuffer | null) => {
         switch (message.action) {
             case "write":
                 writer.write(Buffer.from(data!), () => {
-                    send({ type: "fs:ack", id });
+                    sendNow({ type: "fs:ack", id });
                 });
                 break;
             case "end":
