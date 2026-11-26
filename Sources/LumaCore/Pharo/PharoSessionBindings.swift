@@ -610,7 +610,7 @@ enum PharoSessionBindings {
                     column
                         text: [ :each | each = self ifTrue: [ ''▸'' ] ifFalse: [ '''' ] ];
                         fitContent;
-                        priority: 2 ];
+                        priority: 1 ];
                 column: ''Address'' do: [ :column |
                     column
                         text: [ :each | each addressString ];
