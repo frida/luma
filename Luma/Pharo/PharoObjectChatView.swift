@@ -54,11 +54,11 @@ struct PharoObjectChatView: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Image(systemName: "bubble.left.and.text.bubble.right")
                     .foregroundStyle(.secondary)
-                Text(chats.displayTitle(of: chat))
-                    .font(.callout.weight(.semibold))
-                    .lineLimit(2)
-                    .truncationMode(.tail)
-                    .fixedSize(horizontal: false, vertical: true)
+                Text(provenance(of: chat, at: chats.subject(of: chat)))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
                 if !chat.editors.isEmpty {
                     AuthorAvatarStack(authors: chat.editors, avatarSize: 18)
                 }
@@ -84,10 +84,6 @@ struct PharoObjectChatView: View {
                     .help("Delete chat")
                 }
             }
-            Text(about(chat, at: chats.subject(of: chat)))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
             if let failure {
                 Text(failure)
                     .font(.caption)
@@ -124,12 +120,12 @@ struct PharoObjectChatView: View {
         }
     }
 
-    private func about(_ chat: ObjectChat, at subject: ObjectChatSubjectPlace) -> String {
+    private func provenance(of chat: ObjectChat, at subject: ObjectChatSubjectPlace) -> String {
         switch (subject, chat.subject) {
         case (.instruction(let place), _):
-            "About the instruction at \(place.anchor.displayString) in \(place.sessionName ?? "a session not in this project")"
-        case (.object(_, let label), .object(_, _, _, _, let printString, _)):
-            "About \(printString), from \(label)"
+            "An instruction in \(place.sessionName ?? "a session not in this project")"
+        case (.object(_, let label), .object):
+            "From \(label)"
         case (.project, _), (.object, _):
             "About the project"
         }
