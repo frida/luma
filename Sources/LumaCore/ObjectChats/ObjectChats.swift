@@ -1063,6 +1063,10 @@ public final class ObjectChats {
         unsent = (try? store.fetchUnsentObjectChatMessages()) ?? [:]
     }
 
+    func noteDeleted(chatsOfSession sessionID: UUID) {
+        deletedHere.formUnion(chats.filter { $0.sessionID == sessionID }.map(\.id))
+    }
+
     func forgetChats(ofSession sessionID: UUID) {
         discardDrafts(ofSession: sessionID)
         let removed = chats.filter { $0.sessionID == sessionID }.map(\.id)

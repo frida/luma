@@ -3275,6 +3275,7 @@ public final class Engine {
         } else if inLab {
             try? store.dismissLabSession(id)
         }
+        objectChats.noteDeleted(chatsOfSession: id)
         removeSessionHere(id)
     }
 
