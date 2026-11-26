@@ -224,21 +224,50 @@ public enum LLMTurnEvent: Sendable {
 public enum LLMProviderError: LocalizedError, Sendable {
     case missingAPIKey
     case requestFailed(status: Int, message: String)
+    case providerReported(String)
+    case unreachable(String)
+    case toolFailed(String)
     case decodingFailed(String)
     case streamInterrupted
     case capabilityUnsupported(String)
     case cancelled
 
+    public static func adapting(_ error: Error) -> Error {
+        guard let urlError = error as? URLError else { return error }
+        let host = urlError.failingURL?.host ?? "the provider"
+        switch urlError.code {
+        case .timedOut:
+            return unreachable("The provider at \(host) did not answer in time.")
+        case .notConnectedToInternet, .networkConnectionLost:
+            return unreachable("The connection to the provider at \(host) was lost or is not available.")
+        case .cannotFindHost, .dnsLookupFailed:
+            return unreachable("No provider could be found at \(host).")
+        case .cannotConnectToHost:
+            return unreachable("The provider at \(host) refused the connection.")
+        case .secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate,
+            .serverCertificateNotYetValid, .serverCertificateHasUnknownRoot:
+            return unreachable("A secure connection to the provider at \(host) could not be made.")
+        default:
+            return unreachable("The provider at \(host) could not be reached.")
+        }
+    }
+
     public var errorDescription: String? {
         switch self {
         case .missingAPIKey:
             return "Provider requires an API key but none is configured."
-        case .requestFailed(let status, let message):
-            let trimmed = message.prefix(500)
-            if status >= 0 {
-                return "Provider request failed (status \(status)): \(trimmed)"
+        case .requestFailed(let status, let body):
+            let reason = Self.statusReasons[status] ?? HTTPURLResponse.localizedString(forStatusCode: status).capitalized
+            guard let message = Self.providerMessage(in: body) else {
+                return "The provider answered \(status) (\(reason))."
             }
-            return "Provider request failed: \(trimmed)"
+            return "The provider answered \(status) (\(reason)): \(Self.sentence(message))"
+        case .providerReported(let message):
+            return "The provider reported an error: \(Self.sentence(message))"
+        case .unreachable(let sentence):
+            return sentence
+        case .toolFailed(let detail):
+            return Self.sentence(Self.firstLine(of: detail) ?? detail)
         case .decodingFailed(let detail):
             return "Provider response could not be decoded: \(detail)"
         case .streamInterrupted:
@@ -248,6 +277,42 @@ public enum LLMProviderError: LocalizedError, Sendable {
         case .cancelled:
             return "Canceled."
         }
+    }
+
+    private static let statusReasons = [
+        400: "Bad Request", 401: "Unauthorized", 402: "Payment Required", 403: "Forbidden", 404: "Not Found",
+        408: "Request Timeout", 409: "Conflict", 413: "Content Too Large", 422: "Unprocessable Content",
+        429: "Too Many Requests", 500: "Internal Server Error", 502: "Bad Gateway", 503: "Service Unavailable",
+        504: "Gateway Timeout", 529: "Overloaded",
+    ]
+
+    private static func providerMessage(in body: String) -> String? {
+        let candidates = [body] + body.split(separator: "\n").map {
+            $0.hasPrefix("data:") ? String($0.dropFirst(5)) : String($0)
+        }
+        for candidate in candidates {
+            guard let data = candidate.trimmingCharacters(in: .whitespacesAndNewlines).data(using: .utf8),
+                let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            else { continue }
+            if let error = object["error"] as? [String: Any], let message = error["message"] as? String, !message.isEmpty {
+                return message
+            }
+            if let message = (object["error"] as? String) ?? (object["message"] as? String), !message.isEmpty {
+                return message
+            }
+        }
+        return firstLine(of: body).flatMap { $0.hasPrefix("<") ? nil : $0 }
+    }
+
+    private static func firstLine(of text: String) -> String? {
+        guard let line = text.split(separator: "\n").lazy.map({ $0.trimmingCharacters(in: .whitespaces) }).first(where: { !$0.isEmpty })
+        else { return nil }
+        return line.count > 200 ? String(line.prefix(200)) + "…" : line
+    }
+
+    private static func sentence(_ text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.last.map { ".!?…".contains($0) } == true ? trimmed : trimmed + "."
     }
 }
 

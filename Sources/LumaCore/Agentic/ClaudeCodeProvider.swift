@@ -56,7 +56,7 @@ public final class ClaudeCodeProvider: LLMProvider {
                 } catch is CancellationError {
                     continuation.finish(throwing: LLMProviderError.cancelled)
                 } catch {
-                    continuation.finish(throwing: error)
+                    continuation.finish(throwing: LLMProviderError.adapting(error))
                 }
                 await mcpHandle.stop()
             }
@@ -150,7 +150,7 @@ public final class ClaudeCodeProvider: LLMProvider {
         do {
             try process.run()
         } catch {
-            throw LLMProviderError.requestFailed(status: -1, message: "could not spawn claude: \(error.localizedDescription)")
+            throw LLMProviderError.toolFailed("Claude Code could not be started: \(error.localizedDescription)")
         }
 
         try? stdinPipe.fileHandleForWriting.close()
@@ -188,8 +188,8 @@ public final class ClaudeCodeProvider: LLMProvider {
         if process.terminationStatus != 0 {
             let stderrText = String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
             let detail = stderrText.isEmpty ? (errorDetail ?? "") : stderrText
-            let message = detail.isEmpty ? "claude exited with status \(process.terminationStatus)" : detail
-            throw LLMProviderError.requestFailed(status: Int(process.terminationStatus), message: message)
+            let message = detail.isEmpty ? "Claude Code exited with status \(process.terminationStatus)" : detail
+            throw LLMProviderError.toolFailed(message)
         }
         if let sessionID = sessionPlan.sessionID {
             initializedMissionSessionIDs.insert(sessionID)

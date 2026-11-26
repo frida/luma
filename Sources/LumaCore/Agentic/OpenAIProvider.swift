@@ -59,7 +59,7 @@ public func describeModelFetchError(_ error: Error, baseURL: URL?) -> String {
             break
         }
     }
-    return "Failed to load models: \(error.localizedDescription)"
+    return "Failed to load models: \(LLMProviderError.adapting(error).localizedDescription)"
 }
 
 func fetchOpenAICompatibleModels(
@@ -84,7 +84,7 @@ func fetchOpenAICompatibleModels(
     guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
         let entries = object["data"] as? [[String: Any]]
     else {
-        throw LLMProviderError.requestFailed(status: 0, message: "Unexpected response from \(url.absoluteString)")
+        throw LLMProviderError.providerReported("Unexpected response from \(url.absoluteString)")
     }
 
     return entries.compactMap { entry -> LLMModelInfo? in
@@ -121,7 +121,7 @@ func runOpenAICompatibleStream(
             } catch is CancellationError {
                 continuation.finish(throwing: LLMProviderError.cancelled)
             } catch {
-                continuation.finish(throwing: error)
+                continuation.finish(throwing: LLMProviderError.adapting(error))
             }
         }
         continuation.onTermination = { _ in work.cancel() }

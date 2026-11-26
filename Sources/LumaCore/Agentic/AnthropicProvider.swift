@@ -50,7 +50,7 @@ public struct AnthropicProvider: LLMProvider {
                 } catch is CancellationError {
                     continuation.finish(throwing: LLMProviderError.cancelled)
                 } catch {
-                    continuation.finish(throwing: error)
+                    continuation.finish(throwing: LLMProviderError.adapting(error))
                 }
             }
             continuation.onTermination = { _ in work.cancel() }
@@ -361,7 +361,7 @@ public struct AnthropicProvider: LLMProvider {
             if let err = object["error"] as? [String: Any],
                 let message = err["message"] as? String
             {
-                throw LLMProviderError.requestFailed(status: 0, message: message)
+                throw LLMProviderError.providerReported(message)
             }
             throw LLMProviderError.streamInterrupted
 
