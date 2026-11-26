@@ -2288,6 +2288,10 @@ public final class Engine {
         if let idx = processNodes.firstIndex(where: { $0.id == node.id }) {
             let sid = node.sessionID
             processNodes.remove(at: idx)
+            node.onWidgetUpdate = nil
+            node.onActionStateChange = nil
+            node.onFileStreamTraffic = nil
+            node.onChildTraffic = nil
             node.stop()
             endFileStreams(ofSession: sid, reason: "the session was detached")
             for instance in instrumentsBySession[sid] ?? [] {

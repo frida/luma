@@ -161,7 +161,7 @@ public final class ProcessNode: Identifiable {
     public func stop() {
         Task { @MainActor in
             for instrument in instruments where instrument.attachment == .attached {
-                _ = try? await script.exports.disposeInstrument(["instanceId": instrument.id.uuidString])
+                try? await disposeInstrumentOnAgent(instanceID: instrument.id)
             }
             await tearDownITrace()
             try? await session.detach()
