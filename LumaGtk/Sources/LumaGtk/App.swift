@@ -51,6 +51,9 @@ final class LumaApplication {
         let status = app.application_ptr.withMemoryRebound(to: GApplication.self, capacity: 1) {
             Int(g_application_run($0, CommandLine.argc, CommandLine.unsafeArgv))
         }
+        #if !os(Windows)
+        luma_stop_termination_signals()
+        #endif
         return status
     }
 
@@ -264,7 +267,7 @@ final class LumaApplication {
             window.destroyWindow()
             return
         }
-        if !entry.document.isUntitled {
+        if !entry.document.isUntitled && !isTerminating {
             LumaAppState.shared.noteDocumentClosed(path: entry.document.url.path)
         }
         app.hold()
@@ -274,7 +277,7 @@ final class LumaApplication {
             app.release()
             if openDocuments.isEmpty && activeWelcome == nil {
                 if isTerminating {
-                    app.quit()
+                    Task { @MainActor in self.app.quit() }
                 } else {
                     showWelcome()
                 }

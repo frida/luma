@@ -361,29 +361,47 @@ luma_app_set_open_handler(void *gobject_application,
 
 #include <glib-unix.h>
 #include <signal.h>
+#include <unistd.h>
 
-typedef struct {
-    LumaTerminationCallback callback;
-    void *user_data;
-} LumaTerminationCtx;
+static const int termination_signals[] = { SIGTERM, SIGINT, SIGHUP };
+static guint termination_sources[G_N_ELEMENTS(termination_signals)];
+static LumaTerminationCallback termination_callback;
+static void *termination_user_data;
+static gboolean termination_requested;
 
 static gboolean
 on_termination_signal(gpointer user_data)
 {
-    LumaTerminationCtx *ctx = (LumaTerminationCtx *)user_data;
-    ctx->callback(ctx->user_data);
+    if (termination_requested) {
+        _exit(128 + GPOINTER_TO_INT(user_data));
+    }
+    termination_requested = TRUE;
+    termination_callback(termination_user_data);
     return G_SOURCE_CONTINUE;
 }
 
 void
 luma_on_termination_signals(LumaTerminationCallback callback, void *user_data)
 {
-    LumaTerminationCtx *ctx = g_new0(LumaTerminationCtx, 1);
-    ctx->callback = callback;
-    ctx->user_data = user_data;
-    g_unix_signal_add(SIGTERM, on_termination_signal, ctx);
-    g_unix_signal_add(SIGINT, on_termination_signal, ctx);
-    g_unix_signal_add(SIGHUP, on_termination_signal, ctx);
+    termination_callback = callback;
+    termination_user_data = user_data;
+    for (gsize i = 0; i < G_N_ELEMENTS(termination_signals); i++) {
+        termination_sources[i] = g_unix_signal_add(termination_signals[i], on_termination_signal, GINT_TO_POINTER(termination_signals[i]));
+    }
+}
+
+void
+luma_stop_termination_signals(void)
+{
+    for (gsize i = 0; i < G_N_ELEMENTS(termination_signals); i++) {
+        if (termination_sources[i] != 0) {
+            g_source_remove(termination_sources[i]);
+            termination_sources[i] = 0;
+        }
+        signal(termination_signals[i], SIG_DFL);
+    }
+    termination_callback = NULL;
+    termination_user_data = NULL;
 }
 
 #endif

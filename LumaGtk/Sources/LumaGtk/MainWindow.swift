@@ -501,7 +501,7 @@ final class MainWindow: InstrumentUIHost {
     }
 
     func closeForTermination() {
-        proceedWithClose(persist: !isDirty && hasUnsnapshottedRecords && !document.isUntitled)
+        proceedWithClose(persist: !isDirty && hasUnsnapshottedRecords)
     }
 
     func proceedWithClose(persist: Bool) {
