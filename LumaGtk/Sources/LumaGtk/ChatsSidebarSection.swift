@@ -115,8 +115,9 @@ final class ChatsSidebarSection {
         } onChange: { [weak self] in
             Task { @MainActor in self?.follow() }
         }
-        countLabel.label = "\(rows.count)"
-        countLabel.visible = !engine.objectChats.listed.isEmpty
+        let others = engine.objectChats.otherChatCount
+        countLabel.label = "\(others)"
+        countLabel.visible = others > 0
         let unread = engine.objectChats.unreadTotal
         unreadBadge.label = "\(unread)"
         unreadBadge.visible = unread > 0
@@ -254,6 +255,10 @@ final class ChatsSidebarSection {
 extension ObjectChats {
     var sidebarChatIDs: [UUID] {
         [conversationID] + listed.map(\.id).filter { $0 != conversationID }
+    }
+
+    var otherChatCount: Int {
+        sidebarChatIDs.count - 1
     }
 
     var unreadTotal: Int {
