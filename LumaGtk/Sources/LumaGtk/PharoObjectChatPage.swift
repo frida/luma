@@ -760,6 +760,8 @@ final class PharoObjectChatPage {
         }
         for segment in PharoChatSegment.split(text, around: calls) {
             switch segment {
+            case .text(let text) where text.isEmpty && error != nil:
+                continue
             case .text(let text):
                 content.append(child: ConversationMessageRow.bubble(markdown: text))
             case .call(let call):
