@@ -585,7 +585,7 @@ public final class ProcessNode: Identifiable {
             widget: context.widget,
             kind: .counterSet(WidgetCounterValue(
                 value: value,
-                unit: counterObj["unit"] as? String,
+                unit: (counterObj["unit"] as? String).map(Self.kept),
                 delta: decodeNumber(counterObj["delta"])
             ))
         )
@@ -635,9 +635,9 @@ public final class ProcessNode: Identifiable {
         else { return nil }
         let item = WidgetListItem(
             id: id,
-            title: title,
-            subtitle: itemObj["subtitle"] as? String,
-            accessory: itemObj["accessory"] as? String
+            title: Self.kept(title),
+            subtitle: (itemObj["subtitle"] as? String).map(Self.kept),
+            accessory: (itemObj["accessory"] as? String).map(Self.kept)
         )
         return WidgetUpdate(instanceID: context.instanceID, widget: context.widget, kind: .listUpsert(item))
     }
@@ -658,7 +658,7 @@ public final class ProcessNode: Identifiable {
         return WidgetUpdate(
             instanceID: context.instanceID,
             widget: context.widget,
-            kind: .tableUpsert(WidgetTableRow(id: id, cells: cells))
+            kind: .tableUpsert(WidgetTableRow(id: id, cells: cells.mapValues(Self.kept)))
         )
     }
 
@@ -696,12 +696,16 @@ public final class ProcessNode: Identifiable {
             let kindStr = entryObj["kind"] as? String,
             let kind = WidgetConsoleEntry.Kind(rawValue: kindStr)
         else { return nil }
-        let text = (entryObj["text"] as? String) ?? ""
+        let text = Self.kept((entryObj["text"] as? String) ?? "")
         let image = decodeConsoleEntryImage(entryObj["image"], data: data)
         let value = image == nil ? decodeConsoleEntryValue(entryObj["value"], data: data) : nil
         let replyTo = entryObj["reply_to"] as? String
         let entry = WidgetConsoleEntry(id: id, kind: kind, text: text, value: value, image: image, replyTo: replyTo)
         return WidgetUpdate(instanceID: context.instanceID, widget: context.widget, kind: .consoleAppend(entry))
+    }
+
+    private static func kept(_ text: String) -> String {
+        DisplayTruncation.truncated(text, limit: DisplayTruncation.maxKeptBytes)
     }
 
     private func decodeConsoleEntryValue(_ raw: Any?, data: [UInt8]?) -> JSInspectValue? {

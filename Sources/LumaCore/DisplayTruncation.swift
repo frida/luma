@@ -7,6 +7,7 @@ public enum DisplayTruncation {
     /// large attributed strings, and the user can't usefully scan 5 MiB of
     /// inline text anyway.
     public static let maxInlineBytes = 2 * 1024
+    public static let maxKeptBytes = 64 * 1024
 
     public static func truncated(_ text: String, limit: Int = maxInlineBytes) -> String {
         let byteCount = text.utf8.count
