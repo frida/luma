@@ -114,6 +114,32 @@ public final class Storefront {
         installed.installations
     }
 
+    public var installationsNeedingUpdate: [OutdatedInstallation] {
+        let unreadable = engine.instrumentFolders.unreadableFolders
+        return installed.installations.values
+            .compactMap { installation in unreadable[installed.folderURL(for: installation.itemID).standardizedFileURL].map { (installation, $0) } }
+            .sorted { $0.0.itemID < $1.0.itemID }
+            .map { installation, folderName in
+                let item = installed.items.first { $0.id == installation.itemID }
+                return OutdatedInstallation(
+                    id: installation.itemID,
+                    name: item?.name ?? folderName,
+                    installedVersion: installation.version,
+                    update: item.flatMap { LumaVersion.meets($0.minAppVersion) ? $0 : nil })
+            }
+    }
+
+    public struct OutdatedInstallation: Sendable, Identifiable {
+        public let id: StoreItem.ID
+        public let name: String
+        public let installedVersion: StoreVersion
+        public let update: StoreItem?
+
+        public var explanation: String {
+            update == nil ? "Needs updating for Luma 4; Luma offers the update once the store can be reached" : "Needs updating for Luma 4"
+        }
+    }
+
     public var needsSignIn: Bool {
         engine.gitHubAuth.token == nil
     }
@@ -209,12 +235,22 @@ public final class Storefront {
         guard let installedVersion = installed.installations[item.id]?.version else {
             return unmetRequirement.map(InstallState.requiresLuma) ?? .notInstalled
         }
-        guard installedVersion < item.version, unmetRequirement == nil else { return .installed(installedVersion) }
+        guard installedVersion < item.version || updateNotice(for: item.id) != nil, unmetRequirement == nil else { return .installed(installedVersion) }
         return .updateAvailable(installed: installedVersion, latest: item.version)
     }
 
+    public var installationsAwaitingStore: [OutdatedInstallation] {
+        installationsNeedingUpdate.filter { outdated in !installed.items.contains { $0.id == outdated.id } }
+    }
+
+    public func updateNotice(for itemID: StoreItem.ID) -> String? {
+        installationsNeedingUpdate.first { $0.id == itemID }?.explanation
+    }
+
     public func linkedInstallation(ofCustomInstrument defID: UUID) -> LinkedInstallation? {
-        engine.instrumentFolderLinks[defID].flatMap { installed.linkedInstallation(at: $0.folderURL) }
+        guard let linked = engine.instrumentFolderLinks[defID].flatMap({ installed.linkedInstallation(at: $0.folderURL) }) else { return nil }
+        guard case .installed(let item) = linked.latest, updateNotice(for: linked.itemID) != nil else { return linked }
+        return LinkedInstallation(itemID: linked.itemID, installedVersion: linked.installedVersion, latest: .newer(item))
     }
 
     public func installationFolderURL(for itemID: StoreItem.ID) -> URL {
