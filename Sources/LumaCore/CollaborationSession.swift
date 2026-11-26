@@ -261,6 +261,23 @@ public final class CollaborationSession {
         membership?.role == .owner
     }
 
+    public var roleLine: String {
+        let otherOwners = members.filter { $0.role == .owner && !isSelf($0.id) }.map { "@\($0.id)" }
+        if isOwner {
+            switch otherOwners.count {
+            case 0: return "You own this lab."
+            case 1: return "You and \(otherOwners[0]) own this lab."
+            default: return "You and \(otherOwners.count) others own this lab."
+            }
+        }
+        switch otherOwners.count {
+        case 0: return "You joined this lab."
+        case 1: return "You joined this lab, which \(otherOwners[0]) owns."
+        case 2: return "You joined this lab, which \(otherOwners[0]) and \(otherOwners[1]) own."
+        default: return "You joined this lab, which \(otherOwners.count) people own."
+        }
+    }
+
     public func isSelf(_ userID: String) -> Bool {
         userID == localUser?.id
     }

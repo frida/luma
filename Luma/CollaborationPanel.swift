@@ -167,7 +167,7 @@ struct CollaborationPanel: View {
                     }
 
                     HStack {
-                        Text(collaboration.isOwner ? "You are hosting this lab." : "You joined this lab.")
+                        Text(collaboration.roleLine)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Spacer()
