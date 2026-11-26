@@ -74,7 +74,8 @@ public final class InstrumentViews {
     }
 
     public func allow(instance instanceID: UUID) {
-        guard let engine, let target = engine.hostCodeTarget(ofInstance: instanceID), let hostCode = target.hostCode else { return }
+        guard let engine, !engine.isAwaitingHost(instanceID), let target = engine.hostCodeTarget(ofInstance: instanceID), let hostCode = target.hostCode
+        else { return }
         trust.approve(hostCode.digest)
         for other in approvalsWanted.keys where engine.hostCodeTarget(ofInstance: other)?.def.id == target.def.id {
             approvalsWanted[other] = nil
@@ -88,7 +89,13 @@ public final class InstrumentViews {
 
     func isAllowed(_ instanceID: UUID) async -> Bool {
         await decideGate(of: instanceID)
-        return approvalsWanted[instanceID] == nil
+        return approvalsWanted[instanceID] == nil && engine?.isAwaitingHost(instanceID) == false
+    }
+
+    func hostApprovalChanged(of instanceID: UUID) {
+        for key in demand.keys where key.instanceID == instanceID {
+            restart(key)
+        }
     }
 
     private func decideGate(of instanceID: UUID) async {

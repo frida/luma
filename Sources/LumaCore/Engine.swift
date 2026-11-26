@@ -796,7 +796,12 @@ public final class Engine {
         }
 
         collaboration.onSessionInstrumentAgentReported = { [weak self] instanceID, agent in
-            self?.remoteInstrumentAgents[instanceID] = agent
+            guard let self else { return }
+            let wasAwaiting = self.remoteInstrumentAgents[instanceID]?.awaitsApproval ?? false
+            self.remoteInstrumentAgents[instanceID] = agent
+            if agent.awaitsApproval != wasAwaiting {
+                self.instrumentViews.hostApprovalChanged(of: instanceID)
+            }
         }
 
         collaboration.onSessionInstrumentRemoved = { [weak self] sessionID, instanceID in
@@ -5500,18 +5505,60 @@ public final class Engine {
         return mayAsk && agentState(of: instance).isLive && instrumentViews.approvalWanted(byInstance: instance.id) == nil
     }
 
-    public func approvalAwaitedFromHost(of instance: InstrumentInstance) -> CollaborationSession.UserInfo? {
+    public enum InstrumentGate: Equatable, Sendable {
+        case none
+        case awaitingHost(name: String)
+        case awaitingYou(HostCodeOrigin)
+
+        public static let hostGateNote = "Nothing of it runs here until then."
+
+        public var waitingLabel: String? {
+            switch self {
+            case .none: nil
+            case .awaitingHost(let name): "Waiting for \(name) to allow"
+            case .awaitingYou: "Waiting for you to allow"
+            }
+        }
+
+        public var hostCardLine: String? {
+            guard case .awaitingHost(let name) = self else { return nil }
+            return "Waiting for \(name) to allow this instrument."
+        }
+    }
+
+    public func gate(ofInstance instanceID: UUID) -> InstrumentGate {
+        instrumentsBySession.values.joined().first { $0.id == instanceID }.map(gate(of:)) ?? .none
+    }
+
+    public func gate(of instance: InstrumentInstance) -> InstrumentGate {
+        if let host = approvalAwaitedFromHost(of: instance) {
+            return .awaitingHost(name: host.name)
+        }
+        if let origin = instrumentViews.approvalWanted(byInstance: instance.id) {
+            return .awaitingYou(origin)
+        }
+        return .none
+    }
+
+    func isAwaitingHost(_ instanceID: UUID) -> Bool {
+        instrumentsBySession.values.joined().first { $0.id == instanceID }.map { approvalAwaitedFromHost(of: $0) != nil } ?? false
+    }
+
+    func approvalAwaitedFromHost(of instance: InstrumentInstance) -> CollaborationSession.UserInfo? {
         guard !isHostingNode(instance.sessionID), isHostedRemotelyLive(instance.sessionID), agentState(of: instance).awaitsApproval else { return nil }
         return sessions.first { $0.id == instance.sessionID }?.host
     }
 
     func gateRefusal(of instance: InstrumentInstance) -> String? {
         let name = descriptor(for: instance).displayName
-        if instrumentViews.approvalWanted(byInstance: instance.id) != nil {
+        switch gate(of: instance) {
+        case .none:
+            return nil
+        case .awaitingHost(let host):
+            return "“\(name)” is waiting for \(host) to allow its code to run."
+        case .awaitingYou:
             return "“\(name)” is waiting for you to allow its code to run; nothing of it runs until you do."
         }
-        guard let host = approvalAwaitedFromHost(of: instance) else { return nil }
-        return "“\(name)” is waiting for \(host.name) to allow its code to run."
     }
 
     func instanceAllowed(_ instanceID: UUID) {
