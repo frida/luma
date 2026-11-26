@@ -48,10 +48,16 @@ final class EventStreamPane {
     private let liveDot: Label
     private let liveLabel: Label
     private let scroll: ScrolledWindow
-    private let scroller: BottomScroller
     private let listOverlay: Overlay
     private let notShownLabel = Label(str: "")
-    private let eventListBox: Box
+    private let eventList: ListView
+    private let eventModel = StringList(strings: nil)
+    private let eventRows = SignalListItemFactory()
+    private var boundRows: [UnsafeMutableRawPointer: Widget] = [:]
+    private var shownEvents: [RuntimeEvent] = []
+    private var trimmedSinceShown = 0
+    private var lastShown = Date.distantPast
+    private var showScheduled = false
     private let emptyStateBox: Box
     private let emptyStateTitle: Label
     private let emptyStateSubtitle: Label
@@ -187,15 +193,15 @@ final class EventStreamPane {
         collapseCaretButton.tooltipText = "Hide the event stream"
         filterBar.append(child: collapseCaretButton)
 
-        eventListBox = Box(orientation: .vertical, spacing: 0)
-        eventListBox.hexpand = true
-        eventListBox.valign = .end
+        eventList = ListView(model: NoSelection(model: eventModel), factory: eventRows)
+        eventList.hexpand = true
 
         scroll = ScrolledWindow()
         scroll.hexpand = true
         scroll.vexpand = true
-        scroll.set(naturallyTallChild: eventListBox)
-        scroller = BottomScroller(scroll, threshold: 20.0)
+        scroll.set(child: eventList)
+        scroll.propagateNaturalHeight = true
+        scroll.valign = .end
 
         emptyStateBox = Box(orientation: .vertical, spacing: 6)
         emptyStateBox.halign = .center
@@ -277,9 +283,13 @@ final class EventStreamPane {
             }
         }
 
-        scroller.onPinnedChanged = { [weak self] pinned in
-            MainActor.assumeIsolated { self?.setPaused(!pinned) }
+        let userScroll = EventControllerScroll(flags: .vertical)
+        userScroll.onScroll { [weak self] _, _, dy in
+            MainActor.assumeIsolated { self?.userScrolled(by: dy) }
+            return false
         }
+        scroll.add(controller: userScroll)
+        configureRows()
 
         soundEventsToggle.onToggled { [weak self] button in
             MainActor.assumeIsolated {
@@ -372,11 +382,26 @@ final class EventStreamPane {
         if !paused {
             syncSnapshot()
             pendingNewEvents = 0
-            scroller.pin()
+            showNewest()
         }
         updateLiveIndicator()
         updatePendingPill()
     }
+
+    private func userScrolled(by dy: Double) {
+        if dy < 0 {
+            setPaused(true)
+            return
+        }
+        Task { @MainActor [weak self] in
+            guard let self, let adjustment = self.scroll.vadjustment else { return }
+            if adjustment.upper - (adjustment.value + adjustment.pageSize) < Self.bottomZone {
+                self.setPaused(false)
+            }
+        }
+    }
+
+    private static let bottomZone = 20.0
 
     private func toggleCollapsed() {
         isCollapsed.toggle()
@@ -424,7 +449,7 @@ final class EventStreamPane {
 
         let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         let hasSearch = !trimmed.isEmpty
-        var appended = false
+        var appended = 0
 
         for event in newEvents {
             let kind = EventSourceFilter.from(event.source)
@@ -435,18 +460,14 @@ final class EventStreamPane {
                 if haystack.range(of: trimmed, options: .caseInsensitive) == nil { continue }
             }
             filteredEvents.append(event)
-            let prev = filteredEvents.dropLast().last?.timestamp
-            let row = makeRow(for: event, previousTimestamp: prev)
-            rows.append(row)
-            eventListBox.append(child: row)
-            appended = true
+            appended += 1
         }
         keepLast(engine.eventLog.maxVisible)
         showNotShown()
 
-        if appended {
+        if appended > 0 {
             emptyStateBox.visible = false
-            scroller.pin()
+            showSoon()
         }
         updateBar()
         updatePendingPill()
@@ -464,11 +485,8 @@ final class EventStreamPane {
         }
         let excess = filteredEvents.count - count
         guard excess > 0 else { return }
-        for row in rows.prefix(excess) {
-            eventListBox.remove(child: row)
-        }
-        rows.removeFirst(excess)
         filteredEvents.removeFirst(excess)
+        trimmedSinceShown += excess
     }
 
     private func handleEventUpdated(_ event: RuntimeEvent) {
@@ -481,13 +499,9 @@ final class EventStreamPane {
     }
 
     private func replaceRow(at index: Int) {
-        let row = rows[index]
-        guard row.focusChild == nil else { return }
-        let previousTimestamp = index > 0 ? filteredEvents[index - 1].timestamp : nil
-        let replacement = makeRow(for: filteredEvents[index], previousTimestamp: previousTimestamp)
-        eventListBox.insertChildAfter(child: replacement, sibling: row)
-        eventListBox.remove(child: row)
-        rows[index] = replacement
+        showPending()
+        shownEvents[index] = filteredEvents[index]
+        spliceRows(at: index, removing: 1, adding: 1)
     }
 
     private func syncSnapshot() {
@@ -503,7 +517,7 @@ final class EventStreamPane {
         rebuildFiltered()
         updatePendingPill()
         showNotShown()
-        scroller.pin()
+        showNewest()
     }
 
     private func clearEvents() {
@@ -543,27 +557,91 @@ final class EventStreamPane {
         updateBar()
     }
 
-    private var jsValueKeepers: [JSInspectValueWidget] = []
-    private var revealKeepers: [RevealingText] = []
-    private var dataViews: [PatternDecodeView] = []
-    private var rows: [Widget] = []
+    private var rowOwners: [ObjectIdentifier: [AnyObject]] = [:]
+    private var buildingOwners: [AnyObject] = []
 
     private func refreshRows() {
-        clearChildren(of: eventListBox)
-        jsValueKeepers.removeAll()
-        revealKeepers.removeAll()
-        dataViews.removeAll()
-        rows.removeAll()
-        var prevTimestamp: Date? = nil
-        for event in filteredEvents {
-            let row = makeRow(for: event, previousTimestamp: prevTimestamp)
-            rows.append(row)
-            eventListBox.append(child: row)
-            prevTimestamp = event.timestamp
-        }
+        shownEvents = filteredEvents
+        trimmedSinceShown = 0
+        spliceRows(at: 0, removing: Int(eventModel.nItems), adding: filteredEvents.count)
         emptyStateBox.visible = filteredEvents.isEmpty
         if filteredEvents.isEmpty {
             applyEmptyState()
+        }
+    }
+
+    private func configureRows() {
+        eventRows.onSetup { _, object in
+            MainActor.assumeIsolated {
+                ListItemRef(raw: object.ptr).set(child: Box(orientation: .vertical, spacing: 0))
+            }
+        }
+        eventRows.onBind { [weak self] _, object in
+            MainActor.assumeIsolated {
+                self?.bindRow(ListItemRef(raw: object.ptr))
+            }
+        }
+        eventRows.onUnbind { [weak self] _, object in
+            MainActor.assumeIsolated {
+                self?.unbindRow(ListItemRef(raw: object.ptr))
+            }
+        }
+    }
+
+    private func bindRow(_ item: ListItemRef) {
+        let position = Int(item.position)
+        let previousTimestamp = position > 0 ? shownEvents[position - 1].timestamp : nil
+        let row = makeRow(for: shownEvents[position], previousTimestamp: previousTimestamp)
+        BoxRef(raw: item.child!.ptr).append(child: row)
+        boundRows[item.ptr] = row
+    }
+
+    private func unbindRow(_ item: ListItemRef) {
+        guard let row = boundRows.removeValue(forKey: item.ptr) else { return }
+        BoxRef(raw: item.child!.ptr).remove(child: row)
+        rowOwners[ObjectIdentifier(row)] = nil
+    }
+
+    private func showSoon() {
+        guard !showScheduled else { return }
+        let wait = lastShown.addingTimeInterval(Self.showInterval).timeIntervalSinceNow
+        guard wait > 0 else { return showPending() }
+        showScheduled = true
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(wait))
+            guard let self else { return }
+            self.showScheduled = false
+            self.showPending()
+        }
+    }
+
+    private static let showInterval = 0.5
+
+    private func showPending() {
+        let removing = min(trimmedSinceShown, shownEvents.count)
+        let adding = filteredEvents.count - (shownEvents.count - removing)
+        guard removing > 0 || adding > 0 else { return }
+        shownEvents = filteredEvents
+        trimmedSinceShown = 0
+        lastShown = Date()
+        spliceRows(at: 0, removing: removing, adding: 0)
+        spliceRows(at: Int(eventModel.nItems), removing: 0, adding: adding)
+        if !isPaused && !isCollapsed {
+            showNewest()
+        }
+    }
+
+    private func showNewest() {
+        guard eventModel.nItems > 0 else { return }
+        eventList.scrollTo(pos: Int(eventModel.nItems) - 1, flags: .none)
+    }
+
+    private func spliceRows(at position: Int, removing removals: Int, adding additions: Int) {
+        "".withCString { blank in
+            let items = [UnsafePointer<CChar>?](repeating: blank, count: additions) + [nil]
+            items.withUnsafeBufferPointer {
+                eventModel.splice(position: position, nRemovals: removals, additions: $0.baseAddress)
+            }
         }
     }
 
@@ -766,6 +844,8 @@ final class EventStreamPane {
         row.append(child: badge)
 
         attachRowContextMenu(to: row, event: event)
+        rowOwners[ObjectIdentifier(row)] = buildingOwners
+        buildingOwners = []
         return row
     }
 
@@ -778,7 +858,7 @@ final class EventStreamPane {
         ) { [weak engine] placements in
             engine?.setPlacements(placements, at: nil, in: .event(eventID))
         }
-        dataViews.append(decode)
+        buildingOwners.append(decode)
         return decode.widget
     }
 
@@ -900,7 +980,7 @@ final class EventStreamPane {
             column.hexpand = true
             for value in message.values {
                 let wrapper = JSInspectValueWidget.make(value: value, engine: engine, sessionID: sessionID, stored: .event(event.id))
-                jsValueKeepers.append(wrapper)
+                buildingOwners.append(wrapper)
                 wrapper.widget.halign = .fill
                 wrapper.widget.hexpand = true
                 column.append(child: wrapper.widget)
@@ -939,7 +1019,7 @@ final class EventStreamPane {
         else { return nil }
 
         let wrapper = JSInspectValueWidget.make(value: value, engine: engine, sessionID: sessionID, stored: .event(event.id))
-        jsValueKeepers.append(wrapper)
+        buildingOwners.append(wrapper)
         wrapper.widget.hexpand = true
         return wrapper.widget
     }
@@ -991,7 +1071,7 @@ final class EventStreamPane {
             column.append(child: makeClippedPayload(s))
         } else {
             let wrapper = JSInspectValueWidget.make(value: parsed.message, engine: engine!, sessionID: sessionID, stored: .event(event.id))
-            jsValueKeepers.append(wrapper)
+            buildingOwners.append(wrapper)
             wrapper.widget.hexpand = true
             column.append(child: wrapper.widget)
         }
@@ -1018,7 +1098,7 @@ final class EventStreamPane {
 
     private func makeClippedPayload(_ text: String) -> Widget {
         let reveal = RevealingText(LumaCore.StyledText(text), allowance: TextReveal.event, wraps: true)
-        revealKeepers.append(reveal)
+        buildingOwners.append(reveal)
         return reveal.widget
     }
 
