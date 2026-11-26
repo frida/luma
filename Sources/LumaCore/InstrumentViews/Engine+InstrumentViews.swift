@@ -15,6 +15,13 @@ struct InstrumentViewTarget {
 }
 
 extension Engine {
+    func hostCode(of instance: InstrumentInstance) -> HostCode? {
+        guard instance.kind == .custom, let defID = UUID(uuidString: instance.sourceIdentifier),
+            let bundle = customInstruments.bundle(forDefID: defID)
+        else { return nil }
+        return HostCode(files: bundle.files)
+    }
+
     func hostCodeTarget(ofInstance instanceID: UUID) -> (def: CustomInstrumentDef, hostCode: HostCode?)? {
         guard let instance = try? store.fetchInstrument(id: instanceID), instance.kind == .custom,
             let defID = UUID(uuidString: instance.sourceIdentifier),

@@ -5614,7 +5614,9 @@ public final class Engine {
     }
 
     func approvalAwaitedFromHost(of instance: InstrumentInstance) -> CollaborationSession.UserInfo? {
-        guard !isHostingNode(instance.sessionID), isHostedRemotelyLive(instance.sessionID), agentState(of: instance).awaitsApproval else { return nil }
+        guard !isHostingNode(instance.sessionID), isHostedRemotelyLive(instance.sessionID) else { return nil }
+        let agent = agentState(of: instance)
+        guard agent.awaitsApproval || hostCode(of: instance).map({ $0.digest != agent.allowedCode }) == true else { return nil }
         return sessions.first { $0.id == instance.sessionID }?.host
     }
 
@@ -5648,7 +5650,8 @@ public final class Engine {
             let isLive = node.instruments.first(where: { $0.id == instance.id })?.attachment == .attached
             return InstrumentAgentState(
                 isLive: isLive, disabledActions: disabledWidgetActions[instance.id] ?? [:],
-                awaitsApproval: instrumentViews.approvalWanted(byInstance: instance.id) != nil)
+                awaitsApproval: instrumentViews.approvalWanted(byInstance: instance.id) != nil,
+                allowedCode: instrumentViews.allowedHostCode(ofInstance: instance.id))
         }
         guard isHostedRemotelyLive(instance.sessionID) else { return InstrumentAgentState() }
         return remoteInstrumentAgents[instance.id] ?? InstrumentAgentState()

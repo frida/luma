@@ -73,6 +73,10 @@ public final class InstrumentViews {
         approvalsWanted[instanceID]
     }
 
+    func allowedHostCode(ofInstance instanceID: UUID) -> String? {
+        approvalsWanted[instanceID] == nil ? gateDecisions[instanceID] : nil
+    }
+
     public func allow(instance instanceID: UUID) {
         guard let engine, !engine.isAwaitingHost(instanceID), let target = engine.hostCodeTarget(ofInstance: instanceID), let hostCode = target.hostCode
         else { return }
