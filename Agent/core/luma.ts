@@ -12,15 +12,46 @@ import * as symbolicate from "./symbolicate.js";
 import * as threads from "./threads.js";
 
 rpc.exports = {
-    ...env,
-    ...fs,
-    ...instrument,
-    ...memory,
-    ...modules,
-    ...patterns,
-    ...pkg,
-    ...repl,
-    ...resolver,
-    ...symbolicate,
-    ...threads,
+    getProcessInfo: env.getProcessInfo,
+
+    getFilesystemRoots: fs.getFilesystemRoots,
+    listDirectory: fs.listDirectory,
+    walkTree: fs.walkTree,
+    makeDirectory: fs.makeDirectory,
+    removePath: fs.removePath,
+    pullFile: fs.pullFile,
+    cancelPull: fs.cancelPull,
+    pushFile: fs.pushFile,
+
+    loadInstrument: instrument.loadInstrument,
+    updateInstrumentConfig: instrument.updateInstrumentConfig,
+    disposeInstrument: instrument.disposeInstrument,
+    invokeWidgetAction: instrument.invokeWidgetAction,
+    submitConsoleInput: instrument.submitConsoleInput,
+
+    readMemory: memory.readMemory,
+    writeMemory: memory.writeMemory,
+
+    enumerateModuleRanges: modules.enumerateModuleRanges,
+    findRangeByAddress: modules.findRangeByAddress,
+    getModuleIdentity: modules.getModuleIdentity,
+    enumerateModuleFunctions: modules.enumerateModuleFunctions,
+    enumerateModuleSymbols: modules.enumerateModuleSymbols,
+    queryModuleSymbols: modules.queryModuleSymbols,
+    outlineModule: modules.outlineModule,
+    describeSwiftType: modules.describeSwiftType,
+
+    installPatternGlobals: patterns.installPatternGlobals,
+
+    loadPackages: pkg.loadPackages,
+
+    evaluate: repl.evaluate,
+    complete: repl.complete,
+
+    resolveTargets: resolver.resolveTargets,
+    lookupAnchorAddress: resolver.lookupAnchorAddress,
+
+    symbolicate: symbolicate.symbolicate,
+
+    getThreadSnapshot: threads.getThreadSnapshot,
 };
