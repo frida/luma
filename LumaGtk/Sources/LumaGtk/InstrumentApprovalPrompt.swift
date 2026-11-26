@@ -9,7 +9,9 @@ final class InstrumentApprovalPrompt {
 
     private weak var engine: Engine?
     private let instanceID: UUID
+    private let request = Label(str: "")
     private let provenance = Label(str: "")
+    private let note = Label(str: "")
     private let allow = Button(label: HostCodeOrigin.allowLabel)
     private let onWanted: (_ wanted: Bool) -> Void
 
@@ -37,12 +39,13 @@ final class InstrumentApprovalPrompt {
         let nameLabel = Self.paragraph(name)
         nameLabel.add(cssClass: "heading")
         card.append(child: nameLabel)
-        card.append(child: Self.paragraph(HostCodeOrigin.request))
+        Self.shape(request)
+        card.append(child: request)
         provenance.add(cssClass: "dim-label")
         Self.shape(provenance)
         card.append(child: provenance)
-        let note = Self.paragraph(HostCodeOrigin.gateNote)
         note.add(cssClass: "dim-label")
+        Self.shape(note)
         card.append(child: note)
 
         allow.add(cssClass: "suggested-action")
@@ -65,20 +68,35 @@ final class InstrumentApprovalPrompt {
     private static let maxWidthChars = 44
 
     private func observe() {
-        guard let views = engine?.instrumentViews else { return }
-        let origin = withObservationTracking {
-            views.approvalWanted(byInstance: instanceID)
+        guard let engine else { return }
+        let instanceID = instanceID
+        let gate = withObservationTracking {
+            engine.gate(ofInstance: instanceID)
         } onChange: { [weak self] in
             Task { @MainActor in self?.observe() }
         }
-        provenance.label = origin?.provenance ?? ""
-        widget.visible = origin != nil
-        onWanted(origin != nil)
+        switch gate {
+        case .none:
+            break
+        case .awaitingHost:
+            request.label = gate.hostCardLine ?? ""
+            provenance.visible = false
+            note.label = Engine.InstrumentGate.hostGateNote
+            allow.visible = false
+        case .awaitingYou(let origin):
+            request.label = HostCodeOrigin.request
+            provenance.label = origin.provenance
+            provenance.visible = true
+            note.label = HostCodeOrigin.gateNote
+            allow.visible = true
+        }
+        widget.visible = gate != .none
+        onWanted(gate != .none)
         focusAllow()
     }
 
     private func focusAllow() {
-        guard widget.visible, widget.mapped else { return }
+        guard widget.visible, widget.mapped, allow.visible else { return }
         _ = allow.grabFocus()
     }
 

@@ -98,9 +98,10 @@ final class InstrumentViewWidget {
     }
 
     private func follow() {
-        guard let views = engine?.instrumentViews else { return }
+        guard let engine else { return }
+        let views = engine.instrumentViews
         let state = withObservationTracking { () -> (phase: InstrumentViews.Phase, gated: Bool) in
-            (views.phase(of: key), views.approvalWanted(byInstance: key.instanceID) != nil)
+            (views.phase(of: key), engine.gate(ofInstance: key.instanceID) != .none)
         } onChange: { [weak self] in
             Task { @MainActor in self?.follow() }
         }

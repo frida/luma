@@ -33,7 +33,7 @@ final class CustomUIKind: InstrumentUIKind {
     }
 
     func hasSidebarChildren(instrument: LumaCore.InstrumentInstance, engine: Engine) -> Bool {
-        !engine.children(of: instrument.id).isEmpty
+        !engine.shownChildren(of: instrument.id).isEmpty
     }
 }
 
@@ -86,7 +86,7 @@ private final class InstrumentChildRows {
 
     var isCurrent: Bool {
         guard let engine, defID.flatMap({ engine.customInstruments.def(withId: $0)?.children }) ?? [] == templates else { return false }
-        return Self.shape(of: engine.children(of: instanceID), templates: templates, selected: selectedRef) == shape
+        return Self.shape(of: engine.shownChildren(of: instanceID), templates: templates, selected: selectedRef) == shape
     }
 
     private var selectedRef: ChildRef? {
@@ -97,7 +97,7 @@ private final class InstrumentChildRows {
         guard let engine else { return [] }
         let instanceID = instanceID
         return withObservationTracking {
-            engine.children(of: instanceID)
+            engine.shownChildren(of: instanceID)
         } onChange: { [weak self] in
             Task { @MainActor in self?.follow() }
         }

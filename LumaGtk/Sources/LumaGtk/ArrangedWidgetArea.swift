@@ -77,6 +77,7 @@ final class ArrangedWidgetArea {
     func setCovered(_ covered: Bool) {
         content.sensitive = !covered
         content.canTarget = !covered
+        content.opacity = covered ? 0 : 1
     }
 
     func setTally(_ tally: RowTally, of id: String) {
