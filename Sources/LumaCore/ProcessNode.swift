@@ -212,6 +212,7 @@ public final class ProcessNode: Identifiable {
             guard let self else { return }
 
             self.scriptEventsStarted = true
+            self.scriptMessagesEnded = false
             let waiters = self.scriptEventsStartWaiters
             self.scriptEventsStartWaiters.removeAll(keepingCapacity: false)
             for w in waiters { w.resume() }
@@ -227,9 +228,10 @@ public final class ProcessNode: Identifiable {
                     }
 
                 case .destroyed:
-                    break
+                    self.endScriptMessages()
                 }
             }
+            self.endScriptMessages()
         }
     }
 
@@ -396,6 +398,11 @@ public final class ProcessNode: Identifiable {
                 else { return false }
                 let lost = dict["lost"] as? Int ?? 0
                 handleITraceChunk(sessionId: sessionId, data: Array(chunkData), lost: lost)
+                return true
+
+            case "luma:marker":
+                guard let marker = dict["marker"] as? String else { return false }
+                markerArrived(marker)
                 return true
 
             case "instrument-batch":
@@ -922,6 +929,10 @@ public final class ProcessNode: Identifiable {
     public var evaluateRadare2: ((String) async -> REPLResult.Value)!
     public var onDroppedAtSource: ((DroppedAtSource) -> Void)?
     public var onMalformedMessage: ((String) -> Void)?
+    private var markerWaiters: [String: CheckedContinuation<Void, Swift.Error>] = [:]
+    private var handledMarkers: Set<String> = []
+    private var abandonedMarkers: Set<String> = []
+    private var scriptMessagesEnded = false
 
     public enum DroppedAtSource: Sendable {
         case events(instanceID: UUID, count: Int)
@@ -1716,14 +1727,17 @@ public final class ProcessNode: Identifiable {
         restored: [String: Any] = [:],
         childTemplates: [String] = []
     ) async throws {
-        try await script.exports.loadInstrument(JSValue([
-            "instanceId": instanceID.uuidString,
-            "moduleName": moduleName,
-            "source": source,
-            "config": config,
-            "restored": restored,
-            "childTemplates": childTemplates,
-        ]))
+        try await marked { marker in
+            try await script.exports.loadInstrument(JSValue([
+                "instanceId": instanceID.uuidString,
+                "moduleName": moduleName,
+                "source": source,
+                "config": config,
+                "restored": restored,
+                "childTemplates": childTemplates,
+                "marker": marker,
+            ]))
+        }
     }
 
     public func disposeInstrumentOnAgent(instanceID: UUID) async throws {
@@ -1732,10 +1746,13 @@ public final class ProcessNode: Identifiable {
     }
 
     public func pushInstrumentConfig(instanceID: UUID, config: Any) async throws {
-        try await script.exports.updateInstrumentConfig(JSValue([
-            "instanceId": instanceID.uuidString,
-            "config": config,
-        ]))
+        try await marked { marker in
+            try await script.exports.updateInstrumentConfig(JSValue([
+                "instanceId": instanceID.uuidString,
+                "config": config,
+                "marker": marker,
+            ]))
+        }
     }
 
     func invokeWidgetAction(
@@ -1754,8 +1771,55 @@ public final class ProcessNode: Identifiable {
         ]
         WidgetSlot.addTarget(widget, to: &payload)
         if let item { payload["item"] = item }
-        return HandlerOutcome(try await script.exports.invokeWidgetAction(JSValue(payload)))
+        return try await marked { marker in
+            payload["marker"] = marker
+            return HandlerOutcome(try await script.exports.invokeWidgetAction(JSValue(payload)))
+        }
     }
+
+    private func marked<T>(_ call: (String) async throws -> T) async throws -> T {
+        let marker = UUID().uuidString
+        let result: T
+        do {
+            result = try await call(marker)
+        } catch {
+            abandon(marker)
+            throw error
+        }
+        try await handled(marker)
+        return result
+    }
+
+    private func handled(_ marker: String) async throws {
+        guard handledMarkers.remove(marker) == nil else { return }
+        guard !scriptMessagesEnded else { throw Self.scriptGone }
+        try await withCheckedThrowingContinuation { markerWaiters[marker] = $0 }
+    }
+
+    private func abandon(_ marker: String) {
+        if handledMarkers.remove(marker) == nil {
+            abandonedMarkers.insert(marker)
+        }
+    }
+
+    private func markerArrived(_ marker: String) {
+        if let waiter = markerWaiters.removeValue(forKey: marker) {
+            waiter.resume()
+        } else if abandonedMarkers.remove(marker) == nil {
+            handledMarkers.insert(marker)
+        }
+    }
+
+    private func endScriptMessages() {
+        scriptMessagesEnded = true
+        let waiters = markerWaiters
+        markerWaiters.removeAll()
+        for waiter in waiters.values {
+            waiter.resume(throwing: Self.scriptGone)
+        }
+    }
+
+    private static let scriptGone = LumaCoreError.invalidOperation("The process's agent went away before it finished.")
 
     public func postViewMessage(instanceID: UUID, widget: String, payload: WidgetViewPayload, from sender: CollaborationSession.UserInfo?) {
         var message: [String: Any] = [
@@ -1786,7 +1850,10 @@ public final class ProcessNode: Identifiable {
             "savesFile": savesFile,
         ]
         WidgetSlot.addTarget(widget, to: &payload)
-        return HandlerOutcome(try await script.exports.submitConsoleInput(JSValue(payload)))
+        return try await marked { marker in
+            payload["marker"] = marker
+            return HandlerOutcome(try await script.exports.submitConsoleInput(JSValue(payload)))
+        }
     }
 
     func postFileStreamStanza(_ stanza: [String: Any]) {

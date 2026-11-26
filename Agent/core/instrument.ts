@@ -254,52 +254,57 @@ function receiveViewMessages(): void {
 
 receiveViewMessages();
 
-export async function loadInstrument({ instanceId, moduleName, source, config, restored, childTemplates }: {
+export async function loadInstrument({ instanceId, moduleName, source, config, restored, childTemplates, marker }: {
     instanceId: string,
     moduleName: string,
     source: string,
     config: unknown,
     restored: { children?: { [template: string]: { [id: string]: ChildRow } } },
     childTemplates: string[],
+    marker: string,
 }): Promise<void> {
-    const instrument = await loadInstrumentModule(moduleName, source);
-    liveInstances.add(instanceId);
-    const ctx = makeInstrumentContext(instanceId, childTemplates, restored.children ?? {});
-
-    ctx.post("instrument-actions-reset", {});
-    let handle: InstrumentHandle;
     try {
-        handle = await instrument.create(ctx, config, withHexPointers(restored));
-    } catch (e) {
-        forgetInstance(instanceId);
-        throw e;
+        const instrument = await loadInstrumentModule(moduleName, source);
+        liveInstances.add(instanceId);
+        const ctx = makeInstrumentContext(instanceId, childTemplates, restored.children ?? {});
+
+        ctx.post("instrument-actions-reset", {});
+        let handle: InstrumentHandle;
+        try {
+            handle = await instrument.create(ctx, config, withHexPointers(restored));
+        } catch (e) {
+            forgetInstance(instanceId);
+            throw e;
+        }
+
+        const controller: InstrumentController = {
+            instrument,
+            config,
+            handle,
+        };
+
+        instruments.set(instanceId, controller);
+    } finally {
+        markHandled(marker);
     }
-
-    const controller: InstrumentController = {
-        instrument,
-        config,
-        handle,
-    };
-
-    instruments.set(instanceId, controller);
-    flushBatches();
 }
 
-export async function updateInstrumentConfig({ instanceId, config }: {
+export async function updateInstrumentConfig({ instanceId, config, marker }: {
     instanceId: string,
     config: unknown,
+    marker: string,
 }): Promise<void> {
-    const controller = instruments.get(instanceId);
-    if (controller === undefined) {
-        throw new Error(`No such instance: ${instanceId}`);
-    }
-
-    controller.config = config;
-
     try {
+        const controller = instruments.get(instanceId);
+        if (controller === undefined) {
+            throw new Error(`No such instance: ${instanceId}`);
+        }
+
+        controller.config = config;
+
         await controller.handle.updateConfig?.(config);
     } finally {
-        flushBatches();
+        markHandled(marker);
     }
 }
 
@@ -324,7 +329,7 @@ function forgetInstance(instanceId: string): void {
     budgets.delete(instanceId);
 }
 
-export async function invokeWidgetAction({ instanceId, widget, child, action, item, actionId, savesFile }: {
+export async function invokeWidgetAction({ instanceId, widget, child, action, item, actionId, savesFile, marker }: {
     instanceId: string,
     widget: string,
     child?: ChildRef,
@@ -332,32 +337,36 @@ export async function invokeWidgetAction({ instanceId, widget, child, action, it
     item?: string,
     actionId: string,
     savesFile: boolean,
+    marker: string,
 }): Promise<HandlerOutcome> {
-    const controller = instruments.get(instanceId);
-    if (controller === undefined) {
-        throw new Error(`No such instance: ${instanceId}`);
-    }
-
-    const chosen: WidgetAction = { widget, action };
-    if (item !== undefined) {
-        chosen.item = item;
-    }
-    if (child !== undefined) {
-        chosen.child = child;
-    }
-    const offer = makeFileOffer(instanceId, actionId, savesFile, "onAction", "action");
-    let error: string | null = null;
     try {
-        await controller.handle.onAction?.(chosen, { file: offer.file, show: offer.show });
-    } catch (e) {
-        error = (e instanceof Error) ? e.message : String(e);
+        const controller = instruments.get(instanceId);
+        if (controller === undefined) {
+            throw new Error(`No such instance: ${instanceId}`);
+        }
+
+        const chosen: WidgetAction = { widget, action };
+        if (item !== undefined) {
+            chosen.item = item;
+        }
+        if (child !== undefined) {
+            chosen.child = child;
+        }
+        const offer = makeFileOffer(instanceId, actionId, savesFile, "onAction", "action");
+        let error: string | null = null;
+        try {
+            await controller.handle.onAction?.(chosen, { file: offer.file, show: offer.show });
+        } catch (e) {
+            error = (e instanceof Error) ? e.message : String(e);
+        }
+        offer.close();
+        return { file: offer.offered(), error, show: offer.shown() };
+    } finally {
+        markHandled(marker);
     }
-    offer.close();
-    flushBatches();
-    return { file: offer.offered(), error, show: offer.shown() };
 }
 
-export async function submitConsoleInput({ instanceId, widget, child, entryId, text, actionId, savesFile }: {
+export async function submitConsoleInput({ instanceId, widget, child, entryId, text, actionId, savesFile, marker }: {
     instanceId: string,
     widget: string,
     child?: ChildRef,
@@ -365,33 +374,37 @@ export async function submitConsoleInput({ instanceId, widget, child, entryId, t
     text: string,
     actionId: string,
     savesFile: boolean,
+    marker: string,
 }): Promise<HandlerOutcome> {
-    const controller = instruments.get(instanceId);
-    if (controller === undefined) {
-        throw new Error(`No such instance: ${instanceId}`);
-    }
-
-    const offer = makeFileOffer(instanceId, actionId, savesFile, "onConsoleInput", "input");
-    const respond = makeConsoleResponder(instanceId, widget, child, entryId, offer);
-    const input: ConsoleInput = { widget, entryId, text };
-    if (child !== undefined) {
-        input.child = child;
-    }
     try {
-        await controller.handle.onConsoleInput?.(input, respond);
-    } catch (e) {
-        respond.error((e instanceof Error) ? e.message : String(e));
+        const controller = instruments.get(instanceId);
+        if (controller === undefined) {
+            throw new Error(`No such instance: ${instanceId}`);
+        }
+
+        const offer = makeFileOffer(instanceId, actionId, savesFile, "onConsoleInput", "input");
+        const respond = makeConsoleResponder(instanceId, widget, child, entryId, offer);
+        const input: ConsoleInput = { widget, entryId, text };
+        if (child !== undefined) {
+            input.child = child;
+        }
+        try {
+            await controller.handle.onConsoleInput?.(input, respond);
+        } catch (e) {
+            respond.error((e instanceof Error) ? e.message : String(e));
+        }
+        offer.close();
+        queue(instanceId, {
+            type: "widget-console-reply-done",
+            instance_id: instanceId,
+            widget,
+            child,
+            reply_to: entryId,
+        }, null);
+        return { file: offer.offered(), error: null, show: offer.shown() };
+    } finally {
+        markHandled(marker);
     }
-    offer.close();
-    queue(instanceId, {
-        type: "widget-console-reply-done",
-        instance_id: instanceId,
-        widget,
-        child,
-        reply_to: entryId,
-    }, null);
-    flushBatches();
-    return { file: offer.offered(), error: null, show: offer.shown() };
 }
 
 interface HandlerOutcome {
@@ -1018,6 +1031,11 @@ function queue(instanceId: string, message: Message, data: Payload): void {
 export function sendNow(message: Message, data: Payload = null): void {
     flushBatches();
     send(message, data);
+}
+
+function markHandled(marker: string): void {
+    flushBatches();
+    send({ type: "luma:marker", marker });
 }
 
 export function flushBatches(): void {
