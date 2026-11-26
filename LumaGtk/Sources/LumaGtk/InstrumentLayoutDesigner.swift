@@ -36,6 +36,7 @@ final class InstrumentLayoutDesigner {
     private let sampleIcon = Box(orientation: .horizontal, spacing: 0)
 
     private static let canvasWidth = 720.0
+    private static let previewMinimumWidth = 280
     private static let sideWidth = 260
     private static let sampleRowWidth = 220
 
@@ -157,7 +158,8 @@ final class InstrumentLayoutDesigner {
         scroll.hexpand = true
         scroll.vexpand = true
         scroll.setPolicy(hscrollbarPolicy: .automatic, vscrollbarPolicy: .automatic)
-        scroll.setSizeRequest(width: Int(Self.canvasWidth) + 16, height: 480)
+        scroll.propagateNaturalWidth = true
+        scroll.setSizeRequest(width: Self.previewMinimumWidth, height: 480)
         scroll.set(child: canvas)
         return scroll
     }
