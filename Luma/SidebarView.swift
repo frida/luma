@@ -314,7 +314,9 @@ private struct SidebarChatsRow: View {
             Text("Chats")
             Spacer()
             SidebarUnreadBadge(count: chats.unreadTotal)
-            Text("\(chats.sidebarChatIDs.count)").font(.caption).foregroundStyle(.secondary)
+            if !chats.listed.isEmpty {
+                Text("\(chats.sidebarChatIDs.count)").font(.caption).foregroundStyle(.secondary)
+            }
             SidebarSectionDisclosure(isExpanded: isExpanded, title: "chats", onToggle: onToggle)
         }
         .accessibilityElement(children: .combine)
