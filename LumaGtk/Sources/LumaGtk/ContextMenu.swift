@@ -47,11 +47,11 @@ enum ContextMenu {
         }
         row.add(controller: longPress)
         let keys = EventControllerKey()
-        keys.onKeyPressed { [anchor] _, keyval, _, state in
+        keys.onKeyPressed { keys, keyval, _, state in
             MainActor.assumeIsolated {
                 let key = Int32(keyval)
                 guard key == Gdk.keyMenu || (key == Gdk.keyF10 && state.contains(.shiftMask)) else { return false }
-                present(0, Double(anchor.height))
+                present(0, Double(keys.widget.height))
                 return true
             }
         }

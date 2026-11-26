@@ -322,7 +322,7 @@ final class NotebookPane {
         }
     }
 
-    private func presentContextMenu(anchor: Widget, x: Double, y: Double, entry: LumaCore.NotebookEntry) {
+    private func presentContextMenu(anchor: WidgetRef, x: Double, y: Double, entry: LumaCore.NotebookEntry) {
         var topSection: [ContextMenu.Item] = []
         if (entry.kind == .note) {
             topSection.append(.init("Edit") { [weak self] in self?.beginEditing(entry) })
@@ -408,9 +408,9 @@ final class NotebookPane {
 
         let rightClick = GestureClick()
         rightClick.set(button: 3)
-        rightClick.onPressed { [weak self, card] _, _, x, y in
+        rightClick.onPressed { [weak self] gesture, _, x, y in
             MainActor.assumeIsolated {
-                self?.presentContextMenu(anchor: card, x: x, y: y, entry: entry)
+                self?.presentContextMenu(anchor: gesture.widget, x: x, y: y, entry: entry)
             }
         }
         card.add(controller: rightClick)

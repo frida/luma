@@ -388,15 +388,15 @@ final class REPLPane {
     private func attachContextMenu(to anchor: Box, cell: LumaCore.REPLCell) {
         let gesture = GestureClick()
         gesture.set(button: 3)
-        gesture.onPressed { [anchor, weak self] _, _, x, y in
+        gesture.onPressed { [weak self] gesture, _, x, y in
             MainActor.assumeIsolated {
-                self?.presentCellContextMenu(at: anchor, x: x, y: y, cell: cell)
+                self?.presentCellContextMenu(at: gesture.widget, x: x, y: y, cell: cell)
             }
         }
         anchor.add(controller: gesture)
     }
 
-    private func presentCellContextMenu(at anchor: Widget, x: Double, y: Double, cell: LumaCore.REPLCell) {
+    private func presentCellContextMenu(at anchor: WidgetRef, x: Double, y: Double, cell: LumaCore.REPLCell) {
         let copy: [ContextMenu.Item] = Self.resultText(of: cell.result).map { text in
             [.init("Copy Result") { Display.getDefault()?.clipboard.set(text: text) }]
         } ?? []

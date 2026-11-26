@@ -41,10 +41,10 @@ enum AddressActionMenu {
         let gesture = GestureClick()
         gesture.set(button: 3)
         gesture.propagationPhase = .capture
-        gesture.onPressed { [anchor] gesture, _, x, y in
+        gesture.onPressed { gesture, _, x, y in
             MainActor.assumeIsolated {
                 _ = gesture.set(state: .claimed)
-                present(at: anchor, x: x, y: y, engine: engine, sessionID: sessionID, address: address, value: value, copyLabel: copyLabel, includeDisassembly: includeDisassembly, context: context)
+                present(at: gesture.widget, x: x, y: y, engine: engine, sessionID: sessionID, address: address, value: value, copyLabel: copyLabel, includeDisassembly: includeDisassembly, context: context)
             }
         }
         anchor.add(controller: gesture)

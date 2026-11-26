@@ -396,12 +396,13 @@ final class InstrumentLayoutDesigner {
         box.onClicked { [weak self] _ in
             MainActor.assumeIsolated { self?.select(path) }
         }
-        ContextMenu.attach(to: box, anchor: box) { [weak self, box] x, y in
+        ContextMenu.attach(to: box, anchor: box) { [weak self] x, y in
             guard let self else { return }
             if !self.selection.contains(path) {
                 self.select(path)
             }
-            self.presentCommands(at: self.boxes[path] ?? box, x: x, y: y)
+            guard let box = self.boxes[path] else { return }
+            self.presentCommands(at: box, x: x, y: y)
         }
         boxes[path] = box
         return box
@@ -437,10 +438,11 @@ final class InstrumentLayoutDesigner {
 
     private func installDropTarget(on box: Button, at path: Path) {
         let target = DropTarget(type: GType(64), actions: .move)
-        target.onDrop { [weak self, box] _, _, x, y in
+        target.onDrop { [weak self] target, _, x, y in
             MainActor.assumeIsolated {
                 guard let self, let id = self.draggedID else { return false }
                 self.draggedID = nil
+                let box = target.widget!
                 return self.drop(id, at: Self.side(x: x, y: y, width: Double(box.width), height: Double(box.height)), of: path)
             }
         }

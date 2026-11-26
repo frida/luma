@@ -25,7 +25,7 @@ enum ThreadSidebar {
         let gesture = GestureClick()
         gesture.set(button: 3)
         gesture.propagationPhase = .capture
-        gesture.onPressed { [anchor] _, _, x, y in
+        gesture.onPressed { gesture, _, x, y in
             MainActor.assumeIsolated {
                 let items: [ContextMenu.Item] = actions.map { action in
                     ContextMenu.Item(action.title, destructive: action.role == .destructive) {
@@ -36,7 +36,7 @@ enum ThreadSidebar {
                         }
                     }
                 }
-                ContextMenu.present([items], at: anchor, x: x, y: y)
+                ContextMenu.present([items], at: gesture.widget, x: x, y: y)
             }
         }
         anchor.add(controller: gesture)
