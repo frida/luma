@@ -236,8 +236,9 @@ private struct WidgetCanvas: View {
         if !engine.isHostingNode(instance.sessionID) && !engine.isHostedRemotelyLive(instance.sessionID) {
             return "Session not attached."
         }
-        if let host = engine.approvalAwaitedFromHost(of: instance) {
-            return "Waiting for \(host.name) to allow"
+        let gate = engine.gate(of: instance)
+        if case .awaitingHost = gate {
+            return gate.waitingLabel
         }
         if !engine.isHostingNode(instance.sessionID) {
             return "Only the member hosting this session can type here."

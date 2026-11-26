@@ -14,20 +14,53 @@ private struct InstrumentApprovalGate: ViewModifier {
     let engine: Engine
 
     func body(content: Content) -> some View {
-        let origin = instanceID.flatMap { engine.instrumentViews.approvalWanted(byInstance: $0) }
+        let gate = instanceID.map(engine.gate(ofInstance:)) ?? .none
         content
-            .disabled(origin != nil)
-            .accessibilityHidden(origin != nil)
+            .opacity(gate == .none ? 1 : 0)
+            .disabled(gate != .none)
+            .accessibilityHidden(gate != .none)
             .overlay {
-                if let origin, let instanceID {
+                switch gate {
+                case .none:
+                    EmptyView()
+                case .awaitingHost:
+                    ZStack {
+                        Color.black.opacity(0.35)
+                        HostWaitCard(line: gate.hostCardLine ?? "", icon: icon, name: name)
+                    }
+                case .awaitingYou(let origin):
                     ZStack {
                         Color.black.opacity(0.35)
                         ApprovalPrompt(origin: origin, icon: icon, name: name) {
-                            engine.instrumentViews.allow(instance: instanceID)
+                            if let instanceID { engine.instrumentViews.allow(instance: instanceID) }
                         }
                     }
                 }
             }
+    }
+}
+
+private struct HostWaitCard: View {
+    let line: String
+    let icon: InstrumentIcon
+    let name: String
+
+    var body: some View {
+        VStack(spacing: 10) {
+            InstrumentIconView(icon: icon, pointSize: 32)
+            Text(name)
+                .font(.headline)
+            Text(line)
+            Text(Engine.InstrumentGate.hostGateNote)
+                .foregroundStyle(.secondary)
+        }
+        .multilineTextAlignment(.center)
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(20)
+        .frame(maxWidth: 400)
+        .background(.background, in: RoundedRectangle(cornerRadius: 14))
+        .shadow(color: .black.opacity(0.15), radius: 12, y: 4)
+        .accessibilityElement(children: .combine)
     }
 }
 

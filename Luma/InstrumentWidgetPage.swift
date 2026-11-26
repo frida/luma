@@ -19,8 +19,8 @@ struct InstrumentWidgetPage<Heading: View>: View {
             VStack(alignment: .leading, spacing: Self.spacing) {
                 VStack(alignment: .leading, spacing: Self.spacing) {
                     heading()
-                    if let host = instance.flatMap(engine.approvalAwaitedFromHost(of:)) {
-                        Label("Waiting for \(host.name) to allow", systemImage: "hourglass")
+                    if let waiting = instance.flatMap({ engine.gate(of: $0).waitingLabel }) {
+                        Label(waiting, systemImage: "hourglass")
                             .font(.callout)
                             .foregroundStyle(.secondary)
                     }

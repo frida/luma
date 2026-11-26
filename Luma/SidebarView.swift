@@ -1103,10 +1103,7 @@ private struct SidebarInstrumentRow: View {
     }
 
     private var approvalWait: String? {
-        if engine.instrumentViews.approvalWanted(byInstance: instance.id) != nil {
-            return "Waiting for you to allow"
-        }
-        return engine.approvalAwaitedFromHost(of: instance).map { "Waiting for \($0.name) to allow" }
+        engine.gate(of: instance).waitingLabel
     }
 
     private func deleteInstrument() {

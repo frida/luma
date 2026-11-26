@@ -11,7 +11,7 @@ struct CustomInstrumentChildRows: View {
 
     var body: some View {
         let templates = engine.customInstruments.def(withId: UUID(uuidString: instance.sourceIdentifier)!)?.children ?? []
-        let children = engine.children(of: instance.id)
+        let children = engine.shownChildren(of: instance.id)
         ForEach(templates) { template in
             let group = children.filter { $0.ref.template == template.id }
             if !group.isEmpty {

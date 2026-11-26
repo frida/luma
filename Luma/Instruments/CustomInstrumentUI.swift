@@ -58,6 +58,6 @@ struct CustomInstrumentUI: InstrumentUI {
     }
 
     func hasSidebarChildren(instance: LumaCore.InstrumentInstance, engine: Engine) -> Bool {
-        !engine.children(of: instance.id).isEmpty
+        !engine.shownChildren(of: instance.id).isEmpty
     }
 }

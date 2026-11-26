@@ -63,7 +63,7 @@ struct InstrumentViewWidget: View {
     @ViewBuilder
     private var content: some View {
         switch phase {
-        case _ where views.approvalWanted(byInstance: key.instanceID) != nil:
+        case _ where engine.gate(ofInstance: key.instanceID) != .none:
             Color.clear
         case .failed(let message):
             stopped(message)
