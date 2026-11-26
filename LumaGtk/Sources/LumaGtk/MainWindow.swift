@@ -2,6 +2,7 @@ import Adw
 import CLuma
 import Foundation
 import Frida
+import GLibObject
 import Gdk
 import Gtk
 import LumaCore
@@ -323,6 +324,9 @@ final class MainWindow: InstrumentUIHost {
         splitView.hexpand = true
         splitView.vexpand = true
         self.splitView = splitView
+        header.packStart(child: Self.makeSidebarToggle(for: splitView))
+        window.add(breakpoint: Self.collapsingBreakpoint(for: splitView))
+        window.setSizeRequest(width: Self.minimumWidth, height: -1)
 
         outerPaned.position = state.collaborationSashPosition
         outerPaned.resizeStartChild = true
@@ -774,6 +778,29 @@ final class MainWindow: InstrumentUIHost {
         let question = PartnerContactQuestion(storefront: storefront)
         partnerContactQuestion = question
         detailTopBar.prepend(child: question.widget)
+    }
+
+    private static let collapsingWidth = 600
+    private static let minimumWidth = 480
+
+    private static func makeSidebarToggle(for splitView: Adw.NavigationSplitView) -> Button {
+        let toggle = Button()
+        toggle.set(iconName: "sidebar-show-symbolic")
+        toggle.tooltipText = "Toggle Sidebar"
+        toggle.visible = false
+        toggle.onClicked { [splitView] _ in
+            MainActor.assumeIsolated { splitView.showContent = !splitView.showContent }
+        }
+        splitView.onNotifyCollapsed { [toggle] view, _ in
+            MainActor.assumeIsolated { toggle.visible = view.collapsed }
+        }
+        return toggle
+    }
+
+    private static func collapsingBreakpoint(for splitView: Adw.NavigationSplitView) -> Adw.Breakpoint {
+        let breakpoint = Adw.Breakpoint(condition: Adw.BreakpointCondition.parse(str: "max-width: \(collapsingWidth)px"))
+        breakpoint.addSetter(object: splitView, property: "collapsed", value: GLibObject.Value(true))
+        return breakpoint
     }
 
     private func observeProjectCommits(storeInstanceID: UUID) {
@@ -2843,6 +2870,7 @@ final class MainWindow: InstrumentUIHost {
     }
 
     private func select(_ newValue: SidebarSelection) {
+        splitView.showContent = true
         guard selection != newValue else { return }
         selection = newValue
         if currentChatPane.map({ newValue != .chat($0.chatID) }) == true {
