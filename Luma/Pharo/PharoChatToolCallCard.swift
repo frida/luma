@@ -206,7 +206,7 @@ struct PharoChatToolCallCard: View {
                 }
             }
             .font(.callout.monospaced())
-            .foregroundStyle(Color.fridaBrand)
+            .foregroundStyle(.tint)
         }
         .buttonStyle(.plain)
         .platformPointer(.link)
