@@ -156,6 +156,7 @@ func sharedGitHubAuth() -> GitHubAuth { sharedWelcomeModel.gitHubAuth }
         private func handle(url: URL) {
             guard let labID = BackendConfig.labID(fromLink: url) else { return }
             guard EngineRegistry.shared.engine(inLab: labID) == nil, !CollaborationJoinQueue.shared.isQueued(labID) else {
+                EngineRegistry.shared.engine(inLab: labID)?.followLabLink()
                 NSApp.activate()
                 return
             }

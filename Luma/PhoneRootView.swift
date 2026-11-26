@@ -103,7 +103,10 @@ struct PhoneRootView: View {
 
     @MainActor
     private func joinLab(labID: String) {
-        guard EngineRegistry.shared.engine(inLab: labID) == nil, !CollaborationJoinQueue.shared.isQueued(labID) else { return }
+        guard EngineRegistry.shared.engine(inLab: labID) == nil, !CollaborationJoinQueue.shared.isQueued(labID) else {
+            EngineRegistry.shared.engine(inLab: labID)?.followLabLink()
+            return
+        }
         CollaborationJoinQueue.shared.enqueue(labID: labID)
         let url = Self.untitledURL(named: "Shared Lab")
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)

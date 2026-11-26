@@ -417,6 +417,7 @@ final class LumaApplication {
     fileprivate func handleCollaborationURL(_ urlString: String) {
         guard let url = URL(string: urlString), let labID = BackendConfig.labID(fromLink: url) else { return }
         if let existing = openDocuments.values.first(where: { $0.engine.associatedLabID == labID }) {
+            existing.engine.followLabLink()
             existing.window.present()
             return
         }

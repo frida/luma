@@ -379,6 +379,13 @@ public final class Engine {
         }
     }
 
+    public func followLabLink() {
+        switch collaboration.status {
+        case .disconnected, .error: startCollaboration()
+        case .connecting, .joined: break
+        }
+    }
+
     public func signOut() async {
         await gitHubAuth.signOut()
         await collaboration.stop()
