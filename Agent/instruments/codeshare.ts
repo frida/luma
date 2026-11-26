@@ -92,40 +92,41 @@ class CodeShareRuntime {
         const originalInterceptor = g.Interceptor;
 
         const runtime = this;
-        const wrappedInterceptor: any = { ...originalInterceptor };
+        const overrides = {
+            attach(
+                target: NativePointerValue,
+                callbacksOrProbe: InvocationListenerCallbacks | InstructionProbeCallback,
+                data?: NativePointerValue,
+            ): InvocationListener {
+                const listener = originalInterceptor.attach(target, callbacksOrProbe, data);
+                runtime.registerListener(listener);
+                return listener;
+            },
 
-        wrappedInterceptor.attach = function (
-            target: NativePointerValue,
-            callbacksOrProbe: InvocationListenerCallbacks | InstructionProbeCallback,
-            data?: NativePointerValue,
-        ): InvocationListener {
-            const listener = originalInterceptor.attach(target, callbacksOrProbe, data);
-            runtime.registerListener(listener);
-            return listener;
-        };
+            replace(
+                target: NativePointerValue,
+                replacement: NativePointerValue,
+                data?: NativePointerValue,
+            ): void {
+                runtime.registerReplacedTarget(parseNativePointerValue(target));
+                return originalInterceptor.replace(target, replacement, data);
+            },
 
-        wrappedInterceptor.replace = function (
-            target: NativePointerValue,
-            replacement: NativePointerValue,
-            data?: NativePointerValue,
-        ): void {
-            runtime.registerReplacedTarget(parseNativePointerValue(target));
-            return originalInterceptor.replace(target, replacement, data);
-        };
+            replaceFast(
+                target: NativePointerValue,
+                replacement: NativePointerValue,
+            ): NativePointer {
+                const trampoline = originalInterceptor.replaceFast(target, replacement);
+                runtime.registerReplacedTarget(parseNativePointerValue(target));
+                return trampoline;
+            },
 
-        wrappedInterceptor.replaceFast = function (
-            target: NativePointerValue,
-            replacement: NativePointerValue,
-        ): NativePointer {
-            const trampoline = originalInterceptor.replaceFast(target, replacement);
-            runtime.registerReplacedTarget(parseNativePointerValue(target));
-            return trampoline;
+            revert(target: NativePointerValue): void {
+                runtime.unregisterReplacedTarget(parseNativePointerValue(target));
+                return originalInterceptor.revert(target);
+            },
         };
-
-        wrappedInterceptor.revert = function (target: NativePointerValue): void {
-            runtime.unregisterReplacedTarget(parseNativePointerValue(target));
-            return originalInterceptor.revert(target);
-        };
+        const wrappedInterceptor = Object.create(originalInterceptor, Object.getOwnPropertyDescriptors(overrides));
 
         g.Interceptor = wrappedInterceptor;
         try {
