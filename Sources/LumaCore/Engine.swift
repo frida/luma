@@ -6181,32 +6181,17 @@ public func deleteCustomInstrument(_ defID: UUID) async {
             }
         }
 
-        Task { @MainActor [weak self, weak node] in
-            guard let node else { return }
-            for await update in node.widgetUpdates {
-                self?.applyWidgetUpdate(update, sessionID: sessionID, origin: .local)
-            }
+        node.onWidgetUpdate = { [weak self] update in
+            self?.applyWidgetUpdate(update, sessionID: sessionID, origin: .local)
         }
-
-        Task { @MainActor [weak self, weak node] in
-            guard let node else { return }
-            for await change in node.actionStateChanges {
-                self?.applyActionStateChange(change, sessionID: sessionID)
-            }
+        node.onActionStateChange = { [weak self] change in
+            self?.applyActionStateChange(change, sessionID: sessionID)
         }
-
-        Task { @MainActor [weak self, weak node] in
-            guard let node else { return }
-            for await traffic in node.fileStreamTraffic {
-                self?.handleFileStreamTraffic(traffic, sessionID: sessionID)
-            }
+        node.onFileStreamTraffic = { [weak self] traffic in
+            self?.handleFileStreamTraffic(traffic, sessionID: sessionID)
         }
-
-        Task { @MainActor [weak self, weak node] in
-            guard let node else { return }
-            for await traffic in node.childTraffic {
-                self?.handleChildTraffic(traffic)
-            }
+        node.onChildTraffic = { [weak self] traffic in
+            self?.handleChildTraffic(traffic)
         }
     }
 

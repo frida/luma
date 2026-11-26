@@ -82,10 +82,6 @@ public final class ProcessNode: Identifiable {
     private let _moduleDeltas = AsyncEventSource<ModuleDelta>()
     private let _threadDeltas = AsyncEventSource<ThreadDelta>()
     private let _detachEvents = AsyncEventSource<SessionDetachReason>()
-    private let _widgetUpdates = AsyncEventSource<WidgetUpdate>()
-    private let _actionStateChanges = AsyncEventSource<InstrumentActionStateChange>()
-    private let _fileStreamTraffic = AsyncEventSource<FileStreamTraffic>()
-    private let _childTraffic = AsyncEventSource<ChildTraffic>()
 
     public var events: AsyncStream<RuntimeEvent> { _events.makeStream() }
     public var replResults: AsyncStream<REPLResult> { _replResults.makeStream() }
@@ -93,10 +89,10 @@ public final class ProcessNode: Identifiable {
     public var moduleDeltas: AsyncStream<ModuleDelta> { _moduleDeltas.makeStream() }
     public var threadDeltas: AsyncStream<ThreadDelta> { _threadDeltas.makeStream() }
     public var detachEvents: AsyncStream<SessionDetachReason> { _detachEvents.makeStream() }
-    public var widgetUpdates: AsyncStream<WidgetUpdate> { _widgetUpdates.makeStream() }
-    public var actionStateChanges: AsyncStream<InstrumentActionStateChange> { _actionStateChanges.makeStream() }
-    var fileStreamTraffic: AsyncStream<FileStreamTraffic> { _fileStreamTraffic.makeStream() }
-    var childTraffic: AsyncStream<ChildTraffic> { _childTraffic.makeStream() }
+    var onWidgetUpdate: ((WidgetUpdate) -> Void)?
+    var onActionStateChange: ((InstrumentActionStateChange) -> Void)?
+    var onFileStreamTraffic: ((FileStreamTraffic) -> Void)?
+    var onChildTraffic: ((ChildTraffic) -> Void)?
 
     private var assemblingViewStates: [InstrumentViews.Key: AssemblingViewState] = [:]
     private var scriptEventsStarted = false
@@ -455,57 +451,57 @@ public final class ProcessNode: Identifiable {
 
             case "widget-counter-set":
                 guard let update = decodeCounterSetUpdate(dict) else { return false }
-                _widgetUpdates.yield(update)
+                onWidgetUpdate?(update)
                 return true
 
             case "widget-histogram-set":
                 guard let update = decodeHistogramSetUpdate(dict) else { return false }
-                _widgetUpdates.yield(update)
+                onWidgetUpdate?(update)
                 return true
 
             case "widget-histogram-increment":
                 guard let update = decodeHistogramIncrementUpdate(dict) else { return false }
-                _widgetUpdates.yield(update)
+                onWidgetUpdate?(update)
                 return true
 
             case "widget-graph-point":
                 guard let update = decodeGraphPointUpdate(dict) else { return false }
-                _widgetUpdates.yield(update)
+                onWidgetUpdate?(update)
                 return true
 
             case "widget-list-upsert":
                 guard let update = decodeListUpsertUpdate(dict) else { return false }
-                _widgetUpdates.yield(update)
+                onWidgetUpdate?(update)
                 return true
 
             case "widget-list-remove":
                 guard let update = decodeListRemoveUpdate(dict) else { return false }
-                _widgetUpdates.yield(update)
+                onWidgetUpdate?(update)
                 return true
 
             case "widget-table-upsert":
                 guard let update = decodeTableUpsertUpdate(dict) else { return false }
-                _widgetUpdates.yield(update)
+                onWidgetUpdate?(update)
                 return true
 
             case "widget-table-remove":
                 guard let update = decodeTableRemoveUpdate(dict) else { return false }
-                _widgetUpdates.yield(update)
+                onWidgetUpdate?(update)
                 return true
 
             case "widget-hex-set":
                 guard let update = decodeHexSetUpdate(dict, data: data) else { return false }
-                _widgetUpdates.yield(update)
+                onWidgetUpdate?(update)
                 return true
 
             case "widget-console-append":
                 guard let update = decodeConsoleAppendUpdate(dict, data: data) else { return false }
-                _widgetUpdates.yield(update)
+                onWidgetUpdate?(update)
                 return true
 
             case "widget-console-reply-done":
                 guard let update = decodeConsoleReplyDoneUpdate(dict) else { return false }
-                _widgetUpdates.yield(update)
+                onWidgetUpdate?(update)
                 return true
 
             case "widget-view-state":
@@ -514,30 +510,30 @@ public final class ProcessNode: Identifiable {
                     let size = dict["data_size"] as? Int
                 else { return false }
                 if let update = startViewState(json: json, size: size, of: context) {
-                    _widgetUpdates.yield(update)
+                    onWidgetUpdate?(update)
                 }
                 return true
 
             case "widget-view-state-data":
                 guard let context = decodeWidgetContext(dict) else { return false }
                 if let update = continueViewState(with: data ?? [], of: context) {
-                    _widgetUpdates.yield(update)
+                    onWidgetUpdate?(update)
                 }
                 return true
 
             case "widget-view-event":
                 guard let update = decodeViewEvent(dict, data: data) else { return false }
-                _widgetUpdates.yield(update)
+                onWidgetUpdate?(update)
                 return true
 
             case "widget-clear":
                 guard let update = decodeClearUpdate(dict) else { return false }
-                _widgetUpdates.yield(update)
+                onWidgetUpdate?(update)
                 return true
 
             case "widget-action-enabled":
                 guard let change = decodeActionEnabled(dict) else { return false }
-                _actionStateChanges.yield(change)
+                onActionStateChange?(change)
                 return true
 
             case "instrument-child":
@@ -548,31 +544,31 @@ public final class ProcessNode: Identifiable {
                     guard let text = badge["text"] as? String else { return nil }
                     return ChildBadge(text: text, tone: (badge["tone"] as? String).flatMap(ChildBadge.Tone.init(rawValue:)) ?? .neutral)
                 }
-                _childTraffic.yield(.upsert(instanceID: instanceID, ref: ref, title: title, subtitle: dict["subtitle"] as? String, badge: badge))
+                onChildTraffic?(.upsert(instanceID: instanceID, ref: ref, title: title, subtitle: dict["subtitle"] as? String, badge: badge))
                 return true
 
             case "instrument-child-remove":
                 guard let instanceId = dict["instance_id"] as? String, let instanceID = UUID(uuidString: instanceId),
                     let ref = ChildRef.fromWireJSON(dict["child"])
                 else { return false }
-                _childTraffic.yield(.remove(instanceID: instanceID, ref: ref))
+                onChildTraffic?(.remove(instanceID: instanceID, ref: ref))
                 return true
 
             case "luma:stream":
                 guard let stanza = dict["stanza"] as? [String: Any] else { return false }
-                _fileStreamTraffic.yield(.stanza(stanza, data.map { Data($0) }))
+                onFileStreamTraffic?(.stanza(stanza, data.map { Data($0) }))
                 return true
 
             case "luma:stream-abort":
                 guard let actionId = dict["action_id"] as? String, let actionID = UUID(uuidString: actionId),
                     let reason = dict["reason"] as? String
                 else { return false }
-                _fileStreamTraffic.yield(.abort(actionID: actionID, reason: reason))
+                onFileStreamTraffic?(.abort(actionID: actionID, reason: reason))
                 return true
 
             case "instrument-actions-reset":
                 guard let instanceId = dict["instance_id"] as? String, let instanceID = UUID(uuidString: instanceId) else { return false }
-                _actionStateChanges.yield(.reset(instanceID: instanceID))
+                onActionStateChange?(.reset(instanceID: instanceID))
                 return true
 
             default:
