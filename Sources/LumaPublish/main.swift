@@ -77,6 +77,7 @@ func publish(_ release: PlannedRelease, dryRun: Bool, through storefront: Storef
     do {
         let draft = try storefront.publishDraft(forFolderAt: release.folderURL)
         guard let version = draft.version else { return .failed("package.json has no version") }
+        guard draft.listing.hasValidSummary else { throw StorefrontError.invalidSummary }
         if dryRun {
             return try await rehearse(release, version: version, through: storefront)
         }

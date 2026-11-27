@@ -10,6 +10,12 @@ public struct StoreListing: Codable, Hashable, Sendable {
         self.category = category
         self.access = access
     }
+
+    public static let summaryLimit = 200
+
+    public var hasValidSummary: Bool {
+        !summary.isEmpty && summary.count <= Self.summaryLimit
+    }
 }
 
 extension StoreListing {

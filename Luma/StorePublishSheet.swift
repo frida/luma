@@ -12,7 +12,6 @@ struct StorePublishSheet: View {
     @State private var submission: Submission = .editing
     @State private var formFittingHeight: CGFloat?
 
-    private static let summaryLimit = 200
 
     private enum Stage {
         case connecting
@@ -169,9 +168,9 @@ struct StorePublishSheet: View {
             TextField("Summary", text: $fields.summary, axis: .vertical)
                 .lineLimit(1...4)
                 .accessibilityIdentifier("storePublish.summary")
-            Text("\(summary.count) of \(Self.summaryLimit) characters")
+            Text("\(summary.count) of \(StoreListing.summaryLimit) characters")
                 .font(.caption)
-                .foregroundStyle(summary.count > Self.summaryLimit ? .red : .secondary)
+                .foregroundStyle(summary.count > StoreListing.summaryLimit ? .red : .secondary)
 
             Picker("Category", selection: $fields.category) {
                 Text("Choose\u{2026}").tag(StoreCategory.ID?.none)
@@ -243,7 +242,7 @@ struct StorePublishSheet: View {
     }
 
     private var listing: StoreListing? {
-        guard !summary.isEmpty, summary.count <= Self.summaryLimit, let category = fields.category, let access else { return nil }
+        guard !summary.isEmpty, summary.count <= StoreListing.summaryLimit, let category = fields.category, let access else { return nil }
         return StoreListing(summary: summary, category: category, access: access)
     }
 

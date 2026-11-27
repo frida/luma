@@ -355,6 +355,7 @@ public final class Storefront {
 
     @discardableResult
     public func publish(folderAt folderURL: URL, version: StoreVersion, listing: StoreListing, notes: String) async throws -> StoreItem {
+        guard listing.hasValidSummary else { throw StorefrontError.invalidSummary }
         let publication = try await publication(ofFolderAt: folderURL)
         let bundle = publication.bundle
         var payload: JSONObject = [
@@ -683,6 +684,7 @@ public enum StorefrontError: Swift.Error, LocalizedError, Equatable {
     case notLinkedToFolder
     case notPublisher
     case invalidPackageName(String)
+    case invalidSummary
     case lumaRequirementMissing(StoreVersion)
     case rejected(Rejection, message: String)
     case server(message: String)
@@ -725,6 +727,8 @@ public enum StorefrontError: Swift.Error, LocalizedError, Equatable {
             return "This account may not publish to the store."
         case .invalidPackageName(let name):
             return "'\(name)' cannot name an item in the store: use lowercase letters, digits and dashes, starting with a letter or digit."
+        case .invalidSummary:
+            return "The summary must be 1 to \(StoreListing.summaryLimit) characters."
         case .lumaRequirementMissing(let version):
             return "An instrument with widgets, settings or Smalltalk files runs only in Luma \(version) or newer, so its package.json has to "
                 + "say so: \"engines\": { \"luma\": \"\(version.engineRange)\" }."

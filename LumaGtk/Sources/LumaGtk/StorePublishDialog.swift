@@ -47,7 +47,6 @@ final class StorePublishDialog {
         }
     }
 
-    private static let summaryLimit = 200
     private static let categoryPrompt = "Choose\u{2026}"
 
     init(storefront: Storefront, def: CustomInstrumentDef) {
@@ -314,8 +313,8 @@ final class StorePublishDialog {
         markInvalid(versionRow, versionIsInvalid)
         versionHint.visible = versionIsInvalid
         let summaryLength = enteredSummary.count
-        summaryLengthLabel.label = "\(summaryLength) of \(Self.summaryLimit) characters"
-        markInvalid(summaryRow, summaryLength > Self.summaryLimit)
+        summaryLengthLabel.label = "\(summaryLength) of \(StoreListing.summaryLimit) characters"
+        markInvalid(summaryRow, summaryLength > StoreListing.summaryLimit)
         minimumRow.visible = accessChoice == .sponsors
         publishButton.sensitive = phase == .editing && submission != nil
         publishSpinner.visible = phase == .publishing
@@ -332,7 +331,7 @@ final class StorePublishDialog {
     private var submission: Submission? {
         guard let version = StoreVersion(enteredVersionText) else { return nil }
         let summary = enteredSummary
-        guard !summary.isEmpty, summary.count <= Self.summaryLimit, let category = enteredCategory else { return nil }
+        guard !summary.isEmpty, summary.count <= StoreListing.summaryLimit, let category = enteredCategory else { return nil }
         let notes = enteredNotes
         guard !notes.isEmpty else { return nil }
         return Submission(
