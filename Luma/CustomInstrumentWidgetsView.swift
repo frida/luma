@@ -543,12 +543,16 @@ private struct WidgetRow: View {
             VStack(alignment: .leading, spacing: 8) {
                 capRow(label: "Max items", binding: listMaxItemsBinding)
                 WidgetActionsEditor(title: "Row actions", actions: listActionsBinding)
+                WidgetActionsEditor(title: "On double-click or Return", actions: rowActivationBinding, capacity: 1)
+                WidgetActionsEditor(title: "On selection", actions: rowSelectionBinding, capacity: 1)
             }
         case .table:
             VStack(alignment: .leading, spacing: 8) {
                 capRow(label: "Max rows", binding: tableMaxRowsBinding)
                 TableColumnsEditor(columns: tableColumnsBinding)
                 WidgetActionsEditor(title: "Row actions", actions: tableActionsBinding)
+                WidgetActionsEditor(title: "On double-click or Return", actions: rowActivationBinding, capacity: 1)
+                WidgetActionsEditor(title: "On selection", actions: rowSelectionBinding, capacity: 1)
             }
         case .hex:
             capRow(label: "Max bytes", binding: hexMaxBytesBinding)
@@ -702,6 +706,42 @@ private struct WidgetRow: View {
                 if case .table(var cfg) = widget.kind {
                     cfg.rowActions = newValue
                     widget.kind = .table(cfg)
+                }
+            }
+        )
+    }
+
+    private var rowActivationBinding: Binding<[InstrumentWidget.Action]> {
+        Binding(
+            get: { widget.kind.rowActivation.map { [$0] } ?? [] },
+            set: { newValue in
+                switch widget.kind {
+                case .list(var cfg):
+                    cfg.rowActivation = newValue.first
+                    widget.kind = .list(cfg)
+                case .table(var cfg):
+                    cfg.rowActivation = newValue.first
+                    widget.kind = .table(cfg)
+                default:
+                    break
+                }
+            }
+        )
+    }
+
+    private var rowSelectionBinding: Binding<[InstrumentWidget.Action]> {
+        Binding(
+            get: { widget.kind.rowSelection.map { [$0] } ?? [] },
+            set: { newValue in
+                switch widget.kind {
+                case .list(var cfg):
+                    cfg.rowSelection = newValue.first
+                    widget.kind = .list(cfg)
+                case .table(var cfg):
+                    cfg.rowSelection = newValue.first
+                    widget.kind = .table(cfg)
+                default:
+                    break
                 }
             }
         )
@@ -1005,6 +1045,7 @@ private struct TableColumnsEditor: View {
 private struct WidgetActionsEditor: View {
     let title: String
     @Binding var actions: [InstrumentWidget.Action]
+    var capacity = InstrumentWidget.maxActions
     @State private var draftID: String = ""
     @State private var draftName: String = ""
     @State private var nameAutoFilled: Bool = true
@@ -1028,24 +1069,30 @@ private struct WidgetActionsEditor: View {
                     .buttonStyle(.borderless)
                 }
             }
-            HStack(spacing: 6) {
-                TextField("id", text: $draftID)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 110)
-                    .focused($focus, equals: .id)
-                    .onChange(of: draftID) { _, newValue in applyIDChange(newValue) }
-                    .onSubmit(append)
-                TextField("Name", text: $draftName)
-                    .textFieldStyle(.roundedBorder)
-                    .focused($focus, equals: .name)
-                    .onChange(of: draftName) { _, newValue in
-                        if newValue != CamelCase.humanized(draftID) { nameAutoFilled = false }
-                    }
-                    .onSubmit(append)
-                Button { append() } label: { Image(systemName: "plus.circle") }
-                    .buttonStyle(.borderless)
-                    .disabled(addDisabled)
+            if actions.count < capacity {
+                draftRow
             }
+        }
+    }
+
+    private var draftRow: some View {
+        HStack(spacing: 6) {
+            TextField("id", text: $draftID)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 110)
+                .focused($focus, equals: .id)
+                .onChange(of: draftID) { _, newValue in applyIDChange(newValue) }
+                .onSubmit(append)
+            TextField("Name", text: $draftName)
+                .textFieldStyle(.roundedBorder)
+                .focused($focus, equals: .name)
+                .onChange(of: draftName) { _, newValue in
+                    if newValue != CamelCase.humanized(draftID) { nameAutoFilled = false }
+                }
+                .onSubmit(append)
+            Button { append() } label: { Image(systemName: "plus.circle") }
+                .buttonStyle(.borderless)
+                .disabled(addDisabled)
         }
     }
 
