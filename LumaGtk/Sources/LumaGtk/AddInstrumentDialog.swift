@@ -40,7 +40,6 @@ final class AddInstrumentDialog {
     private var pendingConfigJSON: Data = Data()
     private var tracerEditor: TracerConfigEditor?
     private var customSettingRows: [InstrumentSettingRow] = []
-    private var customWidgetsPreview: InstrumentWidgetsRenderer?
     private var codeShareEditor: CodeEditor?
     private var rowKinds: [UnsafeMutableRawPointer: RowKind] = [:]
     private var descriptorRows: [ListBoxRow] = []
@@ -854,10 +853,6 @@ final class AddInstrumentDialog {
                 self.pendingConfigJSON = cfg.encode()
             })
         }
-
-        customWidgetsPreview = InstrumentUIHelpers.appendWidgets(
-            into: outer, widgets: def.widgets, layout: def.pageLayout, engine: engine, instance: nil)
-        customWidgetsPreview?.widget.sensitive = false
 
         pendingConfigJSON = config.encode()
     }
