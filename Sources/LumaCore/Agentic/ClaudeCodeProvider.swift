@@ -13,7 +13,7 @@ public final class ClaudeCodeProvider: LLMProvider {
     public let descriptor: LLMProviderDescriptor
     private let executablePath: String
     private weak var engine: Engine?
-    private var initializedMissionSessionIDs: Set<UUID> = []
+    private var claudeSessionIDs: [UUID: UUID] = [:]
 
     public init(engine: Engine?, executablePath: String = "claude") {
         self.engine = engine
@@ -86,8 +86,13 @@ public final class ClaudeCodeProvider: LLMProvider {
             "--verbose",
             "--exclude-dynamic-system-prompt-sections",
         ]
-        if let sessionID = sessionPlan.sessionID {
+        switch sessionPlan.session {
+        case .starting(let sessionID):
             arguments.append(contentsOf: ["--session-id", sessionID.uuidString])
+        case .resuming(let sessionID):
+            arguments.append(contentsOf: ["--resume", sessionID.uuidString])
+        case nil:
+            break
         }
         if !systemText.isEmpty {
             arguments.append(contentsOf: ["--append-system-prompt", systemText])
@@ -191,8 +196,8 @@ public final class ClaudeCodeProvider: LLMProvider {
             let message = detail.isEmpty ? "Claude Code exited with status \(process.terminationStatus)" : detail
             throw LLMProviderError.toolFailed(message)
         }
-        if let sessionID = sessionPlan.sessionID {
-            initializedMissionSessionIDs.insert(sessionID)
+        if let missionID = request.mission?.id, case .starting(let sessionID) = sessionPlan.session {
+            claudeSessionIDs[missionID] = sessionID
         }
 
         let finalText = !assistantText.isEmpty ? assistantText : streamedText
@@ -291,23 +296,24 @@ public final class ClaudeCodeProvider: LLMProvider {
 
     private struct ClaudeSessionPlan {
         var prompt: String
-        var sessionID: UUID?
+        var session: ClaudeSession?
+    }
+
+    private enum ClaudeSession {
+        case starting(UUID)
+        case resuming(UUID)
     }
 
     private func makeSessionPlan(for request: LLMTurnRequest) -> ClaudeSessionPlan {
         guard let missionID = request.mission?.id else {
-            return ClaudeSessionPlan(prompt: renderConversation(request.messages), sessionID: nil)
+            return ClaudeSessionPlan(prompt: renderConversation(request.messages), session: nil)
         }
 
-        if initializedMissionSessionIDs.contains(missionID), let latest = latestUserMessage(in: request.messages) {
-            return ClaudeSessionPlan(prompt: renderConversation([latest]), sessionID: missionID)
+        if let sessionID = claudeSessionIDs[missionID], let latest = latestUserMessage(in: request.messages) {
+            return ClaudeSessionPlan(prompt: renderConversation([latest]), session: .resuming(sessionID))
         }
 
-        if request.messages.count <= 1 {
-            return ClaudeSessionPlan(prompt: renderConversation(request.messages), sessionID: missionID)
-        }
-
-        return ClaudeSessionPlan(prompt: renderConversation(request.messages), sessionID: nil)
+        return ClaudeSessionPlan(prompt: renderConversation(request.messages), session: .starting(UUID()))
     }
 
     private func latestUserMessage(in messages: [LLMMessage]) -> LLMMessage? {
