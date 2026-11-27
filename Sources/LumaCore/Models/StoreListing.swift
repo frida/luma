@@ -36,3 +36,8 @@ public struct StorePublishDraft: Hashable, Sendable {
         self.description = description
     }
 }
+
+public struct StorePublication: Sendable {
+    public let itemID: StoreItem.ID
+    public let bundle: CustomInstrumentBundle
+}

@@ -327,7 +327,10 @@ public final class Storefront {
     }
 
     public func publishDraft(forCustomInstrument defID: UUID) throws -> StorePublishDraft {
-        let folderURL = try linkedFolderURL(of: defID)
+        try publishDraft(forFolderAt: linkedFolderURL(of: defID))
+    }
+
+    public func publishDraft(forFolderAt folderURL: URL) throws -> StorePublishDraft {
         let folder = try InstrumentFolder(folderURL: folderURL)
         return StorePublishDraft(
             slug: folder.packageName,
@@ -344,16 +347,16 @@ public final class Storefront {
         listing: StoreListing,
         notes: String
     ) async throws -> StoreItem {
-        guard let publisher = try await requireAccount().publisher else { throw StorefrontError.notPublisher }
         let folderURL = try linkedFolderURL(of: defID)
-        let folder = try InstrumentFolder(folderURL: folderURL)
-        let slug = folder.packageName
-        guard StoreItem.isValidName(slug) else { throw StorefrontError.invalidPackageName(slug) }
-        let now = Date()
-        let bundle = try Engine.validatedCustomInstrumentBundle(folder.customInstrument(id: defID, createdAt: now, updatedAt: now))
-        if let requirement = bundle.undeclaredLumaRequirement {
-            throw StorefrontError.lumaRequirementMissing(requirement)
-        }
+        let item = try await publish(folderAt: folderURL, version: version, listing: listing, notes: notes)
+        try InstrumentFolder.writeStoreRelease(version: version, listing: listing, in: folderURL)
+        return item
+    }
+
+    @discardableResult
+    public func publish(folderAt folderURL: URL, version: StoreVersion, listing: StoreListing, notes: String) async throws -> StoreItem {
+        let publication = try await publication(ofFolderAt: folderURL)
+        let bundle = publication.bundle
         var payload: JSONObject = [
             "kind": StoreItemKind.instrument.rawValue,
             "version": version.description,
@@ -364,11 +367,27 @@ public final class Storefront {
             "bundle": bundle.toJSON(),
         ]
         payload["category"] = listing.category
-        let reply = try await request(to: StoreItem.path(of: "\(publisher.handle)/\(slug)"), type: ".publish", payload: payload)
+        let reply = try await request(to: StoreItem.path(of: publication.itemID), type: ".publish", payload: payload)
         guard let item = StoreItem.fromWireJSON(reply["item"]) else { throw StorefrontError.malformedReply }
-        try InstrumentFolder.writeStoreRelease(version: version, listing: listing, in: folderURL)
         upsert(item)
         return item
+    }
+
+    public func publication(ofFolderAt folderURL: URL) async throws -> StorePublication {
+        guard let publisher = try await requireAccount().publisher else { throw StorefrontError.notPublisher }
+        let folder = try InstrumentFolder(folderURL: folderURL)
+        let slug = folder.packageName
+        guard StoreItem.isValidName(slug) else { throw StorefrontError.invalidPackageName(slug) }
+        let now = Date()
+        let bundle = try Engine.validatedCustomInstrumentBundle(folder.customInstrument(id: UUID(), createdAt: now, updatedAt: now))
+        if let requirement = bundle.undeclaredLumaRequirement {
+            throw StorefrontError.lumaRequirementMissing(requirement)
+        }
+        return StorePublication(itemID: "\(publisher.handle)/\(slug)", bundle: bundle)
+    }
+
+    public func publishedVersion(ofItemID itemID: StoreItem.ID) async throws -> StoreVersion? {
+        try await catalog.items(withIDs: [itemID]).first { $0.id == itemID }?.version
     }
 
     @discardableResult
