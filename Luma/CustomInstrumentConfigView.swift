@@ -15,19 +15,18 @@ struct CustomInstrumentConfigView: View {
 
     var body: some View {
         Group {
-            if let def {
+            if let def, let instrumentInstance {
                 InstrumentWidgetPage(
                     widgets: def.widgets,
                     layout: def.pageLayout,
-                    gate: InstrumentPageGate(instanceID: instrumentInstance?.id, icon: def.icon, name: def.name),
+                    gate: InstrumentPageGate(instanceID: instrumentInstance.id, icon: def.icon, name: def.name),
                     engine: engine,
                     selection: $selection
                 ) {
                     header
-                    if instrumentInstance == nil, !def.settings.isEmpty {
-                        inlineSettings(def.settings)
-                    }
                 }
+            } else if let def {
+                setup(def)
             } else {
                 header
                     .padding(8)
@@ -44,7 +43,7 @@ struct CustomInstrumentConfigView: View {
             if let def {
                 InstrumentIconView(icon: def.icon, pointSize: 14)
                 Text(def.name).font(.headline)
-                if instrumentInstance != nil, !def.settings.isEmpty {
+                if !def.settings.isEmpty {
                     InstrumentSettingsPill { settingsForm(def.settings) }
                 }
             } else {
@@ -64,14 +63,26 @@ struct CustomInstrumentConfigView: View {
         }
     }
 
-    private func inlineSettings(_ settings: [CustomInstrumentDef.Setting]) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Settings")
-                .font(.subheadline)
-            GroupBox {
-                settingsForm(settings)
+    private func setup(_ def: CustomInstrumentDef) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 8) {
+                InstrumentIconView(icon: def.icon, pointSize: 32)
+                Text(def.name)
+                    .font(.headline)
+                if def.settings.isEmpty {
+                    Text("This instrument has no settings.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Settings")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 8)
+                    settingsForm(def.settings)
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .scrollBounceBehavior(.basedOnSize)
     }
 
     private func settingsForm(_ settings: [CustomInstrumentDef.Setting]) -> some View {
