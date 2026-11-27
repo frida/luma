@@ -753,6 +753,14 @@ enum StyleSheet {
     listview.luma-widget-rows > row {
         padding: 0;
     }
+    listview.luma-widget-rows > row:not(:hover):not(:selected) .luma-row-actions {
+        opacity: 0;
+    }
+    entry.luma-widget-filter {
+        min-height: 0;
+        padding: 0 6px;
+        font-size: 11px;
+    }
     label.luma-pharo-tag {
         color: alpha(@window_fg_color, 0.7);
         background-color: alpha(@window_fg_color, 0.12);

@@ -199,8 +199,9 @@ private final class WidgetCanvas {
 
         widget = Box(orientation: .vertical, spacing: 0)
 
-        if definition.title != nil || !definition.actions.isEmpty {
-            widget.append(child: Self.makeHeader(definition, slot: slot, gate: actionGate, onPress: onWidgetAction))
+        let filter = definition.kind.hasRows ? WidgetFilterEntry.make() : nil
+        if definition.hasHeader {
+            widget.append(child: Self.makeHeader(definition, slot: slot, gate: actionGate, filter: filter, onPress: onWidgetAction))
         }
 
         let card = Box(orientation: .vertical, spacing: 0)
@@ -233,19 +234,38 @@ private final class WidgetCanvas {
             graphView = view
             column.append(child: view.widget)
         case .list(let cfg):
-            let view = WidgetRowList(kind: definition.kind, initial: snapshot, rows: \.listItems, header: nil, emptyText: "No items.") {
+            let view = WidgetRowList(
+                kind: definition.kind, initial: snapshot, rows: \.listItems, matches: { $0.matches($1) }, header: nil, emptyText: "No items."
+            ) {
                 ListItemPresenter(actions: cfg.rowActions, gate: actionGate, onAction: onAction)
             }
             view.onRowTally = onRowTally
+            view.follow(filter!)
+            if let activation = cfg.rowActivation {
+                view.onActivate(gate: actionGate) { onAction(activation.id, $0.id) }
+            }
+            if let selectionAction = cfg.rowSelection {
+                view.onSelection(gate: actionGate) { onAction(selectionAction.id, $0.id) }
+            }
             listView = view
             column.append(child: view.widget)
         case .table(let cfg):
             let layout = TableLayout(columns: cfg.columns, actions: cfg.rowActions)
             let header = layout.makeHeader()
-            let view = WidgetRowList(kind: definition.kind, initial: snapshot, rows: { layout.fit($0.tableRows) }, header: header, emptyText: "No rows.") {
+            let view = WidgetRowList(
+                kind: definition.kind, initial: snapshot, rows: { layout.fit($0.tableRows) }, matches: { $0.matches($1) }, header: header,
+                emptyText: "No rows."
+            ) {
                 TableRowPresenter(layout: layout, gate: actionGate, onAction: onAction)
             }
             view.onRowTally = onRowTally
+            view.follow(filter!)
+            if let activation = cfg.rowActivation {
+                view.onActivate(gate: actionGate) { onAction(activation.id, $0.id) }
+            }
+            if let selectionAction = cfg.rowSelection {
+                view.onSelection(gate: actionGate) { onAction(selectionAction.id, $0.id) }
+            }
             tableView = view
             column.append(child: view.widget)
         case .hex:
@@ -291,7 +311,8 @@ private final class WidgetCanvas {
     }
 
     static func makeHeader(
-        _ definition: InstrumentWidget, slot: String, gate: WidgetActionGate, onPress: @escaping (_ action: String) -> Void
+        _ definition: InstrumentWidget, slot: String, gate: WidgetActionGate, filter: SearchEntry?,
+        onPress: @escaping (_ action: String) -> Void
     ) -> Box {
         let header = Box(orientation: .horizontal, spacing: 4)
         header.marginBottom = headerSpacing
@@ -304,6 +325,9 @@ private final class WidgetCanvas {
         title.hexpand = true
         title.valign = .center
         header.append(child: title)
+        if let filter {
+            header.append(child: filter)
+        }
         if !definition.actions.isEmpty {
             header.append(child: WidgetHeaderActions.make(definition.actions, of: slot, gate: gate, onPress: onPress))
         }
@@ -385,22 +409,25 @@ enum WidgetCardMetrics {
     private static let spacing = 12.0
 
     private static func measure() -> InstrumentLayout.Metrics {
-        InstrumentLayout.Metrics(
+        let rowHeight = Double(tableRowHeight())
+        return InstrumentLayout.Metrics(
             spacing: spacing,
             headerHeight: Double(headerHeight()),
             headerSpacing: Double(WidgetCanvas.headerSpacing),
             boxInset: Double(WidgetCanvas.boxInset),
             lineHeight: Double(naturalHeight(of: WidgetEmptyLabel.make("No rows."))),
-            rowHeight: Double(tableRowHeight()),
+            rowHeight: rowHeight,
+            tableHeaderHeight: rowHeight,
             twoLineRowHeight: Double(twoLineRowHeight()),
             counterHeight: Double(naturalHeight(of: CounterView(unit: "calls", initial: WidgetCounterValue(value: 1)) { $0.text(steadyFractionDigits: 0) }.widget)))
     }
 
     private static func headerHeight() -> Int {
         let sample = InstrumentWidget(
-            id: "sample", name: "Sample", kind: .counter(InstrumentWidget.CounterConfig()),
+            id: "sample", name: "Sample", kind: .list(InstrumentWidget.ListConfig()),
             actions: [InstrumentWidget.Action(id: "sample", name: "Sample")])
-        let header = WidgetCanvas.makeHeader(sample, slot: sample.id, gate: WidgetActionGate { _, _ in true }, onPress: { _ in })
+        let header = WidgetCanvas.makeHeader(
+            sample, slot: sample.id, gate: WidgetActionGate { _, _ in true }, filter: WidgetFilterEntry.make(), onPress: { _ in })
         return naturalHeight(of: header) - WidgetCanvas.headerSpacing
     }
 
@@ -446,6 +473,10 @@ private final class WidgetActionGate {
 
     func adoptRowAction(_ control: Widget) {
         adopt((control, "", [nil], control.tooltipText))
+    }
+
+    var allowsRowActions: Bool {
+        allows(nil, "")
     }
 
     private func adopt(_ entry: (control: Widget, widget: String, actions: [String?], tooltip: String?)) {
@@ -976,19 +1007,27 @@ private final class WidgetRowList<Presenter: WidgetRowPresenter> {
     let widget: Box
     private let kind: InstrumentWidget.Kind
     private let rowsOfState: (WidgetState) -> [Presenter.Row]
+    private let matches: (Presenter.Row, String) -> Bool
     private let makePresenter: () -> Presenter
     private let model: StringList
+    private let selection: SingleSelection
+    private let list: Gtk.ListView
     private let scroller: ScrolledWindow
     private let emptyLabel: Label
+    private let emptyText: String
     private let header: Widget?
     private var state: WidgetState
+    private var filter = ""
+    private var allRows: [Presenter.Row] = []
     private var shownRows: [Presenter.Row] = []
+    private var settledRowID: Presenter.Row.ID?
+    private var pendingSelection: Task<Void, Never>?
     private var presenters: [UnsafeMutableRawPointer: Presenter] = [:]
     private var refresh = Refresh.idle
     var onRowTally: ((RowTally) -> Void)?
 
     var rowTally: RowTally {
-        RowTally(count: shownRows.count, subtitled: shownRows.filter(Presenter.isTwoLine).count)
+        RowTally(count: allRows.count, subtitled: allRows.filter(Presenter.isTwoLine).count)
     }
 
     private enum Refresh {
@@ -1002,12 +1041,15 @@ private final class WidgetRowList<Presenter: WidgetRowPresenter> {
         kind: InstrumentWidget.Kind,
         initial: WidgetState,
         rows rowsOfState: @escaping (WidgetState) -> [Presenter.Row],
+        matches: @escaping (Presenter.Row, String) -> Bool,
         header: Widget?,
         emptyText: String,
         makePresenter: @escaping () -> Presenter
     ) {
         self.kind = kind
         self.rowsOfState = rowsOfState
+        self.matches = matches
+        self.emptyText = emptyText
         self.makePresenter = makePresenter
         state = initial
 
@@ -1019,9 +1061,11 @@ private final class WidgetRowList<Presenter: WidgetRowPresenter> {
         }
 
         model = StringList(strings: nil)
-        let selection = NoSelection(model: model)
+        selection = SingleSelection(model: model)
+        selection.autoselect = false
+        selection.canUnselect = true
         let factory = SignalListItemFactory()
-        let list = Gtk.ListView(model: selection, factory: factory)
+        list = Gtk.ListView(model: selection, factory: factory)
         list.add(cssClass: "luma-widget-rows")
         _ = g_object_ref(model.ptr)
         _ = g_object_ref(selection.ptr)
@@ -1041,6 +1085,61 @@ private final class WidgetRowList<Presenter: WidgetRowPresenter> {
         configure(factory)
         refreshRows()
     }
+
+    func follow(_ entry: SearchEntry) {
+        entry.setKeyCapture(widget: list)
+        entry.onSearchChanged { [weak self] entry in
+            MainActor.assumeIsolated {
+                self?.filter = entry.text
+                self?.refreshRows()
+            }
+        }
+        entry.onStopSearch { entry in
+            MainActor.assumeIsolated {
+                entry.text = ""
+            }
+        }
+    }
+
+    func onActivate(gate: WidgetActionGate, _ handler: @escaping (Presenter.Row) -> Void) {
+        list.onActivate { [weak self] _, position in
+            MainActor.assumeIsolated {
+                guard let self, gate.allowsRowActions else { return }
+                handler(self.shownRows[Int(position)])
+            }
+        }
+    }
+
+    func onSelection(gate: WidgetActionGate, _ handler: @escaping (Presenter.Row) -> Void) {
+        selection.onSelectionChanged { [weak self] _, _, _ in
+            MainActor.assumeIsolated {
+                self?.selectionChanged(gate: gate, handler)
+            }
+        }
+    }
+
+    private func selectionChanged(gate: WidgetActionGate, _ handler: @escaping (Presenter.Row) -> Void) {
+        pendingSelection?.cancel()
+        let position = Int(selection.selected)
+        guard shownRows.indices.contains(position) else {
+            settledRowID = nil
+            return
+        }
+        let row = shownRows[position]
+        guard row.id != settledRowID else { return }
+        pendingSelection = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: Self.selectionSettleDelay)
+            } catch {
+                return
+            }
+            guard let self, gate.allowsRowActions else { return }
+            self.settledRowID = row.id
+            handler(row)
+        }
+    }
+
+    private static var selectionSettleDelay: Duration { .milliseconds(150) }
 
     func apply(_ update: WidgetUpdate.Kind) {
         state.apply(update)
@@ -1079,7 +1178,8 @@ private final class WidgetRowList<Presenter: WidgetRowPresenter> {
 
     private func refreshRows() {
         refresh = .idle
-        let rows = rowsOfState(state)
+        allRows = rowsOfState(state)
+        let rows = filter.isEmpty ? allRows : allRows.filter { matches($0, filter) }
 
         let dropped = leadingRowsDropped(before: rows)
         if dropped > 0 {
@@ -1093,8 +1193,9 @@ private final class WidgetRowList<Presenter: WidgetRowPresenter> {
         shownRows = rows
         splice(at: kept, removing: removed, adding: rows.count - kept - keptAtEnd)
 
-        header?.visible = !rows.isEmpty
+        header?.visible = !allRows.isEmpty
         scroller.visible = !rows.isEmpty
+        emptyLabel.label = allRows.isEmpty ? emptyText : "No matches."
         emptyLabel.visible = rows.isEmpty
         onRowTally?(rowTally)
     }
@@ -1112,6 +1213,18 @@ private final class WidgetRowList<Presenter: WidgetRowPresenter> {
                 model.splice(position: position, nRemovals: removals, additions: $0.baseAddress)
             }
         }
+    }
+}
+
+@MainActor
+private enum WidgetFilterEntry {
+    static func make() -> SearchEntry {
+        let entry = SearchEntry()
+        entry.placeholderText = "Filter"
+        entry.add(cssClass: "luma-widget-filter")
+        entry.valign = .center
+        entry.widthChars = 12
+        return entry
     }
 }
 
@@ -1187,6 +1300,7 @@ private final class ListItemPresenter: WidgetRowPresenter {
         widget.append(child: accessory)
 
         let buttons = Box(orientation: .horizontal, spacing: 2)
+        buttons.add(cssClass: "luma-row-actions")
         buttons.valign = .center
         widget.append(child: buttons)
         for action in actions {
@@ -1237,6 +1351,7 @@ private final class TableRowPresenter: WidgetRowPresenter {
 
         guard !layout.actions.isEmpty else { return }
         let buttons = layout.makeActionsBox()
+        buttons.add(cssClass: "luma-row-actions")
         for action in layout.actions {
             let button = Button(label: action.name)
             button.add(cssClass: "luma-widget-action")
