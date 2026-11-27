@@ -2918,7 +2918,7 @@ public enum MissionTools {
     }
 
     private static let widgetsSchemaJSON: String = """
-        {"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string","description":"The title shown above the widget. Leave it out for a widget shown with no title; it may not be empty."},"kind":{"type":"string","enum":["counter","histogram","graph","list","table","hex","console","view"]},"unit":{"type":"string","description":"For kind=counter: optional default unit label rendered next to the value."},"max_buckets":{"type":"integer","minimum":1,"default":100,"description":"For kind=histogram: rolling cap on bucket count."},"series":{"type":"array","description":"For kind=graph: line series the agent will push points to.","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"}},"required":["id","name"],"additionalProperties":false}},"max_points":{"type":"integer","minimum":1,"default":5000,"description":"For kind=graph: rolling cap per series. Oldest points drop when exceeded."},"columns":{"type":"array","description":"For kind=table: ordered columns; each row's cells map column id to string.","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"alignment":{"type":"string","enum":["leading","trailing"],"default":"leading"}},"required":["id","name"],"additionalProperties":false}},"actions":{"type":"array","description":"For any kind: buttons in the widget's header, in this order; a click invokes onAction with {widget,action} and no item. Luma has no Clear of its own: declare one here and call clear() on the widget when the user should be able to empty it. Ids are unique across actions and row_actions.","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"}},"required":["id","name"],"additionalProperties":false}},"row_actions":{"type":"array","description":"For kind=list/table: per-row action buttons; a click invokes onAction with {widget,action,item}, item being the row's id.","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"}},"required":["id","name"],"additionalProperties":false}},"max_items":{"type":"integer","minimum":1,"default":1000,"description":"For kind=list: rolling cap. Oldest items drop when exceeded."},"max_rows":{"type":"integer","minimum":1,"default":1000,"description":"For kind=table: rolling cap on rows."},"max_bytes":{"type":"integer","minimum":1,"default":16384,"description":"For kind=hex: trailing-window cap on bytes shown."},"max_entries":{"type":"integer","minimum":1,"default":1000,"description":"For kind=console: rolling cap on entries shown. Oldest entries drop when exceeded."},"prompt":{"type":"string","description":"For kind=console: optional prompt glyph rendered before each entry and on the input row (default '›')."},"placeholder":{"type":"string","description":"For kind=console: optional placeholder text shown in the input field."},"run_button_label":{"type":"string","description":"For kind=console: optional label for the submit button (default 'Run')."},"class":{"type":"string","description":"For kind=view: the class, defined in the instrument's Tonel .st files, whose instance shows the widget inside Luma. The agent feeds it with setState(value, data?) and sendEvent(value, data?); it answers through onViewMessage."},"height":{"type":"integer","minimum":1,"default":360,"description":"For kind=view: the widget's height in points."},"persistence":{"type":"string","enum":["none","session"],"default":"none","description":"'none' = data lives in memory, lost on detach. 'session' = data survives reattach and app restart, replayed to create() via the `restored` argument."}},"required":["id","kind"],"additionalProperties":false}}
+        {"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string","description":"The title shown above the widget. Leave it out for a widget shown with no title; it may not be empty."},"kind":{"type":"string","enum":["counter","histogram","graph","list","table","hex","console","view"]},"unit":{"type":"string","description":"For kind=counter: optional default unit label rendered next to the value."},"max_buckets":{"type":"integer","minimum":1,"default":100,"description":"For kind=histogram: rolling cap on bucket count."},"series":{"type":"array","description":"For kind=graph: line series the agent will push points to.","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"}},"required":["id","name"],"additionalProperties":false}},"max_points":{"type":"integer","minimum":1,"default":5000,"description":"For kind=graph: rolling cap per series. Oldest points drop when exceeded."},"columns":{"type":"array","description":"For kind=table: ordered columns; each row's cells map column id to string.","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"alignment":{"type":"string","enum":["leading","trailing"],"default":"leading"}},"required":["id","name"],"additionalProperties":false}},"actions":{"type":"array","description":"For any kind: buttons in the widget's header, in this order; a click invokes onAction with {widget,action} and no item. Luma has no Clear of its own: declare one here and call clear() on the widget when the user should be able to empty it. Ids are unique across actions, row_actions, row_activation and row_selection.","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"}},"required":["id","name"],"additionalProperties":false}},"row_actions":{"type":"array","description":"For kind=list/table: per-row action buttons; a click invokes onAction with {widget,action,item}, item being the row's id.","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"}},"required":["id","name"],"additionalProperties":false}},"row_activation":{"type":"object","description":"For kind=list/table: what a double-click or Return on a row does, with no button of its own; it invokes onAction with {widget,action,item} like a row action. Use it for a row's main action, such as showing what the row stands for.","properties":{"id":{"type":"string"},"name":{"type":"string"}},"required":["id","name"],"additionalProperties":false},"row_selection":{"type":"object","description":"For kind=list/table: what selecting a row does, once the selection settles, with no button of its own; it invokes onAction with {widget,action,item} like a row action. Use it to show a row in a detail view beside the table, so arrowing through rows previews each; leave opening something new to row_activation.","properties":{"id":{"type":"string"},"name":{"type":"string"}},"required":["id","name"],"additionalProperties":false},"max_items":{"type":"integer","minimum":1,"default":1000,"description":"For kind=list: rolling cap. Oldest items drop when exceeded."},"max_rows":{"type":"integer","minimum":1,"default":1000,"description":"For kind=table: rolling cap on rows."},"max_bytes":{"type":"integer","minimum":1,"default":16384,"description":"For kind=hex: trailing-window cap on bytes shown."},"max_entries":{"type":"integer","minimum":1,"default":1000,"description":"For kind=console: rolling cap on entries shown. Oldest entries drop when exceeded."},"prompt":{"type":"string","description":"For kind=console: optional prompt glyph rendered before each entry and on the input row (default '›')."},"placeholder":{"type":"string","description":"For kind=console: optional placeholder text shown in the input field."},"run_button_label":{"type":"string","description":"For kind=console: optional label for the submit button (default 'Run')."},"class":{"type":"string","description":"For kind=view: the class, defined in the instrument's Tonel .st files, whose instance shows the widget inside Luma. The agent feeds it with setState(value, data?) and sendEvent(value, data?); it answers through onViewMessage."},"height":{"type":"integer","minimum":1,"default":360,"description":"For kind=view: the widget's height in points."},"persistence":{"type":"string","enum":["none","session"],"default":"none","description":"'none' = data lives in memory, lost on detach. 'session' = data survives reattach and app restart, replayed to create() via the `restored` argument."}},"required":["id","kind"],"additionalProperties":false}}
         """
 
     private static func parseWidgetsArg(_ raw: Any?) -> [InstrumentWidget] {
@@ -2940,10 +2940,14 @@ public enum MissionTools {
                 let cfg = parseGraphConfigArg(seriesRaw: obj["series"], maxPointsRaw: obj["max_points"])
                 return InstrumentWidget(id: id, name: name, kind: .graph(cfg), actions: actions, persistence: persistence)
             case "list":
-                let cfg = parseListConfigArg(rowActionsRaw: obj["row_actions"], maxItemsRaw: obj["max_items"])
+                let cfg = parseListConfigArg(
+                    rowActionsRaw: obj["row_actions"], rowActivationRaw: obj["row_activation"], rowSelectionRaw: obj["row_selection"],
+                    maxItemsRaw: obj["max_items"])
                 return InstrumentWidget(id: id, name: name, kind: .list(cfg), actions: actions, persistence: persistence)
             case "table":
-                let cfg = parseTableConfigArg(columnsRaw: obj["columns"], rowActionsRaw: obj["row_actions"], maxRowsRaw: obj["max_rows"])
+                let cfg = parseTableConfigArg(
+                    columnsRaw: obj["columns"], rowActionsRaw: obj["row_actions"], rowActivationRaw: obj["row_activation"],
+                    rowSelectionRaw: obj["row_selection"], maxRowsRaw: obj["max_rows"])
                 return InstrumentWidget(id: id, name: name, kind: .table(cfg), actions: actions, persistence: persistence)
             case "hex":
                 let maxBytes = (obj["max_bytes"] as? Int) ?? InstrumentWidget.HexConfig.defaultMaxBytes
@@ -3004,18 +3008,22 @@ public enum MissionTools {
     private static func toolArgumentPath(_ path: [InstrumentWidget.Problem.Step]) -> String {
         path.filter { $0 != .key("config") }.map { step in
             switch step {
-            case .key(let key): return "." + (key == "rowActions" ? "row_actions" : key)
+            case .key(let key): return "." + (toolArgumentKeys[key] ?? key)
             case .index(let index): return "[\(index)]"
             }
         }.joined()
     }
 
+    private static let toolArgumentKeys = ["rowActions": "row_actions", "rowActivation": "row_activation", "rowSelection": "row_selection"]
+
     private static func parseActionsArg(_ raw: Any?) -> [InstrumentWidget.Action] {
         let entries = (raw as? [[String: Any]]) ?? []
-        return entries.compactMap { obj -> InstrumentWidget.Action? in
-            guard let aid = obj["id"] as? String, let aname = obj["name"] as? String else { return nil }
-            return InstrumentWidget.Action(id: aid, name: aname)
-        }
+        return entries.compactMap(parseActionArg)
+    }
+
+    private static func parseActionArg(_ raw: Any?) -> InstrumentWidget.Action? {
+        guard let obj = raw as? [String: Any], let aid = obj["id"] as? String, let aname = obj["name"] as? String else { return nil }
+        return InstrumentWidget.Action(id: aid, name: aname)
     }
 
     private static func parseGraphConfigArg(seriesRaw: Any?, maxPointsRaw: Any?) -> InstrumentWidget.GraphConfig {
@@ -3028,12 +3036,18 @@ public enum MissionTools {
         return InstrumentWidget.GraphConfig(series: series, maxPoints: max(1, maxPoints))
     }
 
-    private static func parseListConfigArg(rowActionsRaw: Any?, maxItemsRaw: Any?) -> InstrumentWidget.ListConfig {
+    private static func parseListConfigArg(
+        rowActionsRaw: Any?, rowActivationRaw: Any?, rowSelectionRaw: Any?, maxItemsRaw: Any?
+    ) -> InstrumentWidget.ListConfig {
         let maxItems = (maxItemsRaw as? Int) ?? InstrumentWidget.ListConfig.defaultMaxItems
-        return InstrumentWidget.ListConfig(rowActions: parseActionsArg(rowActionsRaw), maxItems: max(1, maxItems))
+        return InstrumentWidget.ListConfig(
+            rowActions: parseActionsArg(rowActionsRaw), rowActivation: parseActionArg(rowActivationRaw),
+            rowSelection: parseActionArg(rowSelectionRaw), maxItems: max(1, maxItems))
     }
 
-    private static func parseTableConfigArg(columnsRaw: Any?, rowActionsRaw: Any?, maxRowsRaw: Any?) -> InstrumentWidget.TableConfig {
+    private static func parseTableConfigArg(
+        columnsRaw: Any?, rowActionsRaw: Any?, rowActivationRaw: Any?, rowSelectionRaw: Any?, maxRowsRaw: Any?
+    ) -> InstrumentWidget.TableConfig {
         let columnEntries = (columnsRaw as? [[String: Any]]) ?? []
         let columns = columnEntries.compactMap { obj -> InstrumentWidget.Column? in
             guard let cid = obj["id"] as? String, let cname = obj["name"] as? String else { return nil }
@@ -3041,7 +3055,9 @@ public enum MissionTools {
             return InstrumentWidget.Column(id: cid, name: cname, alignment: alignment)
         }
         let maxRows = (maxRowsRaw as? Int) ?? InstrumentWidget.TableConfig.defaultMaxRows
-        return InstrumentWidget.TableConfig(columns: columns, rowActions: parseActionsArg(rowActionsRaw), maxRows: max(1, maxRows))
+        return InstrumentWidget.TableConfig(
+            columns: columns, rowActions: parseActionsArg(rowActionsRaw), rowActivation: parseActionArg(rowActivationRaw),
+            rowSelection: parseActionArg(rowSelectionRaw), maxRows: max(1, maxRows))
     }
 
     private static func parseConsoleConfigArg(
@@ -3145,11 +3161,15 @@ public enum MissionTools {
         case .list(let cfg):
             obj["kind"] = "list"
             obj["row_actions"] = cfg.rowActions.map { ["id": $0.id, "name": $0.name] }
+            obj["row_activation"] = cfg.rowActivation.map { ["id": $0.id, "name": $0.name] }
+            obj["row_selection"] = cfg.rowSelection.map { ["id": $0.id, "name": $0.name] }
             obj["max_items"] = cfg.maxItems
         case .table(let cfg):
             obj["kind"] = "table"
             obj["columns"] = cfg.columns.map { ["id": $0.id, "name": $0.name, "alignment": $0.alignment.rawValue] }
             obj["row_actions"] = cfg.rowActions.map { ["id": $0.id, "name": $0.name] }
+            obj["row_activation"] = cfg.rowActivation.map { ["id": $0.id, "name": $0.name] }
+            obj["row_selection"] = cfg.rowSelection.map { ["id": $0.id, "name": $0.name] }
             obj["max_rows"] = cfg.maxRows
         case .hex(let cfg):
             obj["kind"] = "hex"

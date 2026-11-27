@@ -286,6 +286,26 @@ public struct WidgetTableRow: Codable, Sendable, Identifiable, Equatable {
     }
 }
 
+extension WidgetListItem {
+    public func matches(_ filter: String) -> Bool {
+        filter.isEmpty || [title, subtitle, accessory].contains { $0?.localizedStandardContains(filter) ?? false }
+    }
+
+    public var copiedText: String {
+        [title, subtitle, accessory].compactMap { $0 }.joined(separator: "\t")
+    }
+}
+
+extension WidgetTableRow {
+    public func matches(_ filter: String) -> Bool {
+        filter.isEmpty || cells.values.contains { $0.localizedStandardContains(filter) }
+    }
+
+    public func copiedText(columns: [InstrumentWidget.Column]) -> String {
+        columns.map { cells[$0.id] ?? "" }.joined(separator: "\t")
+    }
+}
+
 public struct WidgetHexState: Codable, Sendable, Equatable {
     public var bytes: Data
     public var baseAddress: UInt64

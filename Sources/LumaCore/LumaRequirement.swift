@@ -11,6 +11,7 @@ extension LumaVersion {
 extension StoreVersion {
     static let instrumentViews = StoreVersion(major: 3, minor: 0, patch: 0)
     static let widgetsAndSettings = StoreVersion(major: 4, minor: 0, patch: 0)
+    static let rowTriggers = StoreVersion(major: 4, minor: 1, patch: 0)
 
     public static func least(inEngineRange range: String) -> StoreVersion? {
         guard range.hasPrefix(">=") else { return nil }
@@ -37,6 +38,9 @@ extension CustomInstrumentDef {
     }
 
     fileprivate func lumaRequirement(given files: [CustomInstrumentFile]) -> StoreVersion? {
+        if (widgets + children.flatMap(\.widgets)).contains(where: { $0.kind.rowActivation != nil || $0.kind.rowSelection != nil }) {
+            return .rowTriggers
+        }
         if !widgets.isEmpty || !settings.isEmpty {
             return .widgetsAndSettings
         }

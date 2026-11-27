@@ -15,6 +15,10 @@ public struct InstrumentWidget: Codable, Identifiable, Sendable, Equatable {
         name ?? id
     }
 
+    public var hasHeader: Bool {
+        title != nil || !actions.isEmpty || kind.hasRows
+    }
+
     public init(id: String, name: String?, kind: Kind, actions: [Action] = [], persistence: Persistence = .none) {
         self.id = id
         self.name = name
@@ -90,10 +94,16 @@ public struct InstrumentWidget: Codable, Identifiable, Sendable, Equatable {
         public static let defaultMaxItems: Int = 1_000
 
         public var rowActions: [Action]
+        public var rowActivation: Action?
+        public var rowSelection: Action?
         public var maxItems: Int
 
-        public init(rowActions: [Action] = [], maxItems: Int = Self.defaultMaxItems) {
+        public init(
+            rowActions: [Action] = [], rowActivation: Action? = nil, rowSelection: Action? = nil, maxItems: Int = Self.defaultMaxItems
+        ) {
             self.rowActions = rowActions
+            self.rowActivation = rowActivation
+            self.rowSelection = rowSelection
             self.maxItems = maxItems
         }
     }
@@ -103,11 +113,18 @@ public struct InstrumentWidget: Codable, Identifiable, Sendable, Equatable {
 
         public var columns: [Column]
         public var rowActions: [Action]
+        public var rowActivation: Action?
+        public var rowSelection: Action?
         public var maxRows: Int
 
-        public init(columns: [Column] = [], rowActions: [Action] = [], maxRows: Int = Self.defaultMaxRows) {
+        public init(
+            columns: [Column] = [], rowActions: [Action] = [], rowActivation: Action? = nil, rowSelection: Action? = nil,
+            maxRows: Int = Self.defaultMaxRows
+        ) {
             self.columns = columns
             self.rowActions = rowActions
+            self.rowActivation = rowActivation
+            self.rowSelection = rowSelection
             self.maxRows = maxRows
         }
     }
@@ -201,12 +218,39 @@ extension InstrumentWidget.Kind {
         return false
     }
 
+    public var hasRows: Bool {
+        switch self {
+        case .list, .table: return true
+        default: return false
+        }
+    }
+
     public var rowActions: [InstrumentWidget.Action] {
         switch self {
         case .list(let cfg): return cfg.rowActions
         case .table(let cfg): return cfg.rowActions
         default: return []
         }
+    }
+
+    public var rowActivation: InstrumentWidget.Action? {
+        switch self {
+        case .list(let cfg): return cfg.rowActivation
+        case .table(let cfg): return cfg.rowActivation
+        default: return nil
+        }
+    }
+
+    public var rowSelection: InstrumentWidget.Action? {
+        switch self {
+        case .list(let cfg): return cfg.rowSelection
+        case .table(let cfg): return cfg.rowSelection
+        default: return nil
+        }
+    }
+
+    public var rowInvocations: [InstrumentWidget.Action] {
+        rowActions + [rowActivation, rowSelection].compactMap { $0 }
     }
 }
 
@@ -228,7 +272,7 @@ extension InstrumentWidget {
 
     public var repeatedActionID: String? {
         var seen: Set<String> = []
-        return (actions + kind.rowActions).map(\.id).first { !seen.insert($0).inserted }
+        return (actions + kind.rowInvocations).map(\.id).first { !seen.insert($0).inserted }
     }
 
     public var problem: Problem? {
@@ -247,8 +291,17 @@ extension InstrumentWidget {
                 return problem
             }
         }
+        let triggered: [(path: [Problem.Step], action: Action)] = [
+            ([.key("config"), .key("rowActivation")], kind.rowActivation),
+            ([.key("config"), .key("rowSelection")], kind.rowSelection),
+        ].compactMap { path, action in action.map { (path, $0) } }
+        if let problem = triggered.lazy.compactMap({ Self.problem(in: $0.action, at: $0.path) }).first {
+            return problem
+        }
         var seen: Set<String> = []
-        let located = declared.flatMap { entry in entry.actions.indices.map { (entry.path + [.index($0)], entry.actions[$0].id) } }
+        let located =
+            declared.flatMap { entry in entry.actions.indices.map { (entry.path + [.index($0)], entry.actions[$0].id) } }
+            + triggered.map { ($0.path, $0.action.id) }
         guard let (path, id) = located.first(where: { !seen.insert($0.1).inserted }) else { return nil }
         return Problem(path: path + [.key("id")], text: "\"\(id)\" is already the id of another action of this widget")
     }
@@ -267,13 +320,15 @@ extension InstrumentWidget {
         guard list.count <= maxActions else {
             return Problem(path: path, text: "has \(list.count) actions; at most \(maxActions) are allowed")
         }
-        for (index, action) in list.enumerated() {
-            if let text = idProblem(action.id) {
-                return Problem(path: path + [.index(index), .key("id")], text: text)
-            }
-            if let text = nameProblem(action.name, absence: "an action needs one") {
-                return Problem(path: path + [.index(index), .key("name")], text: text)
-            }
+        return list.indices.lazy.compactMap { problem(in: list[$0], at: path + [.index($0)]) }.first
+    }
+
+    private static func problem(in action: Action, at path: [Problem.Step]) -> Problem? {
+        if let text = idProblem(action.id) {
+            return Problem(path: path + [.key("id")], text: text)
+        }
+        if let text = nameProblem(action.name, absence: "an action needs one") {
+            return Problem(path: path + [.key("name")], text: text)
         }
         return nil
     }
@@ -426,6 +481,8 @@ extension InstrumentWidget.ListConfig {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.init(
             rowActions: try c.decodeIfPresent([InstrumentWidget.Action].self, forKey: .rowActions) ?? [],
+            rowActivation: try c.decodeIfPresent(InstrumentWidget.Action.self, forKey: .rowActivation),
+            rowSelection: try c.decodeIfPresent(InstrumentWidget.Action.self, forKey: .rowSelection),
             maxItems: try c.decodeIfPresent(Int.self, forKey: .maxItems) ?? Self.defaultMaxItems)
     }
 }
@@ -437,6 +494,8 @@ extension InstrumentWidget.TableConfig {
         self.init(
             columns: try c.decode([InstrumentWidget.Column].self, forKey: .columns),
             rowActions: try c.decodeIfPresent([InstrumentWidget.Action].self, forKey: .rowActions) ?? [],
+            rowActivation: try c.decodeIfPresent(InstrumentWidget.Action.self, forKey: .rowActivation),
+            rowSelection: try c.decodeIfPresent(InstrumentWidget.Action.self, forKey: .rowSelection),
             maxRows: try c.decodeIfPresent(Int.self, forKey: .maxRows) ?? Self.defaultMaxRows)
     }
 }

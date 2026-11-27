@@ -427,7 +427,7 @@ public enum CustomInstrumentTypings {
         if !def.widgets.isEmpty {
             sections.append(widgetMapDeclarations(for: def))
         }
-        let actingWidgets = def.widgets.filter { !$0.actions.isEmpty || !$0.kind.rowActions.isEmpty }
+        let actingWidgets = def.widgets.filter { !$0.actions.isEmpty || !$0.kind.rowInvocations.isEmpty }
         if !actingWidgets.isEmpty {
             sections.append(actionMapDeclarations(for: actingWidgets))
         }
@@ -470,8 +470,8 @@ public enum CustomInstrumentTypings {
             if !widget.actions.isEmpty {
                 variants.append("{ widget: \(widgetLiteral); action: \(stringLiteralUnion(widget.actions.map(\.id))); item?: undefined; child?: undefined }")
             }
-            if !widget.kind.rowActions.isEmpty {
-                variants.append("{ widget: \(widgetLiteral); action: \(stringLiteralUnion(widget.kind.rowActions.map(\.id))); item: string; child?: undefined }")
+            if !widget.kind.rowInvocations.isEmpty {
+                variants.append("{ widget: \(widgetLiteral); action: \(stringLiteralUnion(widget.kind.rowInvocations.map(\.id))); item: string; child?: undefined }")
             }
             lines.append("    \(propertyKey(widget.id)): \(variants.joined(separator: " | "));")
         }
@@ -513,14 +513,14 @@ public enum CustomInstrumentTypings {
         lines.append("declare interface CustomInstrumentChildActionMap {")
         for template in templates {
             let child = "child: { template: \(jsStringLiteral(template.id)); id: string }"
-            for widget in template.widgets where !widget.actions.isEmpty || !widget.kind.rowActions.isEmpty {
+            for widget in template.widgets where !widget.actions.isEmpty || !widget.kind.rowInvocations.isEmpty {
                 let widgetLiteral = jsStringLiteral(widget.id)
                 var variants: [String] = []
                 if !widget.actions.isEmpty {
                     variants.append("{ \(child); widget: \(widgetLiteral); action: \(stringLiteralUnion(widget.actions.map(\.id))); item?: undefined }")
                 }
-                if !widget.kind.rowActions.isEmpty {
-                    variants.append("{ \(child); widget: \(widgetLiteral); action: \(stringLiteralUnion(widget.kind.rowActions.map(\.id))); item: string }")
+                if !widget.kind.rowInvocations.isEmpty {
+                    variants.append("{ \(child); widget: \(widgetLiteral); action: \(stringLiteralUnion(widget.kind.rowInvocations.map(\.id))); item: string }")
                 }
                 lines.append("    \(jsStringLiteral("\(template.id)/\(widget.id)")): \(variants.joined(separator: " | "));")
             }

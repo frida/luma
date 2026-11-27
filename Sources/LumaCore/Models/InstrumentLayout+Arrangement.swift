@@ -11,6 +11,7 @@ extension InstrumentLayout {
         public var boxInset: Double
         public var lineHeight: Double
         public var rowHeight: Double
+        public var tableHeaderHeight: Double
         public var twoLineRowHeight: Double
         public var counterHeight: Double
 
@@ -21,6 +22,7 @@ extension InstrumentLayout {
             boxInset: Double = 8,
             lineHeight: Double = 17,
             rowHeight: Double = 24,
+            tableHeaderHeight: Double = 24,
             twoLineRowHeight: Double = 40,
             counterHeight: Double = 34
         ) {
@@ -30,6 +32,7 @@ extension InstrumentLayout {
             self.boxInset = boxInset
             self.lineHeight = lineHeight
             self.rowHeight = rowHeight
+            self.tableHeaderHeight = tableHeaderHeight
             self.twoLineRowHeight = twoLineRowHeight
             self.counterHeight = counterHeight
         }
@@ -282,7 +285,7 @@ private struct Arranger {
     }
 
     private func chrome(of widget: InstrumentWidget) -> Double {
-        let header = widget.title != nil || !widget.actions.isEmpty ? metrics.headerHeight + metrics.headerSpacing : 0
+        let header = widget.hasHeader ? metrics.headerHeight + metrics.headerSpacing : 0
         return header + 2 * metrics.boxInset
     }
 
@@ -291,7 +294,7 @@ private struct Arranger {
         switch widget.kind {
         case .counter: return metrics.counterHeight
         case .list: return rows == 0 ? metrics.lineHeight : listHeight(of: widget, rows: rows)
-        case .table: return rows == 0 ? metrics.lineHeight : Double(rows + 1) * metrics.rowHeight
+        case .table: return rows == 0 ? metrics.lineHeight : tableHeight(rows: rows)
         case .console: return 250
         case .hex: return 16 * metrics.lineHeight
         case .graph, .histogram: return 180
@@ -304,11 +307,15 @@ private struct Arranger {
         return Double(rows - subtitled) * metrics.rowHeight + Double(subtitled) * metrics.twoLineRowHeight
     }
 
+    private func tableHeight(rows: Int) -> Double {
+        metrics.tableHeaderHeight + Double(rows) * metrics.rowHeight
+    }
+
     private func minimumContentHeight(of widget: InstrumentWidget, maxRows: Int?) -> Double {
         let rows = Double(min(4, maxRows ?? InstrumentLayout.defaultRowCap))
         switch widget.kind {
         case .list: return listHeight(of: widget, rows: Int(rows))
-        case .table: return (rows + 1) * metrics.rowHeight
+        case .table: return tableHeight(rows: Int(rows))
         case .console: return 120
         case .hex: return 6 * metrics.lineHeight
         case .view(let cfg): return Double(cfg.height)

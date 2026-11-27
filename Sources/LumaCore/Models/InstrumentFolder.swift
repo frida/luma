@@ -38,13 +38,15 @@ public struct InstrumentFolder: Sendable {
         "default": ["kind", "value"],
         "widgets": ["id", "name", "kind", "config", "actions", "persistence"],
         "config": [
-            "unit", "maxBuckets", "series", "maxPoints", "columns", "rowActions", "maxItems", "maxRows", "maxBytes", "maxEntries", "prompt",
+            "unit", "maxBuckets", "series", "maxPoints", "columns", "rowActions", "rowActivation", "rowSelection", "maxItems", "maxRows", "maxBytes", "maxEntries", "prompt",
             "placeholder", "runButtonLabel", "class", "height",
         ],
         "series": choiceManifestKeys,
         "columns": ["id", "name", "alignment"],
         "actions": choiceManifestKeys,
         "rowActions": choiceManifestKeys,
+        "rowActivation": choiceManifestKeys,
+        "rowSelection": choiceManifestKeys,
         "store": ["summary", "category", "access"],
         "access": ["kind", "minMonthlyCents"],
     ]

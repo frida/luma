@@ -108,7 +108,7 @@ extension Engine {
         let instance = instrumentsBySession[sent.sessionID]?.first { $0.id == sent.instanceID }
         let name = instance.map { descriptor(for: $0).displayName } ?? "An instrument"
         let widget = widget(forInstanceID: sent.instanceID, widgetID: sent.widget)
-        let actions = sent.item == nil ? widget?.actions : widget?.kind.rowActions
+        let actions = sent.item == nil ? widget?.actions : widget?.kind.rowInvocations
         let actionName = actions?.first { $0.id == sent.action }?.name ?? sent.action
         let host = sessions.first { $0.id == sent.sessionID }?.host?.name ?? "the host"
         let row = sent.item.map { " on row \($0)" } ?? ""

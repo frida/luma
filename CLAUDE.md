@@ -211,10 +211,15 @@ is gitignored — it is produced at build time.
   `dataDirectory/Instruments`. An instrument's dependencies install
   into its own `node_modules` inside the compiler workspace, ahead of
   the project-wide packages. A widget's `actions` are buttons in its
-  header and a list's or table's `config.rowActions` buttons on each
-  row, their ids unique within the widget; choosing one runs the
-  handle's `onAction` in the host's agent, with `item` the row's id for
-  a row action and absent otherwise. Luma never empties a widget of its
+  header and a list's or table's `config.rowActions` buttons on the row
+  under the pointer or selected, its `config.rowActivation` what
+  opening a row runs, by double-click or Return, and its
+  `config.rowSelection` what selecting one runs once the selection
+  settles, neither with a button; their ids are unique within the
+  widget. Choosing one runs the handle's
+  `onAction` in the host's agent, with `item` the row's id for a row
+  action and absent otherwise. A list or table always has a header,
+  for its filter field. Luma never empties a widget of its
   own accord: an instrument that wants a Clear declares one. The agent
   grays one of a widget's actions with `setActionEnabled`, and every
   action is enabled again as `create` begins. That, and whether the
@@ -355,9 +360,10 @@ is gitignored — it is produced at build time.
   the connection, so the store shows each item at the newest version
   this Luma runs and sends updates only for those; an item whose
   `min_app_version` this Luma does not meet is `.requiresLuma` and is not
-  offered for adding. Any widget or setting needs Luma 4.0.0, whose
-  `package.json` form 3.0.0 cannot read, and `.st` files alone need
-  3.0.0 (`LumaRequirement`), so an instrument is published only once its
+  offered for adding. A `rowActivation` or `rowSelection` needs Luma
+  4.1.0, since 4.0.0 refuses keys it does not know, any other widget or setting needs Luma
+  4.0.0, whose `package.json` form 3.0.0 cannot read, and `.st` files
+  alone need 3.0.0 (`LumaRequirement`), so an instrument is published only once its
   `engines.luma` says what it needs, and an edit made in Luma that brings
   it to need more raises it.
 
