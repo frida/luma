@@ -24,6 +24,13 @@ and reports what the process is holding as it goes -- the game leaks
 nothing, but it took three fixes to get there, and a flat line is only
 worth reading once the snippet is seen moving.
 
+`make publish-instruments PLAN=plan.json` publishes instrument folders
+to the store, signed in as Luma is (or with `LUMA_GITHUB_TOKEN`). The
+plan is `[{ "folder": ..., "notes": ... }]`: each folder's
+`package.json` gives the version and listing, the notes are that
+release's, and a folder whose version the store already has is skipped.
+`DRY_RUN=1` says what would be published without publishing it.
+
 `make check-editor` opens a hook in a scratch project and asks the
 compiler's language server what it completes, hovers and reports. The
 editor draws what that server says, and the server sees the workspace

@@ -44,6 +44,9 @@ check-columns:
 check-examples: $(PHARO_IMAGE)
 	$(IN_BUILD_ENVIRONMENT) swift run --disable-sandbox LumaExampleCheck
 
+publish-instruments:
+	$(IN_BUILD_ENVIRONMENT) swift run --disable-sandbox LumaPublish $(if $(DRY_RUN),--dry-run) $(PLAN)
+
 # The editor's completions come from the compiler's language server, which
 # only a running one can vouch for.
 check-editor: $(PHARO_IMAGE)
@@ -80,4 +83,4 @@ clean:
 	rm -rf "$(BUILD_DIR)"
 	rm -rf .build LumaGtk/.build
 
-.PHONY: all check-columns check-examples check-patches check-editor gtk gtk-release clean
+.PHONY: all check-columns check-examples check-patches check-editor publish-instruments gtk gtk-release clean
