@@ -604,7 +604,9 @@ final class CustomInstrumentWidgetsDialog {
         let draft = IDNameDraft { [weak self] id, name in
             guard let self, widgetIndex < self.draftWidgets.count else { return false }
             let widget = self.draftWidgets[widgetIndex]
-            guard !(widget.actions + widget.kind.rowActions).contains(where: { $0.id == id }) else { return false }
+            guard slot.read(widget).count < slot.capacity,
+                !(widget.actions + widget.kind.rowInvocations).contains(where: { $0.id == id })
+            else { return false }
             slot.write(&self.draftWidgets[widgetIndex], slot.read(widget) + [InstrumentWidget.Action(id: id, name: name)])
             self.rebuildActionRows(into: rows, slot: slot, widgetIndex: widgetIndex)
             return true
@@ -776,6 +778,8 @@ final class CustomInstrumentWidgetsDialog {
         let outer = Box(orientation: .vertical, spacing: 4)
         outer.append(child: listCapRow(widgetIndex: index))
         outer.append(child: actionsEditor(.rowActions, widgetIndex: index))
+        outer.append(child: actionsEditor(.rowActivation, widgetIndex: index))
+        outer.append(child: actionsEditor(.rowSelection, widgetIndex: index))
         return outer
     }
 
@@ -818,6 +822,8 @@ final class CustomInstrumentWidgetsDialog {
         outer.append(child: columnsAddRow(into: columnsList, widgetIndex: index))
 
         outer.append(child: actionsEditor(.rowActions, widgetIndex: index))
+        outer.append(child: actionsEditor(.rowActivation, widgetIndex: index))
+        outer.append(child: actionsEditor(.rowSelection, widgetIndex: index))
         return outer
     }
 
@@ -1244,6 +1250,7 @@ func makeChoiceDropdown<Choice: Equatable>(
 
 private struct ActionSlot {
     let title: String
+    var capacity = InstrumentWidget.maxActions
     let read: (InstrumentWidget) -> [InstrumentWidget.Action]
     let write: (inout InstrumentWidget, [InstrumentWidget.Action]) -> Void
 
@@ -1259,6 +1266,36 @@ private struct ActionSlot {
                 widget.kind = .list(cfg)
             case .table(var cfg):
                 cfg.rowActions = actions
+                widget.kind = .table(cfg)
+            default:
+                break
+            }
+        }
+    }
+
+    static var rowActivation: ActionSlot {
+        ActionSlot(title: "On double-click or Enter", capacity: 1, read: { $0.kind.rowActivation.map { [$0] } ?? [] }) { widget, actions in
+            switch widget.kind {
+            case .list(var cfg):
+                cfg.rowActivation = actions.first
+                widget.kind = .list(cfg)
+            case .table(var cfg):
+                cfg.rowActivation = actions.first
+                widget.kind = .table(cfg)
+            default:
+                break
+            }
+        }
+    }
+
+    static var rowSelection: ActionSlot {
+        ActionSlot(title: "On selection", capacity: 1, read: { $0.kind.rowSelection.map { [$0] } ?? [] }) { widget, actions in
+            switch widget.kind {
+            case .list(var cfg):
+                cfg.rowSelection = actions.first
+                widget.kind = .list(cfg)
+            case .table(var cfg):
+                cfg.rowSelection = actions.first
                 widget.kind = .table(cfg)
             default:
                 break
