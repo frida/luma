@@ -1333,6 +1333,7 @@ extension View {
                 selection.wrappedValue = row
                 activate(row)
             })
+            .tableTakesFocusOnClick()
         #else
             onChange(of: selection.wrappedValue) { _, row in
                 if let row { activate(row) }
@@ -1403,15 +1404,9 @@ struct PharoDoubleClickCatcher: NSViewRepresentable {
 /// pointer rather than from the selection, which the first click of the two has
 /// not always finished settling by the time the second arrives.
 private func pharoTableRow(_ catcher: NSView, _ point: NSPoint) -> Int? {
-    var hit = catcher.window?.contentView?.hitTest(point)
-    while let view = hit {
-        if let table = view as? NSTableView {
-            let row = table.row(at: table.convert(point, from: nil))
-            return row >= 0 ? row : nil
-        }
-        hit = view.superview
-    }
-    return nil
+    guard let window = catcher.window, let table = NSTableView.under(point, in: window) else { return nil }
+    let row = table.row(at: table.convert(point, from: nil))
+    return row >= 0 ? row : nil
 }
 #endif
 
