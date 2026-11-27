@@ -56,11 +56,11 @@ extension InstrumentLayout.Metrics {
     #if os(macOS)
     static let page = InstrumentLayout.Metrics(
         spacing: 12, headerHeight: 16, headerSpacing: 4, boxInset: 5, lineHeight: HexMetrics.regular.rowHeight, rowHeight: 20,
-        twoLineRowHeight: 35, counterHeight: 34)
+        tableHeaderHeight: 28, twoLineRowHeight: 35, counterHeight: 34)
     #else
     static let page = InstrumentLayout.Metrics(
         spacing: 12, headerHeight: 22, headerSpacing: 4, boxInset: 16, lineHeight: HexMetrics.regular.rowHeight, rowHeight: 28,
-        twoLineRowHeight: 48, counterHeight: 34)
+        tableHeaderHeight: 28, twoLineRowHeight: 48, counterHeight: 34)
     #endif
 }
 
@@ -111,11 +111,14 @@ private struct WidgetCard: View {
     let isLive: Bool
     let onRows: (WidgetRows) -> Void
 
+    @State private var rowFilter = ""
+    @State private var rowsFocus = WidgetRowsFocus()
+
     private static let focusRingOutset: CGFloat = 4
 
     var body: some View {
         VStack(alignment: .leading, spacing: InstrumentLayout.Metrics.page.headerSpacing) {
-            if widget.title != nil || !widget.actions.isEmpty {
+            if widget.hasHeader {
                 header
                     .font(.subheadline)
                     .frame(height: InstrumentLayout.Metrics.page.headerHeight)
@@ -127,6 +130,8 @@ private struct WidgetCard: View {
                     instance: instance,
                     engine: engine,
                     selection: selection,
+                    rowFilter: rowFilter,
+                    rowsFocus: rowsFocus,
                     onRows: onRows
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -145,6 +150,9 @@ private struct WidgetCard: View {
                     .layoutPriority(1)
             }
             Spacer()
+            if widget.kind.hasRows {
+                WidgetFilterField(text: $rowFilter, rowsFocus: rowsFocus)
+            }
             if !widget.actions.isEmpty {
                 WidgetHeaderActions(
                     actions: widget.actions,
@@ -175,10 +183,11 @@ private struct WidgetCanvas: View {
     let instance: LumaCore.InstrumentInstance?
     let engine: Engine
     let selection: Binding<SidebarItemID?>
+    let rowFilter: String
+    let rowsFocus: WidgetRowsFocus
     let onRows: (WidgetRows) -> Void
 
     @State private var state = WidgetState()
-    @State private var tableWidth: CGFloat = 0
     @State private var consoleNotKept: String?
 
     var body: some View {
@@ -292,104 +301,47 @@ private struct WidgetCanvas: View {
 
     @ViewBuilder
     private func listView(_ cfg: InstrumentWidget.ListConfig) -> some View {
+        let items = state.listItems.filter { $0.matches(rowFilter) }
         if state.listItems.isEmpty {
             Text("No items.").font(.caption).foregroundStyle(.secondary)
+        } else if items.isEmpty {
+            noMatches
         } else {
-            ScrollingRows(spacing: 0) {
-                ForEach(state.listItems) { item in
-                    listRow(item: item, actions: cfg.rowActions)
-                }
-            }
+            WidgetRowsView(
+                content: .list(items),
+                actions: rowActions(cfg.rowActions, activation: cfg.rowActivation, selection: cfg.rowSelection),
+                focus: rowsFocus)
         }
     }
 
-    private func listRow(item: WidgetListItem, actions: [InstrumentWidget.Action]) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.title)
-                if let subtitle = item.subtitle {
-                    Text(subtitle).font(.caption).foregroundStyle(.secondary)
-                }
-            }
-            Spacer()
-            if let accessory = item.accessory {
-                Text(accessory).font(.caption).foregroundStyle(.secondary)
-            }
-            actionButtons(actions, item: item.id)
-        }
-        .padding(.vertical, 2)
-        .frame(minHeight: item.subtitle == nil ? InstrumentLayout.Metrics.page.rowHeight : InstrumentLayout.Metrics.page.twoLineRowHeight)
+    private var noMatches: some View {
+        Text("No matches.").font(.caption).foregroundStyle(.secondary)
     }
 
     @ViewBuilder
     private func tableView(_ cfg: InstrumentWidget.TableConfig) -> some View {
+        let rows = state.tableRows.filter { $0.matches(rowFilter) }
         if cfg.columns.isEmpty {
             Text("No columns defined.").font(.caption).foregroundStyle(.secondary)
         } else if state.tableRows.isEmpty {
             Text("No rows.").font(.caption).foregroundStyle(.secondary)
+        } else if rows.isEmpty {
+            noMatches
         } else {
-            let widths = TableColumnWidths(columns: cfg.columns, rows: state.tableRows)
-            let shownActions = RowActionFit.shownCount(of: cfg.rowActions, in: tableWidth, beside: widths.minimumWidth)
-            VStack(alignment: .leading, spacing: 0) {
-                tableHeader(cfg, widths: widths, shownActions: shownActions)
-                    .frame(height: InstrumentLayout.Metrics.page.rowHeight)
-                    .overlay(alignment: .bottom) { Divider() }
-                ScrollingRows(spacing: 0) {
-                    ForEach(state.tableRows) { row in
-                        tableRow(row: row, columns: cfg.columns, actions: cfg.rowActions, shownActions: shownActions, widths: widths)
-                            .frame(height: InstrumentLayout.Metrics.page.rowHeight)
-                            .overlay(alignment: .bottom) { Divider().opacity(0.3) }
-                    }
-                }
-            }
-            .font(.system(.caption, design: .monospaced))
-            .onGeometryChange(for: CGFloat.self, of: \.size.width) { tableWidth = $0 }
+            WidgetRowsView(
+                content: .table(columns: cfg.columns, rows: rows),
+                actions: rowActions(cfg.rowActions, activation: cfg.rowActivation, selection: cfg.rowSelection),
+                focus: rowsFocus)
         }
     }
 
-    private func tableHeader(_ cfg: InstrumentWidget.TableConfig, widths: TableColumnWidths, shownActions: Int) -> some View {
-        TableRowLayout(widths: widths, hasActions: !cfg.rowActions.isEmpty) {
-            ForEach(cfg.columns) { col in
-                Text(col.name)
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: alignment(for: col.alignment))
-                    .foregroundStyle(.secondary)
-            }
-            if !cfg.rowActions.isEmpty {
-                TableRowActions(actions: cfg.rowActions, shown: shownActions, isEnabled: { _ in true }, onPress: { _ in })
-                    .hidden()
-                    .accessibilityHidden(true)
-            }
-        }
-    }
-
-    private func tableRow(
-        row: WidgetTableRow, columns: [InstrumentWidget.Column], actions: [InstrumentWidget.Action], shownActions: Int,
-        widths: TableColumnWidths
-    ) -> some View {
-        TableRowLayout(widths: widths, hasActions: !actions.isEmpty) {
-            ForEach(columns) { col in
-                Text(row.cells[col.id] ?? "")
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: alignment(for: col.alignment))
-            }
-            if !actions.isEmpty {
-                TableRowActions(
-                    actions: actions, shown: shownActions, isEnabled: { _ in canChooseActions },
-                    refusal: instance.flatMap(engine.widgetActionRefusal),
-                    onPress: { invoke(action: $0, item: row.id) })
-            }
-        }
-    }
-
-    private func alignment(for value: InstrumentWidget.Column.Alignment) -> SwiftUI.Alignment {
-        value == .leading ? .leading : .trailing
-    }
-
-    private func actionButtons(_ actions: [InstrumentWidget.Action], item: String) -> some View {
-        ActionButtons(
-            actions: actions, isEnabled: { _ in canChooseActions }, refusal: instance.flatMap(engine.widgetActionRefusal),
-            onPress: { invoke(action: $0, item: item) })
+    private func rowActions(
+        _ buttons: [InstrumentWidget.Action], activation: InstrumentWidget.Action?, selection: InstrumentWidget.Action?
+    ) -> WidgetRowActions {
+        WidgetRowActions(
+            buttons: buttons, activation: activation, selection: selection, isEnabled: canChooseActions,
+            refusal: instance.flatMap(engine.widgetActionRefusal),
+            invoke: { invoke(action: $0, item: $1) })
     }
 
     private var canChooseActions: Bool {
@@ -717,21 +669,6 @@ private struct ConsoleWidgetView: View {
     }
 }
 
-private struct ScrollingRows<Rows: View>: View {
-    let spacing: CGFloat
-    @ViewBuilder let rows: Rows
-
-    var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: spacing) {
-                rows
-            }
-        }
-        .scrollBounceBehavior(.basedOnSize)
-        .frame(maxHeight: .infinity)
-    }
-}
-
 private struct WidgetHeaderActions: View {
     let actions: [InstrumentWidget.Action]
     let isEnabled: (String) -> Bool
@@ -777,65 +714,6 @@ private struct ActionButtons: View {
     }
 }
 
-private struct TableRowActions: View {
-    let actions: [InstrumentWidget.Action]
-    let shown: Int
-    let isEnabled: (String) -> Bool
-    var refusal: String? = nil
-    let onPress: (String) -> Void
-
-    var body: some View {
-        HStack(spacing: RowActionFit.spacing) {
-            ActionButtons(actions: Array(actions.prefix(shown)), isEnabled: isEnabled, refusal: refusal, onPress: onPress)
-            if shown < actions.count {
-                Menu {
-                    ForEach(actions.dropFirst(shown)) { action in
-                        Button(action.name) { onPress(action.id) }
-                            .disabled(!isEnabled(action.id))
-                    }
-                } label: {
-                    Text("\u{22EF}")
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help("More actions")
-                .accessibilityLabel("More actions")
-            }
-        }
-        .fixedSize()
-    }
-}
-
-private enum RowActionFit {
-    static let spacing: CGFloat = 2
-
-    private static let labelPadding: CGFloat = 12
-    private static let overflowWidth: CGFloat = 24
-    private static let gapBeforeActions: CGFloat = 8
-
-    static func shownCount(of actions: [InstrumentWidget.Action], in width: CGFloat, beside reserved: CGFloat) -> Int {
-        let room = width - reserved - gapBeforeActions
-        let widths = actions.map(buttonWidth)
-        if widths.reduce(0, +) + spacing * CGFloat(max(widths.count - 1, 0)) <= room {
-            return actions.count
-        }
-        var used = overflowWidth
-        var count = 0
-        for width in widths {
-            used += width + spacing
-            guard used <= room else { break }
-            count += 1
-        }
-        return count
-    }
-
-    private static func buttonWidth(_ action: InstrumentWidget.Action) -> CGFloat {
-        let font = PlatformFont.preferredFont(forTextStyle: .subheadline)
-        return (action.name as NSString).size(withAttributes: [.font: font]).width.rounded(.up) + labelPadding
-    }
-}
-
 private struct RowActionButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         RowActionLabel(configuration: configuration)
@@ -866,90 +744,6 @@ private struct RowActionLabel: View {
         guard isEnabled else { return 0.06 }
         if configuration.isPressed { return 0.3 }
         return isHovered ? 0.18 : 0.1
-    }
-}
-
-private struct TableColumnWidths: Equatable {
-    let natural: [CGFloat]
-
-    init(columns: [InstrumentWidget.Column], rows: [WidgetTableRow]) {
-        let advance = Self.advance
-        natural = columns.map { column in
-            let longest = rows.reduce(column.name.count) { max($0, ($1.cells[column.id] ?? "").count) }
-            return (CGFloat(longest) * advance).rounded(.up) + 1
-        }
-    }
-
-    nonisolated func fitted(to available: CGFloat) -> [CGFloat] {
-        let total = natural.reduce(0, +)
-        guard total > 0 else { return natural }
-        if total <= available {
-            return natural.map { $0 + (available - total) * $0 / total }
-        }
-        var kept: CGFloat = 0
-        var cap = available / CGFloat(natural.count)
-        for (index, width) in natural.sorted().enumerated() {
-            let share = (available - kept) / CGFloat(natural.count - index)
-            guard width <= share else {
-                cap = share
-                break
-            }
-            kept += width
-        }
-        let floor = Self.advance * Self.minimumCharacters
-        return natural.map { min($0, max(cap, floor)) }
-    }
-
-    var minimumWidth: CGFloat {
-        Self.advance * Self.minimumCharacters
-    }
-
-    nonisolated private static let minimumCharacters: CGFloat = 6
-
-    nonisolated private static var advance: CGFloat {
-        let size = PlatformFont.preferredFont(forTextStyle: .caption1).pointSize
-        let font = PlatformFont.monospacedSystemFont(ofSize: size, weight: .regular)
-        return ("0" as NSString).size(withAttributes: [.font: font]).width
-    }
-}
-
-private struct TableRowLayout: Layout {
-    let widths: TableColumnWidths
-    let hasActions: Bool
-
-    private static let spacing: CGFloat = 8
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let columns = columnWidths(proposal: proposal, subviews: subviews)
-        let height = zip(subviews, columns.cells + [columns.actions]).map { subview, width in
-            subview.sizeThatFits(ProposedViewSize(width: width, height: nil)).height
-        }.max() ?? 0
-        return CGSize(width: proposal.width ?? columns.total, height: height)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let columns = columnWidths(proposal: ProposedViewSize(width: bounds.width, height: proposal.height), subviews: subviews)
-        let cellsEnd = hasActions ? bounds.maxX - columns.actions - Self.spacing : bounds.maxX
-        var x = bounds.minX
-        for (subview, width) in zip(subviews, columns.cells) {
-            let cell = ProposedViewSize(width: max(0, min(width, cellsEnd - x)), height: bounds.height)
-            subview.place(at: CGPoint(x: x, y: bounds.midY), anchor: .leading, proposal: cell)
-            x += width + Self.spacing
-        }
-        if hasActions, let actions = subviews.last {
-            actions.place(at: CGPoint(x: bounds.maxX, y: bounds.midY), anchor: .trailing, proposal: .unspecified)
-        }
-    }
-
-    private func columnWidths(
-        proposal: ProposedViewSize, subviews: Subviews
-    ) -> (cells: [CGFloat], actions: CGFloat, total: CGFloat) {
-        let actions = hasActions ? (subviews.last?.sizeThatFits(.unspecified).width ?? 0) : 0
-        let count = CGFloat(widths.natural.count)
-        let gaps = Self.spacing * (count - 1 + (hasActions ? 1 : 0))
-        let natural = widths.natural.reduce(0, +) + gaps + actions
-        let available = (proposal.width ?? natural) - gaps - actions
-        return (widths.fitted(to: max(0, available)), actions, natural)
     }
 }
 
