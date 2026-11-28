@@ -74,7 +74,7 @@ $(SHADER_BUNDLE): $(SHADER_SOURCES) $(PROJECT_ROOT)/Sources/LumaShaderCompiler/m
 version: | swiftpm-pkg-config
 	$(IN_BUILD_ENVIRONMENT) swift run --package-path $(PROJECT_ROOT) LumaVersionWriter $(PROJECT_ROOT) "$(VERSION_SOURCE)"
 
-swiftpm-pkg-config: | $(GENERATED_DIR)
+swiftpm-pkg-config: $(PHARO_VM) | $(GENERATED_DIR)
 	Scripts/stage-pkg-config-for-swiftpm.sh $(SWIFTPM_PKG_CONFIG_DIR)
 
 $(GENERATED_DIR):
