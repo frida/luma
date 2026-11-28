@@ -42,18 +42,19 @@ endif
 SWIFTPM_PKG_CONFIG_DIR := $(CURDIR)/.build/pkgconfig
 export PKG_CONFIG_PATH := $(SWIFTPM_PKG_CONFIG_DIR):$(PKG_CONFIG_PATH)
 
-AGENT_BUNDLE := $(PROJECT_ROOT)/Sources/LumaCore/Generated/LumaAgent.swift
-TYPINGS_BUNDLE := $(PROJECT_ROOT)/Sources/LumaCore/Generated/LumaTypings.swift
+GENERATED_DIR := $(PROJECT_ROOT)/Sources/LumaCore/Generated
+AGENT_BUNDLE := $(GENERATED_DIR)/LumaAgent.swift
+TYPINGS_BUNDLE := $(GENERATED_DIR)/LumaTypings.swift
 AGENT_STAGING := $(PROJECT_ROOT)/.build/AgentStaging
 
 AGENT_SOURCES := \
 	$(shell find $(PROJECT_ROOT)/Agent -type f \( -name '*.ts' -o -name '*.json' \) 2>/dev/null) \
 	$(PROJECT_ROOT)/Sources/LumaBundleCompiler/main.swift
 
-SHADER_BUNDLE := $(PROJECT_ROOT)/Sources/LumaCore/Generated/ShaderEffects.swift
+SHADER_BUNDLE := $(GENERATED_DIR)/ShaderEffects.swift
 SHADER_SOURCES := $(wildcard $(PROJECT_ROOT)/Shaders/*.frag.glsl)
 
-VERSION_SOURCE := $(PROJECT_ROOT)/Sources/LumaCore/Generated/LumaVersion.swift
+VERSION_SOURCE := $(GENERATED_DIR)/LumaVersion.swift
 
 bundle: $(AGENT_BUNDLE) $(TYPINGS_BUNDLE) $(SHADER_BUNDLE) version
 
@@ -73,8 +74,11 @@ $(SHADER_BUNDLE): $(SHADER_SOURCES) $(PROJECT_ROOT)/Sources/LumaShaderCompiler/m
 version: | swiftpm-pkg-config
 	$(IN_BUILD_ENVIRONMENT) swift run --package-path $(PROJECT_ROOT) LumaVersionWriter $(PROJECT_ROOT) "$(VERSION_SOURCE)"
 
-swiftpm-pkg-config:
+swiftpm-pkg-config: | $(GENERATED_DIR)
 	Scripts/stage-pkg-config-for-swiftpm.sh $(SWIFTPM_PKG_CONFIG_DIR)
+
+$(GENERATED_DIR):
+	mkdir -p $@
 
 soak: build
 	LUMA_SOAK=$(LUMA_SOAK) LUMA_SOAK_SECONDS=$(or $(SECONDS),180) \
@@ -93,7 +97,7 @@ build: bundle $(PHARO_IMAGE) $(PHARO_VM) | swiftpm-pkg-config
 ifneq ($(PHARO_VM_PC),)
 # Resolving first is what puts the script on disk, and resolving does not need
 # the VM that the script goes on to build.
-$(PHARO_VM_PC):
+$(PHARO_VM_PC): | $(GENERATED_DIR)
 	@if [ -d "$(PHARO_SOURCE)/tools" ]; then \
 	    tools="$(PHARO_SOURCE)"; \
 	else \
