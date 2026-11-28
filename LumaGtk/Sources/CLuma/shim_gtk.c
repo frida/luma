@@ -542,7 +542,9 @@ luma_pointer_location(double *x, double *y)
 #ifdef GDK_WINDOWING_X11
     GdkDisplay *display = gdk_display_get_default();
     if (GDK_IS_X11_DISPLAY(display)) {
+        G_GNUC_BEGIN_IGNORE_DEPRECATIONS
         Display *xdisplay = gdk_x11_display_get_xdisplay(display);
+        G_GNUC_END_IGNORE_DEPRECATIONS
         Window root_return, child_return;
         int root_x, root_y, win_x, win_y;
         unsigned int mask;
@@ -564,7 +566,9 @@ luma_pointer_place(double x, double y)
 #ifdef GDK_WINDOWING_X11
     GdkDisplay *display = gdk_display_get_default();
     if (GDK_IS_X11_DISPLAY(display)) {
+        G_GNUC_BEGIN_IGNORE_DEPRECATIONS
         Display *xdisplay = gdk_x11_display_get_xdisplay(display);
+        G_GNUC_END_IGNORE_DEPRECATIONS
         XWarpPointer(xdisplay, None, DefaultRootWindow(xdisplay),
                      0, 0, 0, 0, (int)(x + 0.5), (int)(y + 0.5));
         XFlush(xdisplay);

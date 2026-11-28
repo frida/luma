@@ -19,7 +19,7 @@ final class PharoColumnPath {
 
     let includesPage: Bool
 
-    static let coordinateSpace = "pharoColumns"
+    nonisolated static let coordinateSpace = "pharoColumns"
 
     init(includesPage: Bool = false) {
         self.includesPage = includesPage

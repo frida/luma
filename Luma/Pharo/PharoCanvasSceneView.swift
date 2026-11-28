@@ -528,7 +528,7 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
         if let latest = CanvasRegistry.shared.scene(sceneHandle) {
             scene = latest
         }
-        guard let device = view.device,
+        guard view.device != nil,
               let commandQueue,
               let descriptor = view.currentRenderPassDescriptor,
               let drawable = view.currentDrawable,
@@ -592,7 +592,7 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
 
         encoder.endEncoding()
         buffer.present(drawable)
-        buffer.addCompletedHandler { _ in
+        buffer.addCompletedHandler { [drawn] _ in
             withExtendedLifetime(drawn) {}
         }
         buffer.commit()

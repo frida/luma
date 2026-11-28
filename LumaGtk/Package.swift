@@ -7,13 +7,13 @@ let lumaGtkTargetDir = URL(fileURLWithPath: #filePath)
     .deletingLastPathComponent()
     .appendingPathComponent("Sources/LumaGtk", isDirectory: true).path
 
-let lumaGtkExcludes: [String] = ["luma.rc", "luma.res"].filter { name in
-    FileManager.default.fileExists(atPath: lumaGtkTargetDir + "/" + name)
-}
-
 #if os(Windows)
 let lumaExecutableIconResource = compileWindowsExecutableIcon()
 #endif
+
+let lumaGtkExcludes: [String] = ["luma.rc", "luma.res"].filter { name in
+    FileManager.default.fileExists(atPath: lumaGtkTargetDir + "/" + name)
+}
 
 #if os(macOS)
 let cLumaSources: [String] = ["shim_gtk.c", "svg_paintable.c"]

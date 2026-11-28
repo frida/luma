@@ -24,7 +24,12 @@ let usesXcodePackageResolution = manifestFileno != nil && manifestFileno != "4"
 #else
 let usesXcodePackageResolution = false
 #endif
-let lumaCoreExcludes = ["VirtualMachines/AndroidEmulator/EmulatorControl/proto"] + (usesXcodePackageResolution ? [] : ["Generated"])
+let lumaCoreTargetDir = URL(fileURLWithPath: #filePath)
+    .deletingLastPathComponent()
+    .appendingPathComponent("Sources/LumaCore", isDirectory: true).path
+let lumaCoreExcludes = (["VirtualMachines/AndroidEmulator/EmulatorControl/proto"] + (usesXcodePackageResolution ? [] : ["Generated"])).filter { name in
+    FileManager.default.fileExists(atPath: lumaCoreTargetDir + "/" + name)
+}
 let lumaCorePlugins: [Target.PluginUsage] = usesXcodePackageResolution ? [] : [
     .plugin(name: "LumaBundlePlugin"),
     .plugin(name: "LumaShaderPlugin"),

@@ -72,14 +72,12 @@ final class AndroidEmulatorMachine: VirtualMachine {
         let consolePort = try Self.reserveConsolePort()
 
         #if os(Windows)
-        let usesVsock = false
         qmpPort = try Self.reserveGdbPort()
-        #else
+        #endif
         // Old guest kernels lack vsock, so they are reached over a virtio-serial hostlink. Inflating
         // and scanning the kernel image is off the main thread.
         let kernelImage = avd.kernelImage
-        let usesVsock = await Task.detached { Self.kernelSupportsVsock(kernelImage) }.value
-        #endif
+        let usesVsock = await Task.detached { Self.reachesOverVsock(kernelImage) }.value
 
         // Never save on exit, so injection damage is discarded.
         process.executableURL = emulator
@@ -257,9 +255,13 @@ final class AndroidEmulatorMachine: VirtualMachine {
 
     /// vsock landed in ~4.8, so a guest kernel that names no vsock symbol needs the virtio-serial
     /// hostlink instead.
-    private nonisolated static func kernelSupportsVsock(_ url: URL?) -> Bool {
+    private nonisolated static func reachesOverVsock(_ url: URL?) -> Bool {
+        #if os(Windows)
+        return false
+        #else
         guard let url, let image = try? Frida.LinuxKernelImage.open(path: url.path) else { return true }
         return image.hasSymbol(name: "vsock_core_register")
+        #endif
     }
 
     private static func reserveGdbPort() throws -> UInt16 {

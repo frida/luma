@@ -220,7 +220,7 @@ final class ChatsSidebarSection {
                 .init(
                     "Delete", detail: canDelete ? nil : "Only the member who started this chat, or a lab owner, can delete it", destructive: true,
                     enabled: canDelete
-                ) {
+                ) { [weak self] in
                     ConfirmationPopover.present(heading: "Delete this chat?", destructiveLabel: "Delete", at: anchor) {
                         Task { @MainActor [weak self] in
                             if let self, self.selected == chatID {

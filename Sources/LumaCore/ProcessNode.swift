@@ -1781,6 +1781,7 @@ public final class ProcessNode: Identifiable {
         }
     }
 
+    @discardableResult
     private func marked<T>(_ call: (String) async throws -> T) async throws -> T {
         let marker = UUID().uuidString
         let result: T

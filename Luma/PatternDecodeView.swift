@@ -74,7 +74,7 @@ struct PatternDecodeView: View {
             }
         }
         .modifier(AvailableWidthReader(sizing: sizing, width: $availableWidth))
-        .alignmentGuide(.firstTextBaseline) { _ in TreeMetrics.inset + HexMetrics.regular.baseline }
+        .alignmentGuide(.firstTextBaseline) { [baseline = TreeMetrics.inset + HexMetrics.regular.baseline] _ in baseline }
         .onAppear {
             expanded.formUnion(placements.map(\.id))
         }
@@ -888,7 +888,7 @@ private struct VisualizationControl<Summary: View>: View {
     }
 
     private var visualizerShown: Binding<Bool> {
-        Binding(get: { isOpen }, set: actions.showVisualizer)
+        Binding(get: { isOpen }, set: { actions.showVisualizer($0) })
     }
 
     private var callOutcomeShown: Binding<Bool> {

@@ -138,8 +138,6 @@ final class InstrumentViewWidget {
             page.append(child: stopped(message))
         case .running:
             load()
-        default:
-            break
         }
     }
 

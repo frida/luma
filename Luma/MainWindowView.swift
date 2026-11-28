@@ -102,8 +102,8 @@ private struct ProjectContentView: View {
     private static let collapsedEventStreamHeight: CGFloat = 32
     private static let minEventStreamHeight: Double = 120
     private static let minMainContentHeight: CGFloat = 160
-    private static let minDetailWidth: CGFloat = 480
-    private static let sidePanelWidthRange: ClosedRange<CGFloat> = 260...520
+    private nonisolated static let minDetailWidth: CGFloat = 480
+    private nonisolated static let sidePanelWidthRange: ClosedRange<CGFloat> = 260...520
 
     var body: some View {
         VStack(spacing: 0) {
@@ -267,7 +267,7 @@ private struct ProjectContentView: View {
                     .onEnded { _ in sidePanelResizingFrom = nil })
     }
 
-    private static func maxSidePanelWidth(forDetailWidth detailWidth: CGFloat) -> CGFloat {
+    private nonisolated static func maxSidePanelWidth(forDetailWidth detailWidth: CGFloat) -> CGFloat {
         let range = sidePanelWidthRange
         return min(max(detailWidth - minDetailWidth, range.lowerBound), range.upperBound)
     }

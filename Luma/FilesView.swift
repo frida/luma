@@ -229,7 +229,9 @@ struct FilesView: View {
         switch press.key {
         case .delete where command, Self.backspace where command:
             pendingDeletion = entries.filter { selectedNames.contains($0.name) }
-        case .return, .downArrow where command:
+        case .return:
+            fallthrough
+        case .downArrow where command:
             guard let entry = selectedEntry else { return .ignored }
             open(entry)
         case "j":
@@ -239,7 +241,9 @@ struct FilesView: View {
         case "l":
             guard let entry = selectedEntry, entry.opensAsDirectory else { return .ignored }
             open(entry)
-        case "h", .delete, Self.backspace, .upArrow where command:
+        case "h", .delete, Self.backspace:
+            fallthrough
+        case .upArrow where command:
             navigate(to: RemotePath.parent(of: path))
         default:
             return .ignored

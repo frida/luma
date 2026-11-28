@@ -421,7 +421,7 @@ final class InstrumentLayoutDesigner {
             selection = [path]
         }
         refresh()
-        boxes[path]?.grabFocus()
+        _ = boxes[path]?.grabFocus()
     }
 
     private func installDragSource(on box: Button, id: String) {

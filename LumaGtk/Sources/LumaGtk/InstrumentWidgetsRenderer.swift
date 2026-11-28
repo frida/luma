@@ -1027,7 +1027,7 @@ private final class WidgetRowList<Presenter: WidgetRowPresenter> {
     var onRowTally: ((RowTally) -> Void)?
 
     var rowTally: RowTally {
-        RowTally(count: allRows.count, subtitled: allRows.filter(Presenter.isTwoLine).count)
+        RowTally(count: allRows.count, subtitled: allRows.filter { Presenter.isTwoLine($0) }.count)
     }
 
     private enum Refresh {

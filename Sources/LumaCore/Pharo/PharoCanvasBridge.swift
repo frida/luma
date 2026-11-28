@@ -16,7 +16,7 @@ private nonisolated(unsafe) var canvasErrorBuffer: UnsafeMutablePointer<CChar>?
 @_cdecl("luma_canvas_last_error")
 public func luma_canvas_last_error() -> UnsafeMutablePointer<CChar>? {
     canvasErrorBuffer.map { free($0) }
-    canvasErrorBuffer = strdup(canvasError.withLock { $0 })
+    canvasErrorBuffer = pharoOwnedCString(canvasError.withLock { $0 })
     return canvasErrorBuffer
 }
 

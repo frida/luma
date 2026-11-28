@@ -48,7 +48,7 @@ public final class PharoAsyncBridge: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         guard var pending = tickets[ticket], !pending.replies.isEmpty else {
-            return strdup(#"{"error":"no reply for this ticket"}"#)
+            return pharoOwnedCString(#"{"error":"no reply for this ticket"}"#)
         }
         let reply = pending.replies.removeFirst()
         if pending.replies.isEmpty {
@@ -56,7 +56,7 @@ public final class PharoAsyncBridge: @unchecked Sendable {
             pending.taken = nil
         }
         tickets[ticket] = pending.replies.isEmpty && pending.isClosed ? nil : pending
-        return strdup(reply.json)
+        return pharoOwnedCString(reply.json)
     }
 
     fileprivate func abandon(_ ticket: Int32) {
@@ -224,4 +224,12 @@ public func luma_async_take(_ ticket: Int32) -> UnsafeMutablePointer<CChar>? {
 @_cdecl("luma_async_abandon")
 public func luma_async_abandon(_ ticket: Int32) {
     PharoAsyncBridge.shared.abandon(ticket)
+}
+
+func pharoOwnedCString(_ string: String) -> UnsafeMutablePointer<CChar>? {
+    #if os(Windows)
+    _strdup(string)
+    #else
+    strdup(string)
+    #endif
 }

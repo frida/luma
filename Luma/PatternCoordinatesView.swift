@@ -38,12 +38,21 @@ struct PatternCoordinatesView: View {
     }
 
     private func lookUpAddress() async {
-        guard CLLocationCoordinate2DIsValid(coordinate),
-            let placemark = try? await CLGeocoder().reverseGeocodeLocation(CLLocation(latitude: latitude, longitude: longitude)).first
-        else { return }
-        let parts = [placemark.name, placemark.locality, placemark.administrativeArea, placemark.country].compactMap { $0 }
+        guard CLLocationCoordinate2DIsValid(coordinate) else { return }
+        let parts = await addressParts(of: CLLocation(latitude: latitude, longitude: longitude))
+        guard !parts.isEmpty else { return }
         address = parts.reduce(into: [String]()) { unique, part in
             if !unique.contains(part) { unique.append(part) }
         }.joined(separator: ", ")
+    }
+
+    private func addressParts(of location: CLLocation) async -> [String] {
+        if #available(macOS 26, *) {
+            guard let request = MKReverseGeocodingRequest(location: location), let item = try? await request.mapItems.first else { return [] }
+            return [item.name, item.addressRepresentations?.cityWithContext(.full)].compactMap { $0 }
+        } else {
+            guard let placemark = try? await CLGeocoder().reverseGeocodeLocation(location).first else { return [] }
+            return [placemark.name, placemark.locality, placemark.administrativeArea, placemark.country].compactMap { $0 }
+        }
     }
 }

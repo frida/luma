@@ -81,7 +81,7 @@ public func luma_blob_release(_ blob: Int32) {
 
 @_cdecl("luma_blob_read")
 public func luma_blob_read(_ blob: Int32, _ offset: Int64, _ count: Int64, _ destination: UnsafeMutableRawPointer) -> Int32 {
-    let copied = PharoBlobRegistry.shared.withBytes(Int(blob), offset: Int(offset), count: Int(count)) { bytes in
+    let copied: Void? = PharoBlobRegistry.shared.withBytes(Int(blob), offset: Int(offset), count: Int(count)) { bytes in
         destination.copyMemory(from: bytes.baseAddress!, byteCount: bytes.count)
     }
     return copied == nil ? 0 : 1
