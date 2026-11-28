@@ -46,9 +46,7 @@ GENERATED_DIR := $(PROJECT_ROOT)/Sources/LumaCore/Generated
 AGENT_STAMP := $(GENERATED_DIR)/.agent.stamp
 AGENT_STAGING := $(PROJECT_ROOT)/.build/AgentStaging
 
-AGENT_SOURCES := \
-	$(shell find $(PROJECT_ROOT)/Agent -type f \( -name '*.ts' -o -name '*.json' \) 2>/dev/null) \
-	$(PROJECT_ROOT)/Sources/LumaBundleCompiler/main.swift
+AGENT_SOURCES := $(shell find $(PROJECT_ROOT)/Agent -type f \( -name '*.ts' -o -name '*.json' \) 2>/dev/null)
 
 SHADER_BUNDLE := $(GENERATED_DIR)/ShaderEffects.swift
 SHADER_STAMP := $(GENERATED_DIR)/.shaders.stamp
@@ -56,23 +54,31 @@ SHADER_SOURCES := $(wildcard $(PROJECT_ROOT)/Shaders/*.frag.glsl)
 
 VERSION_SOURCE := $(GENERATED_DIR)/LumaVersion.swift
 
+TOOLS_BIN := $(PROJECT_ROOT)/.build/debug
+
 bundle: $(AGENT_STAMP) $(SHADER_STAMP) version
 
-$(AGENT_STAMP): $(AGENT_SOURCES) $(PROJECT_ROOT)/Agent/bundle.json | swiftpm-pkg-config
-	$(IN_BUILD_ENVIRONMENT) swift run --package-path $(PROJECT_ROOT) LumaBundleCompiler \
+$(AGENT_STAMP): $(AGENT_SOURCES) $(PROJECT_ROOT)/Agent/bundle.json $(TOOLS_BIN)/LumaBundleCompiler
+	$(IN_BUILD_ENVIRONMENT) $(TOOLS_BIN)/LumaBundleCompiler \
 	    --config       "$(PROJECT_ROOT)/Agent/bundle.json" \
 	    --project-root "$(PROJECT_ROOT)" \
 	    --staging-dir  "$(AGENT_STAGING)"
 	touch $@
 
-$(SHADER_STAMP): $(SHADER_SOURCES) $(PROJECT_ROOT)/Sources/LumaShaderCompiler/main.swift | swiftpm-pkg-config
-	$(IN_BUILD_ENVIRONMENT) swift run --package-path $(PROJECT_ROOT) LumaShaderCompiler \
+$(SHADER_STAMP): $(SHADER_SOURCES) $(TOOLS_BIN)/LumaShaderCompiler
+	$(IN_BUILD_ENVIRONMENT) $(TOOLS_BIN)/LumaShaderCompiler \
 	    --shader-dir "$(PROJECT_ROOT)/Shaders" \
 	    --swift-out  "$(SHADER_BUNDLE)"
 	touch $@
 
-version: | swiftpm-pkg-config
-	$(IN_BUILD_ENVIRONMENT) swift run --package-path $(PROJECT_ROOT) LumaVersionWriter $(PROJECT_ROOT) "$(VERSION_SOURCE)"
+version: $(TOOLS_BIN)/LumaVersionWriter
+	$(IN_BUILD_ENVIRONMENT) $(TOOLS_BIN)/LumaVersionWriter $(PROJECT_ROOT) "$(VERSION_SOURCE)"
+
+$(TOOLS_BIN)/%: $(PROJECT_ROOT)/Sources/%/main.swift $(PROJECT_ROOT)/Package.swift $(PROJECT_ROOT)/Package.resolved | swiftpm-pkg-config
+	$(IN_BUILD_ENVIRONMENT) swift build --package-path $(PROJECT_ROOT) --product $*
+	touch $@
+
+$(TOOLS_BIN)/LumaShaderCompiler: $(wildcard $(PROJECT_ROOT)/Sources/CShaderTranslate/*.c $(PROJECT_ROOT)/Sources/CShaderTranslate/include/*)
 
 swiftpm-pkg-config: $(PHARO_VM) | $(GENERATED_DIR)
 	Scripts/stage-pkg-config-for-swiftpm.sh $(SWIFTPM_PKG_CONFIG_DIR)
