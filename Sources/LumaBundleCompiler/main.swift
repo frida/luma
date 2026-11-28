@@ -222,9 +222,6 @@ struct LumaBundleCompiler {
                     try syncFile(at: src, into: stagingDir)
                 }
 
-                let summary = packageSpecs.isEmpty ? "from manifest" : packageSpecs.joined(separator: ", ")
-                fputs("[packages] installing: \(summary)\n", stderr)
-
                 func installWithNPM() throws {
                     let stagingLockfile = URL(fileURLWithPath: stagingDir)
                         .appendingPathComponent("package-lock.json").path
@@ -243,8 +240,6 @@ struct LumaBundleCompiler {
                     fputs("[packages] falling back to npm\n", stderr)
                     try installWithNPM()
                 }
-
-                fputs("[packages] done\n", stderr)
 
                 let stagingLockfile = URL(fileURLWithPath: stagingDir)
                     .appendingPathComponent("package-lock.json").path
@@ -291,17 +286,8 @@ struct LumaBundleCompiler {
 
         let compiler = Compiler()
         let eventsTask = Task {
-            for await event in compiler.events {
-                switch event {
-                case .starting:
-                    fputs("[compiler] starting\n", stderr)
-                case .finished:
-                    fputs("[compiler] finished\n", stderr)
-                case .output(let bundle):
-                    fputs("[compiler] output length: \(bundle.utf8.count) bytes\n", stderr)
-                case .diagnostics(let any):
-                    fputs("[compiler] diagnostics: \(any)\n", stderr)
-                }
+            for await case .diagnostics(let any) in compiler.events {
+                fputs("[compiler] diagnostics: \(any)\n", stderr)
             }
         }
 
