@@ -55,6 +55,7 @@ SHADER_SOURCES := $(wildcard $(PROJECT_ROOT)/Shaders/*.frag.glsl)
 VERSION_SOURCE := $(GENERATED_DIR)/LumaVersion.swift
 
 TOOLS_BIN := $(PROJECT_ROOT)/.build/debug
+SWIFT_BUILD_SYSTEM := --build-system native
 
 bundle: $(AGENT_STAMP) $(SHADER_STAMP) version
 
@@ -75,7 +76,7 @@ version: $(TOOLS_BIN)/LumaVersionWriter
 	$(IN_BUILD_ENVIRONMENT) $(TOOLS_BIN)/LumaVersionWriter $(PROJECT_ROOT) "$(VERSION_SOURCE)"
 
 $(TOOLS_BIN)/%: $(PROJECT_ROOT)/Sources/%/main.swift $(PROJECT_ROOT)/Package.swift $(PROJECT_ROOT)/Package.resolved | swiftpm-pkg-config
-	$(IN_BUILD_ENVIRONMENT) swift build --package-path $(PROJECT_ROOT) --product $*
+	$(IN_BUILD_ENVIRONMENT) swift build $(SWIFT_BUILD_SYSTEM) --package-path $(PROJECT_ROOT) --product $*
 	touch $@
 
 $(TOOLS_BIN)/LumaShaderCompiler: $(wildcard $(PROJECT_ROOT)/Sources/CShaderTranslate/*.c $(PROJECT_ROOT)/Sources/CShaderTranslate/include/*)
@@ -98,7 +99,7 @@ render-tests: build
 PHARO_VM_RPATH := $(if $(PHARO_VM),-Xlinker -rpath -Xlinker $(PHARO_VM_PREFIX)/lib)
 
 build: bundle $(PHARO_IMAGE) $(PHARO_VM) | swiftpm-pkg-config
-	$(IN_BUILD_ENVIRONMENT) swift build $(SWIFT_BUILD_FLAGS) $(PHARO_VM_RPATH)
+	$(IN_BUILD_ENVIRONMENT) swift build $(SWIFT_BUILD_SYSTEM) $(SWIFT_BUILD_FLAGS) $(PHARO_VM_RPATH)
 
 ifneq ($(PHARO_VM_PC),)
 # Resolving first is what puts the script on disk, and resolving does not need
