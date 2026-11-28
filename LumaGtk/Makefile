@@ -43,8 +43,7 @@ SWIFTPM_PKG_CONFIG_DIR := $(CURDIR)/.build/pkgconfig
 export PKG_CONFIG_PATH := $(SWIFTPM_PKG_CONFIG_DIR):$(PKG_CONFIG_PATH)
 
 GENERATED_DIR := $(PROJECT_ROOT)/Sources/LumaCore/Generated
-AGENT_BUNDLE := $(GENERATED_DIR)/LumaAgent.swift
-TYPINGS_BUNDLE := $(GENERATED_DIR)/LumaTypings.swift
+AGENT_STAMP := $(GENERATED_DIR)/.agent.stamp
 AGENT_STAGING := $(PROJECT_ROOT)/.build/AgentStaging
 
 AGENT_SOURCES := \
@@ -52,24 +51,25 @@ AGENT_SOURCES := \
 	$(PROJECT_ROOT)/Sources/LumaBundleCompiler/main.swift
 
 SHADER_BUNDLE := $(GENERATED_DIR)/ShaderEffects.swift
+SHADER_STAMP := $(GENERATED_DIR)/.shaders.stamp
 SHADER_SOURCES := $(wildcard $(PROJECT_ROOT)/Shaders/*.frag.glsl)
 
 VERSION_SOURCE := $(GENERATED_DIR)/LumaVersion.swift
 
-bundle: $(AGENT_BUNDLE) $(TYPINGS_BUNDLE) $(SHADER_BUNDLE) version
+bundle: $(AGENT_STAMP) $(SHADER_STAMP) version
 
-$(AGENT_BUNDLE): $(AGENT_SOURCES) $(PROJECT_ROOT)/Agent/bundle.json | swiftpm-pkg-config
+$(AGENT_STAMP): $(AGENT_SOURCES) $(PROJECT_ROOT)/Agent/bundle.json | swiftpm-pkg-config
 	$(IN_BUILD_ENVIRONMENT) swift run --package-path $(PROJECT_ROOT) LumaBundleCompiler \
 	    --config       "$(PROJECT_ROOT)/Agent/bundle.json" \
 	    --project-root "$(PROJECT_ROOT)" \
 	    --staging-dir  "$(AGENT_STAGING)"
+	touch $@
 
-$(TYPINGS_BUNDLE): $(AGENT_BUNDLE)
-
-$(SHADER_BUNDLE): $(SHADER_SOURCES) $(PROJECT_ROOT)/Sources/LumaShaderCompiler/main.swift | swiftpm-pkg-config
+$(SHADER_STAMP): $(SHADER_SOURCES) $(PROJECT_ROOT)/Sources/LumaShaderCompiler/main.swift | swiftpm-pkg-config
 	$(IN_BUILD_ENVIRONMENT) swift run --package-path $(PROJECT_ROOT) LumaShaderCompiler \
 	    --shader-dir "$(PROJECT_ROOT)/Shaders" \
-	    --swift-out  "$@"
+	    --swift-out  "$(SHADER_BUNDLE)"
+	touch $@
 
 version: | swiftpm-pkg-config
 	$(IN_BUILD_ENVIRONMENT) swift run --package-path $(PROJECT_ROOT) LumaVersionWriter $(PROJECT_ROOT) "$(VERSION_SOURCE)"

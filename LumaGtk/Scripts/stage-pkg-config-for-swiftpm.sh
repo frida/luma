@@ -2,19 +2,20 @@
 set -eu
 
 destination=$1
-rm -rf "$destination"
-mkdir -p "$destination/.seen"
+staging=$destination.new
+rm -rf "$staging"
+mkdir -p "$destination" "$staging/.seen"
 
 search_path="${PKG_CONFIG_PATH:+$PKG_CONFIG_PATH:}$(pkg-config --variable=pc_path pkg-config)"
 
 IFS=:
 for directory in $search_path; do
-    [ "$directory" != "$destination" ] || continue
+    [ "$directory" != "$destination" ] && [ "$directory" != "$staging" ] || continue
     for pc in "$directory"/*.pc; do
         [ -f "$pc" ] || continue
         name=${pc##*/}
-        [ ! -e "$destination/.seen/$name" ] || continue
-        : > "$destination/.seen/$name"
+        [ ! -e "$staging/.seen/$name" ] || continue
+        : > "$staging/.seen/$name"
         awk -v pcfiledir="$directory" '
             function allowed(flag, prefixes,   i, count, list) {
                 count = split(prefixes, list, " ")
@@ -57,8 +58,16 @@ for directory in $search_path; do
             END {
                 exit !dropped
             }
-        ' "$pc" > "$destination/$name" || rm "$destination/$name"
+        ' "$pc" > "$staging/$name" || rm "$staging/$name"
     done
 done
 
-rm -r "$destination/.seen"
+for copy in "$destination"/*.pc; do
+    [ -f "$copy" ] || continue
+    [ -e "$staging/${copy##*/}" ] || rm "$copy"
+done
+for staged in "$staging"/*.pc; do
+    [ -f "$staged" ] || continue
+    cmp -s "$staged" "$destination/${staged##*/}" || mv "$staged" "$destination/"
+done
+rm -rf "$staging"
