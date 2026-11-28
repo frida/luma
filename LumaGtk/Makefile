@@ -1,4 +1,4 @@
-.PHONY: build run clean bundle version screenshots install uninstall render-tests soak
+.PHONY: build run clean bundle version screenshots install uninstall render-tests soak swiftpm-pkg-config
 
 # Machine-local overrides, such as FRIDA_SWIFT_ROOT pointing at a
 # checkout of the bindings while a fix is being verified.
@@ -39,6 +39,9 @@ PHARO_VM := $(if $(shell pkg-config --exists pharo-vm && echo installed),,$(PHAR
 export PKG_CONFIG_PATH := $(PKG_CONFIG_PATH):$(PHARO_VM_PREFIX)/lib/pkgconfig
 endif
 
+SWIFTPM_PKG_CONFIG_DIR := $(CURDIR)/.build/pkgconfig
+export PKG_CONFIG_PATH := $(SWIFTPM_PKG_CONFIG_DIR):$(PKG_CONFIG_PATH)
+
 AGENT_BUNDLE := $(PROJECT_ROOT)/Sources/LumaCore/Generated/LumaAgent.swift
 TYPINGS_BUNDLE := $(PROJECT_ROOT)/Sources/LumaCore/Generated/LumaTypings.swift
 AGENT_STAGING := $(PROJECT_ROOT)/.build/AgentStaging
@@ -54,7 +57,7 @@ VERSION_SOURCE := $(PROJECT_ROOT)/Sources/LumaCore/Generated/LumaVersion.swift
 
 bundle: $(AGENT_BUNDLE) $(TYPINGS_BUNDLE) $(SHADER_BUNDLE) version
 
-$(AGENT_BUNDLE): $(AGENT_SOURCES) $(PROJECT_ROOT)/Agent/bundle.json
+$(AGENT_BUNDLE): $(AGENT_SOURCES) $(PROJECT_ROOT)/Agent/bundle.json | swiftpm-pkg-config
 	$(IN_BUILD_ENVIRONMENT) swift run --package-path $(PROJECT_ROOT) LumaBundleCompiler \
 	    --config       "$(PROJECT_ROOT)/Agent/bundle.json" \
 	    --project-root "$(PROJECT_ROOT)" \
@@ -62,13 +65,16 @@ $(AGENT_BUNDLE): $(AGENT_SOURCES) $(PROJECT_ROOT)/Agent/bundle.json
 
 $(TYPINGS_BUNDLE): $(AGENT_BUNDLE)
 
-$(SHADER_BUNDLE): $(SHADER_SOURCES) $(PROJECT_ROOT)/Sources/LumaShaderCompiler/main.swift
+$(SHADER_BUNDLE): $(SHADER_SOURCES) $(PROJECT_ROOT)/Sources/LumaShaderCompiler/main.swift | swiftpm-pkg-config
 	$(IN_BUILD_ENVIRONMENT) swift run --package-path $(PROJECT_ROOT) LumaShaderCompiler \
 	    --shader-dir "$(PROJECT_ROOT)/Shaders" \
 	    --swift-out  "$@"
 
-version:
+version: | swiftpm-pkg-config
 	$(IN_BUILD_ENVIRONMENT) swift run --package-path $(PROJECT_ROOT) LumaVersionWriter $(PROJECT_ROOT) "$(VERSION_SOURCE)"
+
+swiftpm-pkg-config:
+	Scripts/stage-pkg-config-for-swiftpm.sh $(SWIFTPM_PKG_CONFIG_DIR)
 
 soak: build
 	LUMA_SOAK=$(LUMA_SOAK) LUMA_SOAK_SECONDS=$(or $(SECONDS),180) \
@@ -81,7 +87,7 @@ render-tests: build
 # named on the link line to be found again at run time.
 PHARO_VM_RPATH := $(if $(PHARO_VM),-Xlinker -rpath -Xlinker $(PHARO_VM_PREFIX)/lib)
 
-build: bundle $(PHARO_IMAGE) $(PHARO_VM)
+build: bundle $(PHARO_IMAGE) $(PHARO_VM) | swiftpm-pkg-config
 	$(IN_BUILD_ENVIRONMENT) swift build $(SWIFT_BUILD_FLAGS) $(PHARO_VM_RPATH)
 
 ifneq ($(PHARO_VM_PC),)
