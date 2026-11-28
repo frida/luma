@@ -1200,15 +1200,7 @@ enum WidgetKindChoice: CaseIterable {
 @MainActor
 func makeWidgetKindDropdown(initial: WidgetKindChoice, onChanged: @escaping (WidgetKindChoice) -> Void) -> DropDown {
     let labels = WidgetKindChoice.allCases.map(\.label)
-    let cStrings = labels.map { strdup($0) }
-    defer { cStrings.forEach { free($0) } }
-    var ptrs = cStrings.map { UnsafePointer($0) as UnsafePointer<CChar>? }
-    ptrs.append(nil)
-    let widgetPtr = ptrs.withUnsafeBufferPointer { buf in
-        gtk_drop_down_new_from_strings(buf.baseAddress)
-    }!
-    g_object_ref_sink(UnsafeMutableRawPointer(widgetPtr))
-    let dropdown = DropDown(raw: UnsafeMutableRawPointer(widgetPtr))
+    let dropdown = DropDown.listing(labels)
     dropdown.selected = initial.index
     dropdown.onNotifySelected { dd, _ in
         MainActor.assumeIsolated {
@@ -1228,15 +1220,7 @@ func makeChoiceDropdown<Choice: Equatable>(
     initial: Choice,
     onChanged: @escaping (Choice) -> Void
 ) -> DropDown {
-    let cStrings = labels.map { strdup($0) }
-    defer { cStrings.forEach { free($0) } }
-    var ptrs = cStrings.map { UnsafePointer($0) as UnsafePointer<CChar>? }
-    ptrs.append(nil)
-    let widgetPtr = ptrs.withUnsafeBufferPointer { buf in
-        gtk_drop_down_new_from_strings(buf.baseAddress)
-    }!
-    g_object_ref_sink(UnsafeMutableRawPointer(widgetPtr))
-    let dropdown = DropDown(raw: UnsafeMutableRawPointer(widgetPtr))
+    let dropdown = DropDown.listing(labels)
     dropdown.selected = cases.firstIndex(of: initial) ?? 0
     dropdown.onNotifySelected { dd, _ in
         MainActor.assumeIsolated {

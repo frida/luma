@@ -124,15 +124,7 @@ final class LLMProviderSetupSection {
     }
 
     static func makeStringDropdown(labels: [String], selected: Int) -> DropDown {
-        let cStrings = labels.map { strdup($0) }
-        defer { cStrings.forEach { free($0) } }
-        var ptrs = cStrings.map { UnsafePointer($0) as UnsafePointer<CChar>? }
-        ptrs.append(nil)
-        let widgetPtr = ptrs.withUnsafeBufferPointer { buf in
-            gtk_drop_down_new_from_strings(buf.baseAddress)
-        }!
-        g_object_ref_sink(UnsafeMutableRawPointer(widgetPtr))
-        let dropdown = DropDown(raw: UnsafeMutableRawPointer(widgetPtr))
+        let dropdown = DropDown.listing(labels)
         if selected >= 0, selected < labels.count {
             dropdown.selected = selected
         }
@@ -140,14 +132,7 @@ final class LLMProviderSetupSection {
     }
 
     static func setDropdownLabels(_ dropdown: DropDown, labels: [String], selectedIndex: Int) {
-        let cStrings = labels.map { strdup($0) }
-        defer { cStrings.forEach { free($0) } }
-        var ptrs = cStrings.map { UnsafePointer($0) as UnsafePointer<CChar>? }
-        ptrs.append(nil)
-        ptrs.withUnsafeBufferPointer { buf in
-            let stringList = StringList(strings: buf.baseAddress)
-            dropdown.set(model: stringList)
-        }
+        dropdown.set(model: StringList.listing(labels))
         if selectedIndex >= 0, selectedIndex < labels.count {
             dropdown.selected = selectedIndex
         }

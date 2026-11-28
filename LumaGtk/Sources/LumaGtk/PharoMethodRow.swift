@@ -310,12 +310,6 @@ final class PharoNewMethodEditor {
 
     private static func sideDropdown() -> DropDown {
         let labels = ["instance", "class"]
-        let cStrings = labels.map { strdup($0) }
-        defer { cStrings.forEach { free($0) } }
-        var ptrs = cStrings.map { UnsafePointer($0) as UnsafePointer<CChar>? }
-        ptrs.append(nil)
-        let widgetPtr = ptrs.withUnsafeBufferPointer { gtk_drop_down_new_from_strings($0.baseAddress) }!
-        g_object_ref_sink(UnsafeMutableRawPointer(widgetPtr))
-        return DropDown(raw: UnsafeMutableRawPointer(widgetPtr))
+        return DropDown.listing(labels)
     }
 }

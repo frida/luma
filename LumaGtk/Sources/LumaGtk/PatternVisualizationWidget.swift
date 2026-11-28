@@ -78,9 +78,9 @@ final class PatternVisualizationWidget {
         let seconds = Double(frames) / Double(sound.sampleRate)
         if let url = try? Self.writeWAV(sound) {
             let stream = gtk_media_file_new_for_filename(url.path)
-            g_object_set_data_full(UnsafeMutableRawPointer(stream)!.assumingMemoryBound(to: GObject.self), "luma-wav", strdup(url.path)) { path in
-                unlink(path!.assumingMemoryBound(to: CChar.self))
-                free(path)
+            g_object_set_data_full(UnsafeMutableRawPointer(stream)!.assumingMemoryBound(to: GObject.self), "luma-wav", g_strdup(url.path)) { path in
+                try? FileManager.default.removeItem(atPath: String(cString: path!.assumingMemoryBound(to: CChar.self)))
+                g_free(path)
             }
             gtk_box_append(box.box_ptr, gtk_media_controls_new(stream))
             g_object_unref(stream)

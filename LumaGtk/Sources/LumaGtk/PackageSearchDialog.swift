@@ -408,15 +408,7 @@ final class PackageSearchDialog {
 @MainActor
 private func makeCategoryDropdown(initial: PackageCategory, onChanged: @escaping (PackageCategory) -> Void) -> DropDown {
     let categories = PackageCategory.allCases
-    let cStrings = categories.map { strdup($0.title) }
-    defer { cStrings.forEach { free($0) } }
-    var ptrs = cStrings.map { UnsafePointer($0) as UnsafePointer<CChar>? }
-    ptrs.append(nil)
-    let widgetPtr = ptrs.withUnsafeBufferPointer { buf in
-        gtk_drop_down_new_from_strings(buf.baseAddress)
-    }!
-    g_object_ref_sink(UnsafeMutableRawPointer(widgetPtr))
-    let dropdown = DropDown(raw: UnsafeMutableRawPointer(widgetPtr))
+    let dropdown = DropDown.listing(categories.map(\.title))
     dropdown.selected = categories.firstIndex(of: initial)!
     dropdown.onNotifySelected { dd, _ in
         MainActor.assumeIsolated {

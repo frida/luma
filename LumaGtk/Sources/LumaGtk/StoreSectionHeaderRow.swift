@@ -65,7 +65,7 @@ final class StoreSectionHeaderRow {
 
     private func makeCategoryDropdown(offering categories: [StoreCategory], selected: StoreCategory.ID?) -> DropDown {
         let choices: [StoreCategory.ID?] = [nil] + categories.map(\.id)
-        let dropdown = Self.makeDropdown(labels: ["All Categories"] + categories.map(\.name))
+        let dropdown = DropDown.listing(["All Categories"] + categories.map(\.name))
         dropdown.add(cssClass: "flat")
         dropdown.valign = .center
         dropdown.selected = choices.firstIndex(of: selected) ?? 0
@@ -74,12 +74,5 @@ final class StoreSectionHeaderRow {
             MainActor.assumeIsolated { onChooseCategory(choices[Int(dropdown.selected)]) }
         }
         return dropdown
-    }
-
-    private static func makeDropdown(labels: [String]) -> DropDown {
-        let cStrings = labels.map { strdup($0) }
-        defer { cStrings.forEach { free($0) } }
-        let pointers = cStrings.map { UnsafePointer($0) } + [nil]
-        return pointers.withUnsafeBufferPointer { DropDown(strings: $0.baseAddress) }
     }
 }

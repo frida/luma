@@ -231,15 +231,7 @@ final class TracerConfigEditor {
 
         let ordered = config.hooksByMostRecentlyEdited()
         let labels = ordered.map { $0.displayName }
-        let cStrings = labels.map { strdup($0) }
-        defer { cStrings.forEach { free($0) } }
-        var ptrs = cStrings.map { UnsafePointer($0) as UnsafePointer<CChar>? }
-        ptrs.append(nil)
-        let dropdownPtr = ptrs.withUnsafeBufferPointer { buf in
-            gtk_drop_down_new_from_strings(buf.baseAddress)
-        }!
-        g_object_ref_sink(UnsafeMutableRawPointer(dropdownPtr))
-        let dropdown = DropDown(raw: UnsafeMutableRawPointer(dropdownPtr))
+        let dropdown = DropDown.listing(labels)
         dropdown.hexpand = true
         if let selectedHookID,
             let idx = ordered.firstIndex(where: { $0.id == selectedHookID })
@@ -735,15 +727,7 @@ private final class TracerHookSearch {
 
     private static func makeScopeDropdown() -> DropDown {
         let labels = TracerTargetScope.allCases.map { $0.label }
-        let cStrings = labels.map { strdup($0) }
-        defer { cStrings.forEach { free($0) } }
-        var ptrs = cStrings.map { UnsafePointer($0) as UnsafePointer<CChar>? }
-        ptrs.append(nil)
-        let widgetPtr = ptrs.withUnsafeBufferPointer { buf in
-            gtk_drop_down_new_from_strings(buf.baseAddress)
-        }!
-        g_object_ref_sink(UnsafeMutableRawPointer(widgetPtr))
-        return DropDown(raw: UnsafeMutableRawPointer(widgetPtr))
+        return DropDown.listing(labels)
     }
 
     fileprivate func handleScopeChanged(rawIndex: Int) {

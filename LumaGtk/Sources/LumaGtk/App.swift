@@ -740,13 +740,9 @@ final class LumaApplication {
         dialog.set(issueUrl: "https://github.com/frida/luma/issues")
         dialog.set(licenseType: .mitX11)
 
-        let entries = ["NowSecure https://www.nowsecure.com"]
-        let cStrings = entries.map { strdup($0) }
-        defer { cStrings.forEach { free($0) } }
-        var ptrs: [UnsafePointer<CChar>?] = cStrings.map { UnsafePointer($0) }
-        ptrs.append(nil)
-        ptrs.withUnsafeMutableBufferPointer { buf in
-            dialog.addAcknowledgementSection(name: "Sponsored by", people: buf.baseAddress)
+        "NowSecure https://www.nowsecure.com".withCString { sponsor in
+            var people: [UnsafePointer<CChar>?] = [sponsor, nil]
+            dialog.addAcknowledgementSection(name: "Sponsored by", people: &people)
         }
 
         let parent = activeWindow()?.window
