@@ -64,24 +64,18 @@ public actor EventStore {
     }
 
     private func compact() {
-        guard let handle = try? FileHandle(forReadingFrom: fileURL) else { return }
+        guard let tail = retainedTail(), (try? tail.write(to: fileURL, options: .atomic)) != nil else { return }
+        fileSize = tail.count
+    }
+
+    private func retainedTail() -> Data? {
+        guard let handle = try? FileHandle(forReadingFrom: fileURL) else { return nil }
         defer { try? handle.close() }
 
         let target = Int(Double(byteCap) * Self.compactionLowWatermark)
-        guard let dropOffset = findDropOffset(handle: handle, target: target) else { return }
-        guard dropOffset > 0 else { return }
-
-        let tempURL = fileURL.deletingLastPathComponent()
-            .appendingPathComponent("events.log.\(UUID().uuidString).tmp")
+        guard let dropOffset = findDropOffset(handle: handle, target: target), dropOffset > 0 else { return nil }
         try? handle.seek(toOffset: UInt64(dropOffset))
-        guard let tail = try? handle.readToEnd() else { return }
-        do {
-            try tail.write(to: tempURL, options: .atomic)
-            _ = try FileManager.default.replaceItemAt(fileURL, withItemAt: tempURL)
-            fileSize = tail.count
-        } catch {
-            try? FileManager.default.removeItem(at: tempURL)
-        }
+        return try? handle.readToEnd()
     }
 
     private func findDropOffset(handle: FileHandle, target: Int) -> Int? {
